@@ -42,7 +42,8 @@ read-only reporting layer.
 | Audit fix — F-02 stock concurrency | COMPLETE (Milestone 7) — atomic conditional decrement for SALE + DAMAGE; concurrency regression suite |
 | Audit fix — F-01 product validation | COMPLETE (Milestone 8) — `product.validation.ts` wired into `POST /api/products`; invalid payloads → 400 |
 | Audit fix — F-03 error privacy | COMPLETE (Milestone 9) — generic 500 `{ "message": "Internal Server Error" }`, no raw message/path/DB/host leakage; server-side logging; unit + HTTP suites |
-| Production readiness | NOT YET COMPLETE — requires remaining fixes from the audit (F-10, F-04, F-15, F-05…) |
+| Audit fix — F-04 input upper bounds | COMPLETE (Milestone 10) — `lib/bounds.ts` caps (`MAX_ITEM_QUANTITY`, `MAX_ITEMS_PER_DOCUMENT`, `MAX_AMOUNT`) enforced in all six validators; over-limit → 400 before allocation; unit + HTTP suites |
+| Production readiness | NOT YET COMPLETE — requires remaining fixes from the audit (F-10, F-15, F-05…) |
 
 Evidence:
 
@@ -218,13 +219,20 @@ SQL.
   server-side logging; unit (`test:error` 11/11) + HTTP (`test:http` 12/12,
   unreachable-DB leak-canary proof) suites added. Tracking:
   [GitHub issue ERP-003](https://github.com/shishirg46/retail-erp/issues/3).
+  Closed.
+- **F-04 input upper bounds is COMPLETE (Milestone 10)** — shared caps in
+  `lib/bounds.ts` enforced in all six validators; over-limit → 400 before any
+  allocation (the documented `quantity: 1e8` DoS payload returns 400 < 15 s);
+  unit (`test:bounds` 28/28) + HTTP (`test:http:bounds` 11/11, incl. boundary
+  MAX success + liveness) suites added. Tracking:
+  [GitHub issue ERP-004](https://github.com/shishirg46/retail-erp/issues/4).
   Awaiting PM review before closing the issue.
-- Next audit fix pending PM decision: P1 findings (F-10 auth, F-04 input bounds,
-  F-15 test framework, F-05 DB constraints/indexes).
+- Next audit fix pending PM decision: P1 findings (F-10 auth, F-15 test
+  framework, F-05 DB constraints/indexes).
 
 **WHAT HAS NOT BEEN STARTED**
 - Remaining fixes from the audit (see [`docs/architecture-audit.md`](architecture-audit.md)
-  "Recommended Fix Order" — P1: F-03, F-10, F-04, F-15, F-05; P2/P3: F-06, F-07, F-09, F-08, F-11).
+  "Recommended Fix Order" — P1: F-10, F-15, F-05; P2/P3: F-06, F-07, F-09, F-08, F-11).
 - Automated unit/integration tests (`tests/unit/` is empty).
 - Authentication / authorization / roles.
 - Frontend UI; dashboards; advanced reporting; exports; pagination/search.
@@ -254,8 +262,7 @@ proving stock never goes negative); **(2) products validation for
 route; invalid payloads → 400; `tests/unit/product.validation.ts` 30/30).
 
 ### Step 2 — Fix Remaining HIGH/Selected Findings
-P1 (per audit): raw error-message leakage on 500 (F-03) — **DONE (Milestone 9)**;
-auth/roles decision (F-10), input upper bounds (F-04), automated test framework
+P1 (per audit): auth/roles decision (F-10), automated test framework
 (F-15), DB CHECK + indexes (F-05).
 
 ### Step 3 — Regression Testing
@@ -271,8 +278,9 @@ Only after the audit findings and regression testing.
 Required to make the backend robust, per
 [`docs/architecture-audit.md`](architecture-audit.md) recommended fix order:
 **atomic stock / concurrency hardening (F-02) — DONE**; **products validation
-(F-01) — DONE**; **error privacy (F-03) — DONE**; input bounds (F-04),
-automated tests for the existing flows (F-15), DB CHECK + indexes (F-05),
+(F-01) — DONE**; **error privacy (F-03) — DONE**; **input upper bounds
+(F-04) — DONE**; automated tests for the existing flows (F-15), DB CHECK +
+indexes (F-05),
 `.env.example`, pagination / search / filtering on list endpoints, concurrency
 verification by load test.
 
@@ -382,12 +390,18 @@ DOCUMENTATION:    COMPLETE — README, AGENTS.md, business-decisions (D1–D8),
                   implementation-log, project-progress, architecture-audit,
                   postman suite
 TESTING:          IMPROVED — concurrency (5/5), validator unit (30/30), error
-                  unit (11/11), HTTP error integration (12/12) all green;
-                  full unit/integration framework is F-15
-CURRENT TASK:     P0+P1 audit fixes through F-03 — F-02 (M7, closed), F-01
-                  (M8, closed), F-03 (M9, ERP-003, awaiting PM review)
-NEXT TASK:        PM review of F-03 (ERP-003); then decide next audit fix
-                  (P1: F-10, F-04, F-15, F-05) per docs/architecture-audit.md
-PRODUCTION READY: NO — P1 audit findings (F-10, F-04, F-15, F-05),
+                  unit (11/11), HTTP error integration (12/12), input-bounds
+                  unit (28/28), input-bounds HTTP (11/11) all green; full
+                  unit/integration framework is F-15
+INPUT SAFETY:     COMPLETE — quantity/amount/items upper bounds (F-04 fixed):
+                  MAX_ITEM_QUANTITY 100000, MAX_ITEMS_PER_DOCUMENT 100,
+                  MAX_AMOUNT 10000000 enforced in all six validators; over-limit
+                  → 400 before any allocation (DoS payload 1e8 rejected < 15 s)
+CURRENT TASK:     P0+P1 audit fixes through F-04 — F-02 (M7, closed), F-01
+                  (M8, closed), F-03 (M9, closed), F-04 (M10, ERP-004, awaiting
+                  PM review)
+NEXT TASK:        PM review of F-04 (ERP-004); then decide next audit fix
+                  (P1: F-10, F-15, F-05) per docs/architecture-audit.md
+PRODUCTION READY: NO — P1 audit findings (F-10, F-15, F-05),
                   regression testing, and auth/deployment decisions remain
 ```

@@ -329,7 +329,7 @@ audit confirms they are genuinely absent.
 | IDOR / resource ownership | N/A until auth exists. |
 | Unrestricted POST endpoints | All 8 POST endpoints unauthenticated. |
 | Sensitive error leakage | **FIXED (F-03, Milestone 9)** — generic 500 body, details logged server-side. |
-| Input validation | Products now validated (F-01 fixed); no quantity upper bounds (F-04). |
+| Input validation | Products validated (F-01 fixed); quantity/amount upper bounds enforced (F-04 fixed). |
 | SQL injection | **Safe** — all queries are parameterized Prisma; no raw SQL/string interpolation. |
 | Secrets in Git | **None.** `.env` is gitignored and untracked (`git ls-files | grep .env` empty — verified). |
 | Env handling | `lib/prisma.ts` + `prisma.config.ts` read `DATABASE_URL` via dotenv; no hardcoded secrets. |
@@ -503,7 +503,7 @@ No hygiene action required (beyond the audit commit itself).
 | **F-01** | **HIGH** | Architecture/Validation | Products endpoint has no validation, bypasses service, casts `body as CreateProductInput` | `app/api/products/route.ts:18-19`; no `product.validation.ts` | Master data other modules price off can be invalid (negative prices, bad tiers) and errors become raw 500s | **FIXED (Milestone 8):** added `product.validation.ts` (price polarity, tier shape, duplicate-`minQty`, string caps, unknown-fields-ignored) and wired the route to validate before persist; `tests/unit/product.validation.ts` (30/30) + 13 HTTP checks green | NO | YES | FIXED |
 | **F-03** | **HIGH** | Error handling/Security | 500 responses return raw `error.message`, contradicting the method’s own “never leaked” comment | `lib/response.ts:16-19` | Driver/DB internals leak to clients | **FIXED (Milestone 9):** generic 500 `{ "message": "Internal Server Error" }` for any non-`AppError`, details logged server-side; `tests/unit/error-response.ts` (11/11) + `tests/http/error-handling.ts` (12/12) incl. unreachable-DB leak-canary checks | NO | YES | FIXED |
 | **F-10** | **HIGH** | Security | No authentication/authorization/roles anywhere | No middleware; no user model; all routes unguarded | Backend cannot be exposed beyond trusted network; blocks production | Design auth/roles decision; implement as a gated milestone | NO | YES | PLANNED (preexisting) |
-| **F-04** | **MEDIUM** | Security/DoS | Unbounded sale quantity → `new Array(qty + 1)` allocation server-side | `product.service.ts:16`; `sale.validation.ts` has no upper bound | Unauthenticated large `quantity` → memory exhaustion | Add sane quantity/amount upper bounds before allocation; validate then allocate | NO | YES | OPEN |
+| **F-04** | **MEDIUM** | Security/DoS | Unbounded sale quantity → `new Array(qty + 1)` allocation server-side | `product.service.ts:16`; `sale.validation.ts` has no upper bound | Unauthenticated large `quantity` → memory exhaustion | **FIXED (Milestone 10):** shared caps in `lib/bounds.ts` (`MAX_ITEM_QUANTITY=100000`, `MAX_ITEMS_PER_DOCUMENT=100`, `MAX_AMOUNT=10000000`) wired into all six validators; over-limit → 400 before allocation. `tests/unit/input-bounds.ts` (28/28) + `tests/http/input-bounds.ts` (11/11) incl. the documented `quantity: 1e8` payload rejected < 15 s | NO | YES | FIXED |
 | **F-05** | **MEDIUM** | Database | No CHECK constraints (notably `stock_qty >= 0`) and no secondary indexes on report/FK columns | `schema.prisma`; `prisma/migrations/*` | Negative stock physically storable; report joins scan as tables grow | Add constraint via migration (or DB-level guard) + indexes on `(product_id, date)`, `date`/`source`, `customer_id`, `supplier_id` | YES | YES | OPEN |
 | **F-06** | **MEDIUM** | Money | Float money arithmetic in services (running `grandTotal`, `qty × costPerUnit`) with rounding only for `pricePerUnit` | purchase.sale/purchase/service grand-total sums; no paisa-wide rounding helper | Float noise can enter stored Decimals beyond the documented D1 drift | Centralize paisa rounding on computed totals (int-paisa or round at boundary) | NO | YES | OPEN |
 | **F-07** | **MEDIUM** | API | No pagination / search / filtering on any list endpoint; no update/void capability | `app/api/*` GET handlers return full tables; no PATCH/PUT/DELETE | Unbounded responses + no correction path for entry mistakes | Add pagination + search after P0/P1 fixes (roadmap already lists this) | NO | YES | OPEN |
@@ -533,16 +533,22 @@ corrupt *data* (and only under concurrent requests).
    the route (price polarity, tier shape, duplicate-`minQty`, string caps); invalid payloads
    return 400. Unit tests (30/30) + 13 HTTP checks green.
 
-Rationale: F-02 (stock integrity), F-01 (master data validation), and F-03
-(error privacy) — three of the four actionable HIGHs — are done. P1 findings
-(F-10, F-04, F-15, F-05) are next.
+Rationale: F-02 (stock integrity), F-01 (master data validation), F-03
+(error privacy), and F-04 (DoS input bounds) are done — every actionable
+HIGH plus the first P1 finding are closed. Remaining P1 findings (F-10,
+F-15, F-05) are next.
 
 ### P1 — Should Fix Before Production
 3. **F-03 — FIXED (Milestone 9).** Generic 500 (no message/path/DB/host/port
    leakage) with server-side logging; unit suite (11/11) + HTTP suite (12/12)
    incl. unreachable-DB leak-canary proof.
-4. **F-10** — authentication/authorization decision + implementation (production blocker).
-5. **F-04** — quantity/amount upper bounds (removes DoS surface).
+4. **F-04 — FIXED (Milestone 10).** `lib/bounds.ts` shared caps
+   (`MAX_ITEM_QUANTITY`, `MAX_ITEMS_PER_DOCUMENT`, `MAX_AMOUNT`) enforced in
+   all six validators; over-limit input → 400 before `calculatePrice` is ever
+   reached (the documented `quantity: 1e8` DoS payload returns 400 < 15 s).
+   Unit (28/28) + HTTP (11/11) suites, incl. boundary-MAX success paths and a
+   post-attempt liveness check.
+5. **F-10** — authentication/authorization decision + implementation (production blocker).
 6. **F-15** — automated test framework with unit, integration, rollback, and concurrency
    coverage for all D1–D7 flows.
 7. **F-05** — DB CHECK constraint (`stock_qty >= 0`) + secondary indexes for report/FK joins.
@@ -575,13 +581,18 @@ Rationale: F-02 (stock integrity), F-01 (master data validation), and F-03
    `tests/http/error-handling.ts` (12/12, unreachable-DB leak-canary proof).
    Tracking: GitHub issue ERP-003. (Note: audit draft grouped F-04 here; F-04
    is now a separate milestone.)
-4. **Milestone 10 — Automated regression suite** (F-15): unit (pricing, validation) +
+4. **Milestone 10 — Input upper bounds (F-04) — DONE.** `lib/bounds.ts` shared
+   caps enforced in all six validators; over-limit → 400 before allocation.
+   `tests/unit/input-bounds.ts` (28/28) + `tests/http/input-bounds.ts`
+   (11/11, incl. the documented `quantity: 1e8` DoS payload rejected < 15 s
+   and boundary-MAX success paths). Tracking: GitHub issue ERP-004.
+5. **Milestone 11 — Automated regression suite** (F-15): unit (pricing, validation) +
    integration (each flow against a test Postgres, asserting wallet/customer/supplier/stock
    side effects and rollback behavior).
-5. **Milestone 11 — DB hardening** (F-05): CHECK constraint + targeted indexes + migration.
-6. **Milestone 12 — Auth design + implementation** (F-10) — requires a business decision
+6. **Milestone 12 — DB hardening** (F-05): CHECK constraint + targeted indexes + migration.
+7. **Milestone 13 — Auth design + implementation** (F-10) — requires a business decision
    (roles/permissions) before code.
-7. Continue with previously planned roadmap (pagination/search, dashboard, advanced
+8. Continue with previously planned roadmap (pagination/search, dashboard, advanced
    reporting, production readiness).
 
 ---

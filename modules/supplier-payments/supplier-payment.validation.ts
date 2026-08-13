@@ -1,3 +1,4 @@
+import { MAX_AMOUNT } from "../../lib/bounds";
 import { ValidationError } from "../../lib/errors";
 
 import type { CreateSupplierPaymentInput } from "./supplier-payment.types";
@@ -21,6 +22,10 @@ export function validateCreateSupplierPaymentInput(
     input.amount <= 0
   ) {
     throw new ValidationError("amount must be a positive number");
+  }
+
+  if (input.amount > MAX_AMOUNT) {
+    throw new ValidationError(`amount must be at most ${MAX_AMOUNT}`);
   }
 
   return {

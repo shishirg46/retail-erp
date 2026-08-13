@@ -10,7 +10,9 @@
     "test:unit": "tsx tests/unit/product.validation.ts",
     "test:error": "tsx tests/unit/error-response.ts",
     "test:http": "tsx tests/http/error-handling.ts",
-    "test:concurrency": "tsx tests/concurrency/stock.ts"
+    "test:concurrency": "tsx tests/concurrency/stock.ts",
+    "test:bounds": "tsx tests/unit/input-bounds.ts",
+    "test:http:bounds": "tsx tests/http/input-bounds.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.9.0",

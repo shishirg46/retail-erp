@@ -47,6 +47,12 @@ validator) → service/repository → `toHttpResponse(error)`. Every unexpected
 with status 500 — raw error details are logged server-side and never exposed to
 clients (F-03).
 
+Shared input upper bounds live in `lib/bounds.ts`
+(`MAX_ITEM_QUANTITY = 100000`, `MAX_ITEMS_PER_DOCUMENT = 100`,
+`MAX_AMOUNT = 10000000`) and are enforced in the six validators — over-limit
+quantities/amounts/line-counts return 400 before any service allocation runs,
+removing the unbounded-input DoS surface (F-04).
+
 Money is `Decimal` in Postgres, `number` in the application (converted at
 repository boundaries). All business rules are enforced in services, never in
 repositories. Historical prices are frozen (`SaleItem.pricePerUnit`,
@@ -95,6 +101,12 @@ npm run dev
   database is unreachable — proving no driver text, paths, DB names, hosts, or
   ports leak on 500. Refuses to run if `TEST_DATABASE_URL` is not
   `erp_retail_test` or a dev server is already running for the project.
+- `npm run test:bounds` runs the input-upper-bound unit tests (F-04): values
+  at the caps pass, caps+1 rejected, lower-bound semantics preserved.
+- `npm run test:http:bounds` spawns a Next.js dev server against
+  `erp_retail_test` and verifies over-limit inputs are rejected with 400 before
+  allocation (incl. the documented `quantity: 1e8` DoS payload returning 400
+  quickly), while boundary-maximum values still succeed end to end.
 - Import the Postman collection (`postman/Retail-ERP.postman_collection.json`)
   and run folders in order — ids chain via environment variables.
 - Reconciliation invariants, verified via SQL:

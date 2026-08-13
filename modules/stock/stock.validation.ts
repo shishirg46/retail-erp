@@ -1,3 +1,4 @@
+import { MAX_ITEM_QUANTITY } from "../../lib/bounds";
 import { ValidationError } from "../../lib/errors";
 
 import type {
@@ -49,6 +50,10 @@ export function validateAdjustStockInput(body: unknown): AdjustStockInput {
     ) {
       throw new ValidationError("quantity must be a non-negative integer for CORRECTION");
     }
+  }
+
+  if (input.quantity > MAX_ITEM_QUANTITY) {
+    throw new ValidationError(`quantity must be at most ${MAX_ITEM_QUANTITY}`);
   }
 
   if (input.note !== undefined && typeof input.note !== "string") {

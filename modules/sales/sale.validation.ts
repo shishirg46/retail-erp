@@ -1,3 +1,4 @@
+import { MAX_ITEM_QUANTITY, MAX_ITEMS_PER_DOCUMENT } from "../../lib/bounds";
 import { ValidationError } from "../../lib/errors";
 
 import type { CreateSaleInput, PaymentType, SaleItemInput } from "./sale.types";
@@ -27,6 +28,12 @@ function validateSaleItem(value: unknown, index: number): SaleItemInput {
     throw new ValidationError(`items[${index}].quantity must be a positive integer`);
   }
 
+  if (item.quantity > MAX_ITEM_QUANTITY) {
+    throw new ValidationError(
+      `items[${index}].quantity must be at most ${MAX_ITEM_QUANTITY}`
+    );
+  }
+
   return { productId: item.productId, quantity: item.quantity };
 }
 
@@ -45,6 +52,12 @@ export function validateCreateSaleInput(body: unknown): CreateSaleInput {
 
   if (!Array.isArray(input.items) || input.items.length === 0) {
     throw new ValidationError("items must be a non-empty array");
+  }
+
+  if (input.items.length > MAX_ITEMS_PER_DOCUMENT) {
+    throw new ValidationError(
+      `items must contain at most ${MAX_ITEMS_PER_DOCUMENT} entries`
+    );
   }
 
   if (input.customerId !== undefined && typeof input.customerId !== "string") {

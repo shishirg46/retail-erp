@@ -1,3 +1,4 @@
+import { MAX_AMOUNT, MAX_ITEM_QUANTITY } from "../../lib/bounds";
 import { ValidationError } from "../../lib/errors";
 
 import type { CreateProductInput, PriceTier } from "./product.types";
@@ -32,9 +33,21 @@ function validatePriceTier(value: unknown, index: number): PriceTier {
     );
   }
 
+  if (tier.minQty > MAX_ITEM_QUANTITY) {
+    throw new ValidationError(
+      `priceTiers[${index}].minQty must be at most ${MAX_ITEM_QUANTITY}`
+    );
+  }
+
   if (!isPositiveFinite(tier.price)) {
     throw new ValidationError(
       `priceTiers[${index}].price must be a positive number`
+    );
+  }
+
+  if (tier.price > MAX_AMOUNT) {
+    throw new ValidationError(
+      `priceTiers[${index}].price must be at most ${MAX_AMOUNT}`
     );
   }
 
@@ -83,8 +96,16 @@ export function validateCreateProductInput(body: unknown): CreateProductInput {
     throw new ValidationError("costPrice must be a non-negative number");
   }
 
+  if (input.costPrice > MAX_AMOUNT) {
+    throw new ValidationError(`costPrice must be at most ${MAX_AMOUNT}`);
+  }
+
   if (!isPositiveFinite(input.currentPrice)) {
     throw new ValidationError("currentPrice must be a positive number");
+  }
+
+  if (input.currentPrice > MAX_AMOUNT) {
+    throw new ValidationError(`currentPrice must be at most ${MAX_AMOUNT}`);
   }
 
   let priceTiers: PriceTier[] | undefined;

@@ -275,17 +275,76 @@ seeded entirely through the HTTP API.
 
 ---
 
+## Milestone 10 — Input upper bounds to remove the DoS surface (F-04) (13 Aug 2026)
+
+**Scope (per ERP-004, validation layer only — no service/schema changes):**
+
+- `lib/bounds.ts` — single source of truth for the shared upper caps:
+  - `MAX_ITEM_QUANTITY = 100_000` — bounds the `calculatePrice` DP array to
+    ~0.8 MB even at maximum (the F-04 DoS was `new Array(qty + 1)`, ~800 MB
+    at `quantity: 1e8`).
+  - `MAX_ITEMS_PER_DOCUMENT = 100` — mirrors the F-01 tier cap, caps a single
+    sale/purchase line list.
+  - `MAX_AMOUNT = 10_000_000` — ≈2000× headroom over the largest amount
+    observed in real data (~5,020); keeps paisa math well below 2^53.
+- Caps wired into the six existing validators (no lower-bound changes, no
+  service/repository/schema changes):
+  - `sale.validation.ts` — item `quantity ≤ MAX_ITEM_QUANTITY`, ≤ 100 items.
+  - `purchase.validation.ts` — item `quantity ≤ MAX_ITEM_QUANTITY`,
+    `costPerUnit ≤ MAX_AMOUNT`, ≤ 100 items.
+  - `stock.validation.ts` — DAMAGE/CORRECTION `quantity ≤ MAX_ITEM_QUANTITY`.
+  - `customer-payment.validation.ts` + `supplier-payment.validation.ts` —
+    `amount ≤ MAX_AMOUNT`.
+  - `product.validation.ts` — `costPrice`, `currentPrice`, tier `price ≤
+    MAX_AMOUNT`, tier `minQty ≤ MAX_ITEM_QUANTITY`.
+- Over-limit input → existing `ValidationError` → 400 with
+  `… must be at most <max>`. Limits are defensive/security caps, not business
+  rules, so no D-number is recorded.
+- `tests/unit/input-bounds.ts` + `npm run test:bounds` — boundary/overflow
+  unit suite (28/28): values at MAX pass, MAX+1 rejected, message regex, and
+  all lower-bound semantics preserved (0/negative still rejected).
+- `tests/http/input-bounds.ts` + `npm run test:http:bounds` — real HTTP
+  integration suite (11/11) that spawns a Next dev server against
+  `erp_retail_test`:
+  - **Acceptance criterion proven:** the exact documented DoS payload
+    `items[0].quantity = 1e8` returns **400 in well under 15 s** — validation
+    rejects it before `calculatePrice`'s allocation is ever reached.
+  - Over-limit 400 for sale qty MAX+1, 101-item sale, purchase costPerUnit
+    MAX+1, both payment amounts MAX+1, DAMAGE qty MAX+1, product currentPrice
+    MAX+1 — each `{ "message": … }` with no 500, no crash.
+  - Boundary values still succeed through the full stack: product 201,
+    CORRECTION to MAX stock 201, sale of MAX quantity 201 (cap never binds
+    legitimate data), and liveness `GET /api/products` 200 afterwards.
+  - Same guards as the F-03 suite: refuses to run unless `TEST_DATABASE_URL`
+    points at `erp_retail_test`; detects foreign `next dev` servers via
+    `.next/dev/lock`; cleans up its own server and stale locks on exit.
+- `package.json` — added `test:bounds` and `test:http:bounds`.
+
+**Verified**
+
+- `npm run test:bounds`: 28/28 pass.
+- `npm run test:http:bounds`: 11/11 pass.
+- `npm run test:unit`: 30/30, `npm run test:error`: 11/11, `npm run test:http`:
+  12/12, `npm run test:concurrency`: 5/5 — all regressions unchanged.
+- `npx tsc --noEmit`, `npm run lint`, `prisma validate` all green.
+- Dev database (`erp_retail`) untouched — all application-table row counts
+  byte-identical before/after the suites; no stray `next dev` servers left.
+- Tracking: GitHub issue **ERP-004** (F-04: DoS via unbounded quantity input).
+
+---
+
 ## Current state (13 Aug 2026)
 
 - **Done:** Products/Pricing, Sales, Purchasing, Suppliers + Supplier Payments,
   Customers + Credit Payments, Stock Adjustments, Reporting, plus audit fixes
-  F-02 (concurrency), F-01 (product validation), F-03 (error privacy). All
-  green on `tsc --noEmit` and `eslint`; unit/error/http/concurrency suites pass.
+  F-02 (concurrency), F-01 (product validation), F-03 (error privacy),
+  F-04 (input upper bounds). All green on `tsc --noEmit` and `eslint`;
+  unit/bounds/error/http/concurrency/bounds-http suites pass.
 - **Test data:** Rice stock 13, Oil 10, Biscuits 30; Kathmandu Wholesale balance
   0; customers Ramesh −5, Sita −100 (prepaid); wallet −4235; credit payments 405.
 - **Postman:** `postman/Retail-ERP.postman_collection.json` — 58 requests,
   9 folders (Products, Suppliers, Purchases, Supplier Payments, Stock
   Adjustments, Customers, Customer Payments & Credit Lifecycle, Sales — Tier
   Pricing & Payment Types, Reports).
-- **Next:** remaining P1 audit fixes (F-10 auth, F-04 input bounds, F-15 test
-  framework, F-05 DB constraints/indexes) — each a separate planned milestone.
+- **Next:** remaining P1 audit fixes (F-10 auth, F-15 test framework, F-05 DB
+  constraints/indexes) — each a separate planned milestone.

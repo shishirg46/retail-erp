@@ -1,3 +1,8 @@
+import {
+  MAX_AMOUNT,
+  MAX_ITEM_QUANTITY,
+  MAX_ITEMS_PER_DOCUMENT,
+} from "../../lib/bounds";
 import { ValidationError } from "../../lib/errors";
 
 import type {
@@ -34,12 +39,24 @@ function validatePurchaseItem(value: unknown, index: number): PurchaseItemInput 
     throw new ValidationError(`items[${index}].quantity must be a positive integer`);
   }
 
+  if (item.quantity > MAX_ITEM_QUANTITY) {
+    throw new ValidationError(
+      `items[${index}].quantity must be at most ${MAX_ITEM_QUANTITY}`
+    );
+  }
+
   if (
     typeof item.costPerUnit !== "number" ||
     !Number.isFinite(item.costPerUnit) ||
     item.costPerUnit < 0
   ) {
     throw new ValidationError(`items[${index}].costPerUnit must be a non-negative number`);
+  }
+
+  if (item.costPerUnit > MAX_AMOUNT) {
+    throw new ValidationError(
+      `items[${index}].costPerUnit must be at most ${MAX_AMOUNT}`
+    );
   }
 
   return {
@@ -68,6 +85,12 @@ export function validateCreatePurchaseInput(body: unknown): CreatePurchaseInput 
 
   if (!Array.isArray(input.items) || input.items.length === 0) {
     throw new ValidationError("items must be a non-empty array");
+  }
+
+  if (input.items.length > MAX_ITEMS_PER_DOCUMENT) {
+    throw new ValidationError(
+      `items must contain at most ${MAX_ITEMS_PER_DOCUMENT} entries`
+    );
   }
 
   return {
