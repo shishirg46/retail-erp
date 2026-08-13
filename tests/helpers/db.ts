@@ -14,24 +14,24 @@ import { PrismaClient } from "../../generated/prisma/client";
 import { toNumber } from "../../modules/reports/report.mapper";
 
 // Refuse to run unless TEST_DATABASE_URL points at `erp_retail_test`.
+// Throws (never touches any other DB and never exits the process) so Vitest
+// reports the guard failure as a test error instead of a silent kill.
 export function resolveTestDbUrl(): string {
   const raw = process.env.TEST_DATABASE_URL;
 
   if (!raw) {
-    console.error(
+    throw new Error(
       "TEST_DATABASE_URL is not set — refusing to run. Set it to the dedicated erp_retail_test database."
     );
-    process.exit(1);
   }
 
   const url = raw.replace(/^"|"$/g, "");
   const dbName = new URL(url).pathname.replace(/^\//, "").split("?")[0];
 
   if (dbName !== "erp_retail_test") {
-    console.error(
+    throw new Error(
       `TEST_DATABASE_URL must point at erp_retail_test (got '${dbName}') — refusing to run against any other database.`
     );
-    process.exit(1);
   }
 
   return url;

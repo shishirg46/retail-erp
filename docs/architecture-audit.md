@@ -549,13 +549,17 @@ Remaining P1 findings (F-10, F-05) are next.
    Unit (28/28) + HTTP (11/11) suites, incl. boundary-MAX success paths and a
    post-attempt liveness check.
  5. **F-10** — authentication/authorization decision + implementation (production blocker).
- 6. **F-15 — FIXED (Milestone 11).** Full D1–D7 automated regression gate
-    (`npm run test:all`, 17 suites / 197 assertions, 0 failures) against
-    `erp_retail_test` only: unit (pricing 6/6, validators 30/30) + integration
-    (sales 10/10, purchases 6/6, customer-payments 8/8, supplier-payments 5/5,
-    stock 8/8, rollback 8/8, ledger 2/2, reports 2/2) + HTTP smoke 15/15, on top
-    of the existing concurrency 5/5, unit 30/30, error 11/11, bounds 28/28,
-    http error 12/12, http bounds 11/11 suites.
+6. **F-15 — FIXED (Milestone 11, standardized on Vitest Milestone 12).**
+     Full D1–D7 automated regression gate (`npm run test:all`, 17 suites /
+     197 tests, 0 failures) against `erp_retail_test` only. Vitest is the
+     single runner (config in `vitest.config.ts`, `setupFiles:
+     tests/setup.ts`, `pool: forks`, `fileParallelism: false`). Coverage:
+     unit 105/105 (validation 30, error 11, pricing 6, validators 30, bounds
+     28), integration 49/49 (sales 10, purchases 6, customer-payments 8,
+     supplier-payments 5, stock 8, rollback 8, ledger 2, reports 2),
+     concurrency 5/5, http error 12/12, http bounds 11/11, http smoke 15/15.
+     Dev DB proven byte-identical before/after via
+     `scripts/verify-dev-db.mjs`.
  7. **F-05** — DB CHECK constraint (`stock_qty >= 0`) + secondary indexes for report/FK joins.
 
 ### P2 — Important Quality Improvements
@@ -598,10 +602,17 @@ Remaining P1 findings (F-10, F-05) are next.
    HTTP D1–D7 smoke 15/15, plus existing concurrency/bounds/error suites.
    `npm run test:all` green; dev DB (`erp_retail`) byte-identical before/after.
    Tracking: GitHub issue ERP-005.
-6. **Milestone 12 — DB hardening** (F-05): CHECK constraint + targeted indexes + migration.
-7. **Milestone 13 — Auth design + implementation** (F-10) — requires a business decision
+6. **Milestone 12 — Standardize suite on Vitest — DONE.** Same 197 tests now
+   run under Vitest (single runner) instead of tsx + node:assert; helpers and
+   guards preserved (throw instead of `process.exit`), `fileParallelism:
+   false` for the shared test DB, HTTP server lifecycle in
+   `beforeAll`/`afterAll`. `scripts/verify-dev-db.mjs` codifies the dev-DB
+   read-only check. `npm run test:all` (17 suites, 197 tests) exit 0.
+   Tracking: GitHub issue ERP-005.
+7. **Milestone 13 — DB hardening** (F-05): CHECK constraint + targeted indexes + migration.
+8. **Milestone 14 — Auth design + implementation** (F-10) — requires a business decision
    (roles/permissions) before code.
-8. Continue with previously planned roadmap (pagination/search, dashboard, advanced
+9. Continue with previously planned roadmap (pagination/search, dashboard, advanced
    reporting, production readiness).
 
 ---

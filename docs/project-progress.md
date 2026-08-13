@@ -43,7 +43,7 @@ read-only reporting layer.
 | Audit fix — F-01 product validation | COMPLETE (Milestone 8) — `product.validation.ts` wired into `POST /api/products`; invalid payloads → 400 |
 | Audit fix — F-03 error privacy | COMPLETE (Milestone 9) — generic 500 `{ "message": "Internal Server Error" }`, no raw message/path/DB/host leakage; server-side logging; unit + HTTP suites |
 | Audit fix — F-04 input upper bounds | COMPLETE (Milestone 10) — `lib/bounds.ts` caps (`MAX_ITEM_QUANTITY`, `MAX_ITEMS_PER_DOCUMENT`, `MAX_AMOUNT`) enforced in all six validators; over-limit → 400 before allocation; unit + HTTP suites |
-| Audit fix — F-15 regression suite | COMPLETE (Milestone 11) — full D1–D7 automated gate (`npm run test:all`, 17 suites / 197 assertions) against `erp_retail_test` only; dev DB proven byte-identical before/after |
+| Audit fix — F-15 regression suite | COMPLETE (Milestone 11) — full D1–D7 automated gate (`npm run test:all`, 17 suites / 197 assertions) against `erp_retail_test` only; dev DB proven byte-identical before/after. **Standardized on Vitest (Milestone 12)** — single runner, same 197 tests, exit 0 |
 | Production readiness | NOT YET COMPLETE — requires remaining fixes from the audit (F-10, F-05…) |
 
 Evidence:
@@ -399,19 +399,20 @@ DOCUMENTATION:    COMPLETE — README, AGENTS.md, business-decisions (D1–D8),
                   implementation-log, project-progress, architecture-audit,
                   postman suite
 TESTING:          COMPLETE — full D1–D7 gate (`npm run test:all`, 17 suites,
-                  197 assertions, 0 failures) against erp_retail_test only:
-                  unit pricing 6/6 + validators 30/30, integration sales 10/10,
-                  purchases 6/6, customer-payments 8/8, supplier-payments 5/5,
-                  stock 8/8, rollback 8/8, ledger 2/2, reports 2/2; HTTP error
-                  12/12, HTTP bounds 11/11, HTTP D1–D7 smoke 15/15; concurrency
-                  5/5, unit 30/30, error 11/11, bounds 28/28 (F-15 fixed)
+                  197 tests, 0 failures, Vitest) against erp_retail_test only:
+                  unit 105/105 (validation 30, error 11, pricing 6, validators
+                  30, bounds 28), integration 49/49 (sales 10, purchases 6,
+                  customer-payments 8, supplier-payments 5, stock 8, rollback
+                  8, ledger 2, reports 2), concurrency 5/5, HTTP error 12/12,
+                  HTTP bounds 11/11, HTTP D1–D7 smoke 15/15 (F-15, M11+M12)
 INPUT SAFETY:     COMPLETE — quantity/amount/items upper bounds (F-04 fixed):
                   MAX_ITEM_QUANTITY 100000, MAX_ITEMS_PER_DOCUMENT 100,
                   MAX_AMOUNT 10000000 enforced in all six validators; over-limit
                   → 400 before any allocation (DoS payload 1e8 rejected < 15 s)
 CURRENT TASK:     P0+P1 audit fixes through F-04 + F-15 — F-02 (M7, closed),
                   F-01 (M8, closed), F-03 (M9, closed), F-04 (M10, ERP-004,
-                  closed), F-15 (M11, ERP-005, evidence commented, open for PM)
+                  closed), F-15 (M11 tsx → M12 Vitest, ERP-005, evidence
+                  commented, open for PM)
 NEXT TASK:        Decide next audit fix (P1: F-10, F-05) per
                   docs/architecture-audit.md — requires a separate PM decision
 PRODUCTION READY: NO — P1 audit findings (F-10, F-05), auth/deployment

@@ -90,23 +90,29 @@ npm run dev
 
 - `npx tsc --noEmit` and `npm run lint` must stay green.
 - `npm run test:all` runs the full D1–D7 regression gate — 17 suites / 197
-  assertions — exclusively against the dedicated `erp_retail_test` database
+  tests (Vitest) — exclusively against the dedicated `erp_retail_test` database
   (`TEST_DATABASE_URL` in `.env`); every suite refuses to run against any other
   database. It covers unit (product validation, error mapping, pricing, D1–D7
   validators, input bounds), integration (sales, purchases, customer-payments,
   supplier-payments, stock adjustments, rollback, ledger, reports), HTTP
   (error contract, input bounds, full D1–D7 API smoke), and concurrency
   (stock never goes negative).
+- `node scripts/verify-dev-db.mjs` proves the gate could not have touched the
+  development database: it snapshots every `erp_retail` table row count plus a
+  product digest and fails non-zero on any difference from the baseline
+  (`snapshot` argument writes a fresh baseline). Run it with `snapshot` once,
+  then after the gate.
 - Individual suites:
-  - `npm run test:unit` — product-validation unit tests (F-01).
+  - `npm run test:unit` — product-validation unit tests (F-01) + error +
+    pricing + validators + input-bounds.
   - `npm run test:error` — error-response unit tests (F-03).
   - `npm run test:unit:pricing` — D1 tier-price unit tests.
   - `npm run test:unit:validators` — D1–D7 request-validator unit tests.
   - `npm run test:concurrency` — stock-concurrency regression suite (F-02).
   - `npm run test:bounds` — input-upper-bound unit tests (F-04).
-  - `npm run test:integration:*` — one suite per transactional flow
-    (sales, purchases, customer-payments, supplier-payments, stock,
-    rollback, ledger, reports) against `erp_retail_test`.
+  - `npm run test:integration` — all transactional flows (sales, purchases,
+    customer-payments, supplier-payments, stock, rollback, ledger, reports)
+    against `erp_retail_test`, serialized via `fileParallelism: false`.
   - `npm run test:http` — error-contract tests over real HTTP (F-03),
     including a phase where the database is unreachable — proving no driver
     text, paths, DB names, hosts, or ports leak on 500.

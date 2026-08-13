@@ -86,12 +86,11 @@ export async function ensureNoForeignDevServer(): Promise<void> {
   }
 
   if (alive) {
-    console.error(
+    throw new Error(
       `A Next dev server is already running for this project ` +
         `(pid ${lock.pid}, ${lock.appUrl}). Stop it before running this HTTP ` +
         `suite — two dev servers cannot share .next/dev.`
     );
-    process.exit(1);
   }
 
   try {

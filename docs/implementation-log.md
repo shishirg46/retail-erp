@@ -393,14 +393,70 @@ seeded entirely through the HTTP API.
 
 ---
 
+## Milestone 12 — Regression suite standardized on Vitest (F-15, ERP-005) (13 Aug 2026)
+
+**Scope (per ERP-005 follow-up, test layer only — no service/schema changes):**
+
+- Replaced the committed tsx + node:assert hand-rolled runners with **Vitest
+  3.x as the single test runner** (no Jest, no dual setup). Everything was
+  migrated **in place** from HEAD `a69db89`; behavioral coverage preserved
+  one-for-one.
+- `vitest.config.ts` — `environment: node`, `pool: forks`,
+  `fileParallelism: false` (DB-touching files stay serialized against the
+  single shared `erp_retail_test` DB), `setupFiles: tests/setup.ts`
+  (`dotenv/config`), long timeouts, alias `@` → repo root.
+- `tests/setup.ts` — loads `.env` before any import resolves config.
+- Guards preserved but converted from `process.exit(1)` to throws so Vitest
+  reports a guard failure as a test error instead of killing the process:
+  `resolveTestDbUrl()` (may only point at `erp_retail_test`) and
+  `ensureNoForeignDevServer()` (Next dev lock guard).
+- All 197 tests carried over into `*.test.ts` (Vitest describe/it/expect):
+  - Unit (105): F-01 product validation (30), error-response (11), pricing
+    D1 (6), validators D1–D7 (30), F-04 input bounds (28).
+  - Integration (49): sales S1–S10, purchases P1–P6, customer-payments
+    C1–C8, supplier-payments SP1–SP5, stock A1–A8, rollback R0–R7 (snapshot
+    rollback assertions preserved), ledger L1–L2 (raw-SQL re-derivations
+    preserved), reports RP1–RP2.
+  - Concurrency (5): F-02 S1–S5 with real `Promise.allSettled` races
+    preserved.
+  - HTTP (38): F-03 error-handling (12, incl. unreachable-DB leak-canaries),
+    F-04 input-bounds (11), D1–D7 smoke (15). Server lifecycle now via
+    Vitest `beforeAll`/`afterAll` so the spawned Next dev server is always
+    stopped on pass or fail.
+- Removed the old `.ts` suites, `tests/helpers/runner.ts`, and the `tsx`
+  devDependency+scripts; `package.json` scripts now map to `vitest run`
+  per directory. `tsx` left out of devDependencies (no other consumer).
+- `scripts/verify-dev-db.mjs` — read-only proof that the gate cannot touch
+  the development database: snapshots every `erp_retail` table row count +
+  a product digest, diffs against the baseline, fails non-zero on change.
+
+**Verified**
+
+- `npm run test:all` (the whole gate): **17 suites, 197 tests, 0 failures,
+  exit 0** — unit 105/105, integration 49/49, concurrency 5/5, http 12/12,
+  http bounds 11/11, http smoke 15/15. Matches the committed tsx baseline
+  count exactly (197).
+- `npx tsc --noEmit` green and `npm run lint` green with 0 warnings; also
+  `npx prisma validate` green.
+- `node scripts/verify-dev-db.mjs`: development database (`erp_retail`)
+  byte-identical to the baseline — all 12 application-table row counts +
+  product digest unchanged; tests touched only `erp_retail_test`.
+- No stray `next dev`/`tsx`/`vitest` processes after the gate; `.next/dev/lock`
+  cleaned up.
+- Tracking: GitHub issue **ERP-005** (F-15) — left open, Vitest evidence
+  commented for PM review.
+
+---
+
 ## Current state (13 Aug 2026)
 
 - **Done:** Products/Pricing, Sales, Purchasing, Suppliers + Supplier Payments,
   Customers + Credit Payments, Stock Adjustments, Reporting, plus audit fixes
   F-02 (concurrency), F-01 (product validation), F-03 (error privacy),
-  F-04 (input upper bounds), F-15 (automated regression suite as the gate).
+  F-04 (input upper bounds), F-15 (automated regression suite as the gate,
+  now standardized on Vitest).
   All green on `tsc --noEmit` and `eslint`; the full `npm run test:all` gate
-  (17 suites, 197 assertions) passes against `erp_retail_test`.
+  (17 suites, 197 tests) passes against `erp_retail_test`.
 - **Test data:** Rice stock 13, Oil 10, Biscuits 30; Kathmandu Wholesale balance
   0; customers Ramesh −5, Sita −100 (prepaid); wallet −4235; credit payments 405.
 - **Postman:** `postman/Retail-ERP.postman_collection.json` — 58 requests,
