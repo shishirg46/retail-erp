@@ -104,28 +104,29 @@ Initial comments are positive:
 
 ### The Products gap — is it a defect?
 
-**Finding, not a bug classification.** `POST /api/products` (`app/api/products/route.ts`) does
-three things differently from every other endpoint:
+**Resolved (F-01, Milestone 8).** `POST /api/products` (`app/api/products/route.ts`) previously
+did three things differently from every other endpoint:
 
-1. **No validation module.** `product.validation.ts` does not exist; the route casts the body
-   with `body as CreateProductInput` and passes it straight to the repository.
-2. **Bypasses the service layer** (`PrismaProductRepository.create` directly).
+1. **No validation module** — the route cast the body with `body as CreateProductInput` and
+   passed it straight to the repository.
+2. **Bypassed the service layer** (`PrismaProductRepository.create` directly).
 3. **No mapper file** — Decimal → number conversion is inline in the repository.
 
-Why this is more than cosmetic:
+Why this mattered:
 
 - A product row is **master data other modules price off**. An invalid `currentPrice`
   (negative, `NaN`) or a malformed `priceTiers` array corrupts downstream sales/purchasing
-  math. Prisma accepts arbitrary `Decimal` values, so nothing rejects a negative price today.
-- A body shape that Prisma rejects (e.g. `priceTiers: "hello"`) throws inside the route and
-  surfaces as a **raw 500 with the driver's message**, not a 400.
-- It is the only write endpoint whose request envelope is not narrowed by validation.
+  math. Prisma accepts arbitrary `Decimal` values, so nothing rejected a negative price.
+- A body shape that Prisma rejects (e.g. `priceTiers: "hello"`) threw inside the route and
+  surfaced as a **raw 500 with the driver's message**, not a 400.
+- It was the only write endpoint whose request envelope was not narrowed by validation.
 
-**Recommended fix (architectural, not a schema change):** add `modules/products/product.validation.ts`
-mirroring `purchase.validation.ts` (positive `costPrice`/`currentPrice`, integer `minQty ≥ 1`,
-positive tier `price`, bounded string lengths), and have the route validate then persist.
-Whether a thin `ProductService` is introduced is stylistic; the validation layer is the
-correctness requirement. **(See F-01.)**
+**Fix applied:** added `modules/products/product.validation.ts` mirroring `purchase.validation.ts`
+(`costPrice ≥ 0`, `currentPrice > 0`, integer `minQty ≥ 1`, positive tier `price`, bounded
+string lengths, duplicate-`minQty` rejection, unknown fields ignored) and wired the route to
+validate then persist. A thin `ProductService` was deliberately **not** introduced (decision:
+route → validation → repository). Invalid payloads now return 400; valid behavior unchanged.
+**(F-01 — FIXED.)**
 
 ---
 
@@ -230,7 +231,7 @@ existing layering. Verified-by-load-test is expected in the follow-up milestone.
 
 | Endpoint | Body validation | Notes |
 | -------- | :-------------: | ----- |
-| `POST /api/products` | **NONE** | `body as CreateProductInput`; **no `product.validation.ts`**. Negative/NaN prices, malformed tiers pass to Prisma → 500. **(F-01)** |
+| `POST /api/products` | **FIXED (F-01)** | `product.validation.ts` — name/unit/category length caps, `costPrice ≥ 0`, `currentPrice > 0`, tier `minQty ≥ 1` + price > 0, duplicate-`minQty` rejected, unknown fields ignored. Invalid payloads → 400. |
 | `POST /api/sales` | ✓ | enum `paymentType`, items non-empty, integer qty ≥ 1; customerId optional-string rule. Business checks (stock, customer-exists, CREDIT-needs-customer) correctly live in the service. |
 | `POST /api/purchases` | ✓ | enum, product exists in service, integer qty ≥ 1, costPerUnit finite ≥ 0. |
 | `POST /api/suppliers` | ✓ | name non-empty trimmed, contact optional string. |
@@ -245,7 +246,7 @@ malformed JSON returns a clean 400 in every route; unknown body fields are silen
 (acceptable); unwanted fields never persist.
 
 Weaknesses:
-- **Products has no validation at all** (F-01).
+- **Products had no validation** — now FIXED via `product.validation.ts` (F-01).
 - **No upper bounds** on quantities or amounts anywhere — `POST /api/sales` quantity feeds
   `calculatePrice`, which allocates `new Array(qty + 1)` server-side. An unauthenticated
   request with `quantity: 1e8` allocates a ~800 MB array → **memory-exhaustion DoS** (F-04).
@@ -331,7 +332,7 @@ audit confirms they are genuinely absent.
 | IDOR / resource ownership | N/A until auth exists. |
 | Unrestricted POST endpoints | All 8 POST endpoints unauthenticated. |
 | Sensitive error leakage | **F-03** — raw `error.message` on 500. |
-| Input validation | Missing only for Products (F-01); no quantity upper bounds (F-04). |
+| Input validation | Products now validated (F-01 fixed); no quantity upper bounds (F-04). |
 | SQL injection | **Safe** — all queries are parameterized Prisma; no raw SQL/string interpolation. |
 | Secrets in Git | **None.** `.env` is gitignored and untracked (`git ls-files | grep .env` empty — verified). |
 | Env handling | `lib/prisma.ts` + `prisma.config.ts` read `DATABASE_URL` via dotenv; no hardcoded secrets. |
@@ -502,7 +503,7 @@ No hygiene action required (beyond the audit commit itself).
 | ID | Severity | Area | Finding | Evidence | Why it matters | Recommended action | Migration? | Code change? | Status |
 | -- | -------- | ---- | ------- | -------- | --------------- | ------------------ | :--------: | :----------: | ------ |
 | **F-02** | **HIGH** | Concurrency | Stock availability check is read→check→write with no lock/no conditional update/no serializable isolation | `sale.service.ts:46-49,97`; `stock.service.ts:21-46`; no `isolationLevel`/`FOR UPDATE` in repo | Concurrent sales/adjustments can oversell last stock → negative stock, violating D6 | **FIXED (Milestone 7):** atomic conditional decrement via `ProductRepository.reserveStock` (`updateMany … stockQty.gte`) used for SALE + DAMAGE; `tests/concurrency/stock.ts` proves stock never goes negative; D6 reconciliation re-verified | NO | YES | FIXED |
-| **F-01** | **HIGH** | Architecture/Validation | Products endpoint has no validation, bypasses service, casts `body as CreateProductInput` | `app/api/products/route.ts:18-19`; no `product.validation.ts` | Master data other modules price off can be invalid (negative prices, bad tiers) and errors become raw 500s | Add `product.validation.ts` mirroring purchase validation; route validates before persist | NO | YES | OPEN |
+| **F-01** | **HIGH** | Architecture/Validation | Products endpoint has no validation, bypasses service, casts `body as CreateProductInput` | `app/api/products/route.ts:18-19`; no `product.validation.ts` | Master data other modules price off can be invalid (negative prices, bad tiers) and errors become raw 500s | **FIXED (Milestone 8):** added `product.validation.ts` (price polarity, tier shape, duplicate-`minQty`, string caps, unknown-fields-ignored) and wired the route to validate before persist; `tests/unit/product.validation.ts` (30/30) + 13 HTTP checks green | NO | YES | FIXED |
 | **F-03** | **HIGH** | Error handling/Security | 500 responses return raw `error.message`, contradicting the method’s own “never leaked” comment | `lib/response.ts:16-19` | Driver/DB internals leak to clients | Return generic message for non-`AppError`; log details server-side | NO | YES | OPEN |
 | **F-10** | **HIGH** | Security | No authentication/authorization/roles anywhere | No middleware; no user model; all routes unguarded | Backend cannot be exposed beyond trusted network; blocks production | Design auth/roles decision; implement as a gated milestone | NO | YES | PLANNED (preexisting) |
 | **F-04** | **MEDIUM** | Security/DoS | Unbounded sale quantity → `new Array(qty + 1)` allocation server-side | `product.service.ts:16`; `sale.validation.ts` has no upper bound | Unauthenticated large `quantity` → memory exhaustion | Add sane quantity/amount upper bounds before allocation; validate then allocate | NO | YES | OPEN |
@@ -531,10 +532,12 @@ corrupt *data* (and only under concurrent requests).
    (`ProductRepository.reserveStock`, `updateMany … stockQty.gte`) for SALE and DAMAGE, with
    `tests/concurrency/stock.ts` proving stock never goes negative. Remaining nuance: CORRECTION
    concurrency (last-writer-wins on target) remains out of scope and documented.
-2. **F-01** — `product.validation.ts` for `POST /api/products` (and route wiring).
+2. **F-01 — FIXED (Milestone 8).** `product.validation.ts` for `POST /api/products` wired into
+   the route (price polarity, tier shape, duplicate-`minQty`, string caps); invalid payloads
+   return 400. Unit tests (30/30) + 13 HTTP checks green.
 
-Rationale: F-02 (stock integrity) is done; F-01 (master data validation) is the remaining
-P0 gate for the flows every future feature builds on.
+Rationale: F-02 (stock integrity) and F-01 (master data validation) — the two P0 gates — are
+both done. P1 findings (F-03, F-10, F-04, F-15, F-05) are next.
 
 ### P1 — Should Fix Before Production
 3. **F-03** — stop leaking raw error messages on 500.
@@ -563,8 +566,10 @@ P0 gate for the flows every future feature builds on.
 1. **Milestone 7 — Concurrency hardening + atomic stock (F-02) — DONE.** Atomic conditional
    decrement for SALE + DAMAGE; `tests/concurrency/stock.ts` (5 scenarios) + 12 HTTP regression
    checks; D6 reconciliation re-verified. Tracking: GitHub issue ERP-001.
-2. **Milestone 8 — Products layering + validation** (F-01): add `product.validation.ts`,
-   wire route, tighten error to 400s; add product validation tests.
+2. **Milestone 8 — Products layering + validation (F-01) — DONE.** Added
+   `product.validation.ts` and wired the route; invalid payloads → 400;
+   `tests/unit/product.validation.ts` (30/30) + 13 HTTP checks green.
+   Tracking: GitHub issue ERP-002.
 3. **Milestone 9 — Error privacy + input bounds** (F-03, F-04): generic 500s; quantity/amount
    caps; server-side error logging.
 4. **Milestone 10 — Automated regression suite** (F-15): unit (pricing, validation) +

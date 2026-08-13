@@ -36,9 +36,10 @@ Notes on the coverage:
 - The service layer is thin pass-through for pure CRUD features (products,
   suppliers, customers) and holds the business rules for transactional flows
   (sales, purchases, supplier-payments, customer-payments, stock).
-- **Products limitation:** `POST /api/products` has no request validation and
-  goes straight through to the repository — there is no `product.validation.ts`.
-  This is a known architecture/quality finding tracked for the upcoming audit.
+- **Products validation:** `POST /api/products` validates the payload through
+  `modules/products/product.validation.ts` (required fields, price polarity,
+  price-tier shape, duplicate `minQty`, bounded string lengths) before
+  persisting; invalid payloads return 400.
 
 Routes in `app/api/` are thin: parse body → validate (where the module has a
 validator) → service/repository → `toHttpResponse(error)`.

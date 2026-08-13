@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test:unit": "tsx tests/unit/product.validation.ts",
     "test:concurrency": "tsx tests/concurrency/stock.ts"
   },
   "dependencies": {

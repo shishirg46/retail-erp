@@ -189,6 +189,42 @@ seeded entirely through the HTTP API.
 
 ---
 
+## Milestone 8 — Product creation validation (F-01) (13 Aug 2026)
+
+**Shipped**
+
+- `modules/products/product.validation.ts` — `validateCreateProductInput(body)`
+  mirroring the per-module validator conventions (sales, purchases, stock):
+  - body must be a JSON object; `name`/`unit` non-empty trimmed strings with
+    length caps (200/50); optional `category` string ≤ 100;
+  - `costPrice` finite ≥ 0; `currentPrice` finite > 0;
+  - optional `priceTiers` array (≤ 50): `minQty` positive integer ≥ 1, tier
+    `price` finite > 0, no duplicate `minQty` within the payload;
+  - unknown fields silently ignored (codebase convention).
+  All violations throw `ValidationError` → HTTP 400.
+- `app/api/products/route.ts` — `POST` now validates (`body as CreateProductInput`
+  cast removed) then persists via `PrismaProductRepository`. No service layer
+  introduced (F-01 option A: route → validation → repository).
+- `tests/unit/product.validation.ts` + `npm run test:unit` — pure validator
+  unit tests (tsx + node:assert, no DB).
+
+**Verified**
+
+- `npm run test:unit`: 30/30 pass (valid product, optional fields, invalid
+  name/unit/prices, NaN/Infinity/non-finite, invalid tiers, duplicate `minQty`,
+  non-object body, unknown fields ignored, clean returned input).
+- HTTP regression against `erp_retail_test`: 13/13 pass — valid product 201
+  (with and without tiers), malformed JSON 400, non-object 400, missing name 400,
+  negative/NaN `currentPrice` 400, negative `costPrice` 400, tier `minQty` 0 400,
+  duplicate `minQty` 400, non-array `priceTiers` 400, unknown fields 201. Only
+  the 3 valid payloads persisted (no invalid payload leaked into the DB).
+- `npx tsc --noEmit`, `npm run lint`, `prisma validate` all green.
+- Dev database (`erp_retail`) untouched — row counts identical before/after.
+- Tracking: GitHub issue **ERP-002** (F-01: Harden product creation validation
+  and service architecture).
+
+---
+
 ## Current state (13 Aug 2026)
 
 - **Done:** Products/Pricing, Sales, Purchasing, Suppliers + Supplier Payments,

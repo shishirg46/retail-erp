@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { toHttpResponse } from "@/lib/response";
 import { PrismaProductRepository } from "@/modules/products/product.repository";
-import type { CreateProductInput } from "@/modules/products/product.types";
+import { validateCreateProductInput } from "@/modules/products/product.validation";
 
 export async function POST(req: NextRequest) {
   try {
@@ -15,9 +15,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: "Invalid JSON body" }, { status: 400 });
     }
 
-    const product = await new PrismaProductRepository(prisma).create(
-      body as CreateProductInput
-    );
+    const input = validateCreateProductInput(body);
+
+    const product = await new PrismaProductRepository(prisma).create(input);
 
     return NextResponse.json(product, { status: 201 });
   } catch (error) {
