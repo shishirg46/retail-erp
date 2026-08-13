@@ -39,7 +39,8 @@ read-only reporting layer.
 | Inventory architecture (stock ledger) | COMPLETE |
 | Reporting | COMPLETE |
 | Architecture audit | COMPLETE — see [`docs/architecture-audit.md`](architecture-audit.md) |
-| Production readiness | NOT YET COMPLETE — requires fixes from the audit |
+| Audit fix — F-02 stock concurrency | COMPLETE (Milestone 7) — atomic conditional decrement for SALE + DAMAGE; concurrency regression suite |
+| Production readiness | NOT YET COMPLETE — requires remaining fixes from the audit (F-01, F-03, F-10…) |
 
 Evidence:
 
@@ -73,6 +74,7 @@ verified live).
 | 10 | Reporting | Read-only reporting | COMPLETE | `modules/reports/`, `app/api/reports/` | All 6 reports match raw SQL; read-only proven (D7) |
 | 11 | Documentation | Business Decisions & Logs | COMPLETE | `docs/business-decisions.md`, `docs/implementation-log.md`, `README.md`, `AGENTS.md` | D1–D7 recorded; milestone log current |
 | 12 | API verification | Postman collection | COMPLETE | `postman/Retail-ERP.postman_collection.json` | 58 requests / 9 folders covering success + failure paths |
+| 13 | Audit Fix | F-02 stock concurrency hardening | COMPLETE | `modules/products/product.repository.ts` (`reserveStock`), `modules/sales/sale.service.ts`, `modules/stock/stock.service.ts`, `tests/concurrency/stock.ts` | Atomic conditional decrement for SALE + DAMAGE; concurrency suite (5 scenarios) + 12 HTTP regression checks all pass; dev DB untouched |
 
 ## 4. Business Decisions Locked
 
@@ -202,13 +204,15 @@ SQL.
   `origin/main`.
 
 **WHAT IS CURRENTLY BEING WORKED ON**
-- Nothing new — the **FULL ERP ARCHITECTURE AUDIT** is now COMPLETE. Findings and
-  fix order in [`docs/architecture-audit.md`](architecture-audit.md). No code
-  fixes started yet; awaiting project-manager decision on which findings to fix.
+- **F-02 stock concurrency hardening is COMPLETE (Milestone 7)** — see
+  [`docs/architecture-audit.md`](architecture-audit.md) (F-02 → FIXED) and
+  [`docs/implementation-log.md`](implementation-log.md) (Milestone 7). Tracking:
+  GitHub issue ERP-001. Awaiting PM review of the fix before closing the issue.
+- Next audit fix pending PM decision: F-01 (products validation).
 
 **WHAT HAS NOT BEEN STARTED**
-- Fixes from the audit (see [`docs/architecture-audit.md`](architecture-audit.md)
-  "Recommended Fix Order" — P0: atomic stock / concurrency, products validation).
+- Remaining fixes from the audit (see [`docs/architecture-audit.md`](architecture-audit.md)
+  "Recommended Fix Order" — F-01 products validation; P1: F-03, F-10, F-04, F-15, F-05).
 - Automated unit/integration tests (`tests/unit/` is empty).
 - Authentication / authorization / roles.
 - Frontend UI; dashboards; advanced reporting; exports; pagination/search.
@@ -227,13 +231,14 @@ SQL.
 The **full ERP architecture audit is complete** — see
 [`docs/architecture-audit.md`](architecture-audit.md) for the 16-section report,
 finding table (F-01…F-16), recommended fix order (P0–P3), and proposed next
-milestones. Nothing in the audit was fixed; all items below are proposals to
-review with the project manager.
+milestones. **F-02 (stock concurrency) is fixed (Milestone 7)**; remaining
+items below are proposals to review with the project manager.
 
-### Step 1 — Decide & Fix P0 Findings
-P0 (per audit): (1) atomic stock availability under concurrency (F-02) with a
-concurrency test proving stock never goes negative; (2) products validation
-layer for `POST /api/products` (F-01).
+### Step 1 — Fix P0 Findings
+P0 (per audit): **(1) F-02 atomic stock availability under concurrency — DONE**
+(atomic conditional decrement for SALE + DAMAGE, `tests/concurrency/stock.ts`
+proving stock never goes negative); (2) products validation layer for
+`POST /api/products` (F-01) — NOT STARTED.
 
 ### Step 2 — Fix Remaining HIGH/Selected Findings
 P1 (per audit): raw error-message leakage on 500 (F-03), auth/roles decision
@@ -278,7 +283,7 @@ Derived from actual repository inspection. Issues are honest and verifiable.
 | ----- | -------- | -------- | ----------------------- | ------ |
 | No automated tests (unit/integration) | High | `tests/unit/` is empty; verification is manual/live + Postman | Add tests for the transactional flows after the audit | OPEN |
 | No `.env.example` | Medium | `README.md` instructs `cp .env.example .env` but the file does not exist | Create `.env.example` from `.env` shape | OPEN |
-| Concurrency not formally verified | Medium | Concurrent stock/sales ops never load-tested; `stockQty` updates rely on `increment` within transactions | Load-test concurrent sales/stock adjustments in the audit | NOT VERIFIED |
+| Concurrency not formally verified | Medium | Concurrent stock/sales ops never load-tested; `stockQty` updates rely on `increment` within transactions | **RESOLVED (Milestone 7)** — SALE + DAMAGE use atomic conditional decrement (`reserveStock`); `tests/concurrency/stock.ts` proves no oversell and D6 holds | VERIFIED |
 | CORRECTION with a negative target is a 400 (validation) rather than the 409 of D6 | Low | Validation rejects negative integers before the service's `InsufficientStockError`; 409 effectively reachable only via DAMAGE | Document or align semantics in the audit (behavior is safe) | KNOWN, DOCUMENTED |
 | Per-product sales `amount` carries the D1 ≤ 3 paisa drift | Low | `productQuantities.amount = Σ qty × pricePerUnit` (e.g. 340.06 vs 340) | Keep informational; document in report docs | KNOWN, ACCEPTED (D1) |
 | No pagination / search / filtering on list endpoints | Low | `GET /api/*` return full lists | Add after near-term hardening | OPEN |
@@ -343,23 +348,25 @@ reconciliation commit that follows it was pushed.
 ## 15. Final Status Snapshot
 
 ```
-PROJECT STATUS:   BACKEND COMPLETE; ARCHITECTURE AUDIT COMPLETE; FIXES PENDING
+PROJECT STATUS:   BACKEND COMPLETE; AUDIT COMPLETE; F-02 FIXED; P0 F-01 PENDING
 CORE BACKEND:     COMPLETE — products, sales, purchases, suppliers, customers,
                   customer credit, stock adjustments, wallet ledger
 FINANCIAL FLOWS:  COMPLETE — wallet balance, supplier balance, signed customer
                   credit (D3/D4), no COGS/profit (D2/D7)
 INVENTORY:        COMPLETE — auditable StockMovement ledger; invariant holds per
-                  product (D6); concurrency race noted in audit (F-02)
+                  product (D6); SALE + DAMAGE concurrency-safe (F-02 fixed);
+                  CORRECTION target stays last-writer-wins (documented)
 REPORTING:        COMPLETE — 6 read-only reports, SQL-verified, no stored totals
                   (D7)
-DOCUMENTATION:    COMPLETE — README, AGENTS.md, business-decisions (D1–D7),
+DOCUMENTATION:    COMPLETE — README, AGENTS.md, business-decisions (D1–D8),
                   implementation-log, project-progress, architecture-audit,
                   postman suite
-TESTING:          PARTIAL — Postman + live/SQL verification pass; no automated
-                  tests; concurrency unverified
-CURRENT TASK:     Architecture audit completed and documented (this file + audit)
-NEXT TASK:        Decide & fix P0 findings (atomic stock F-02, products
-                  validation F-01) per docs/architecture-audit.md
-PRODUCTION READY: NO — P0/P1 audit findings, regression testing, and
+TESTING:          PARTIAL → IMPROVED — Postman + live/SQL verification pass;
+                  automated concurrency suite added (tests/concurrency/stock.ts,
+                  5 scenarios, green); no unit/integration framework yet (F-15)
+CURRENT TASK:     F-02 stock concurrency hardened (Milestone 7) + docs updated
+NEXT TASK:        PM review of F-02 (ERP-001); then decide & fix F-01 products
+                  validation per docs/architecture-audit.md
+PRODUCTION READY: NO — P0 F-01, P1 audit findings, regression testing, and
                   auth/deployment decisions remain
 ```

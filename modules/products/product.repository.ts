@@ -1,5 +1,6 @@
 import { prisma } from "../../lib/prisma";
 import { Prisma } from "../../generated/prisma/client";
+import { ValidationError } from "../../lib/errors";
 
 import type {
   Product,
@@ -86,6 +87,27 @@ export class PrismaProductRepository implements ProductRepository {
     });
 
     return toProduct(raw);
+  }
+
+  async reserveStock(id: string, qty: number): Promise<Product | null> {
+    if (!Number.isInteger(qty) || qty <= 0) {
+      throw new ValidationError("quantity must be a positive integer");
+    }
+
+    // Atomic conditional decrement: the row is only updated when at least
+    // `qty` remains. Under Postgres READ COMMITTED the UPDATE re-evaluates
+    // the WHERE clause against the latest committed row version, so two
+    // racing transactions cannot both succeed on the last unit.
+    const result = await this.db.product.updateMany({
+      where: { id, stockQty: { gte: qty } },
+      data: { stockQty: { decrement: qty } },
+    });
+
+    if (result.count === 0) {
+      return null;
+    }
+
+    return this.findById(id);
   }
 
   async updateCostPrice(id: string, costPrice: number): Promise<Product> {

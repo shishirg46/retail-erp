@@ -501,7 +501,7 @@ No hygiene action required (beyond the audit commit itself).
 
 | ID | Severity | Area | Finding | Evidence | Why it matters | Recommended action | Migration? | Code change? | Status |
 | -- | -------- | ---- | ------- | -------- | --------------- | ------------------ | :--------: | :----------: | ------ |
-| **F-02** | **HIGH** | Concurrency | Stock availability check is read→check→write with no lock/no conditional update/no serializable isolation | `sale.service.ts:46-49,97`; `stock.service.ts:21-46`; no `isolationLevel`/`FOR UPDATE` in repo | Concurrent sales/adjustments can oversell last stock → negative stock, violating D6 | Atomic conditional decrement (`updateMany … stockQty.gte`) or `FOR UPDATE` or serializable+retry; add load test | NO | YES | OPEN |
+| **F-02** | **HIGH** | Concurrency | Stock availability check is read→check→write with no lock/no conditional update/no serializable isolation | `sale.service.ts:46-49,97`; `stock.service.ts:21-46`; no `isolationLevel`/`FOR UPDATE` in repo | Concurrent sales/adjustments can oversell last stock → negative stock, violating D6 | **FIXED (Milestone 7):** atomic conditional decrement via `ProductRepository.reserveStock` (`updateMany … stockQty.gte`) used for SALE + DAMAGE; `tests/concurrency/stock.ts` proves stock never goes negative; D6 reconciliation re-verified | NO | YES | FIXED |
 | **F-01** | **HIGH** | Architecture/Validation | Products endpoint has no validation, bypasses service, casts `body as CreateProductInput` | `app/api/products/route.ts:18-19`; no `product.validation.ts` | Master data other modules price off can be invalid (negative prices, bad tiers) and errors become raw 500s | Add `product.validation.ts` mirroring purchase validation; route validates before persist | NO | YES | OPEN |
 | **F-03** | **HIGH** | Error handling/Security | 500 responses return raw `error.message`, contradicting the method’s own “never leaked” comment | `lib/response.ts:16-19` | Driver/DB internals leak to clients | Return generic message for non-`AppError`; log details server-side | NO | YES | OPEN |
 | **F-10** | **HIGH** | Security | No authentication/authorization/roles anywhere | No middleware; no user model; all routes unguarded | Backend cannot be exposed beyond trusted network; blocks production | Design auth/roles decision; implement as a gated milestone | NO | YES | PLANNED (preexisting) |
@@ -527,12 +527,14 @@ corrupt *data* (and only under concurrent requests).
 ## Recommended Fix Order
 
 ### P0 — Must Fix Before Further Feature Development
-1. **F-02** — atomic stock availability (conditional decrement / `FOR UPDATE` / serializable
-   + retry) **+ concurrency test proving stock never goes negative**.
+1. **F-02 — FIXED (Milestone 7).** Atomic stock availability via conditional decrement
+   (`ProductRepository.reserveStock`, `updateMany … stockQty.gte`) for SALE and DAMAGE, with
+   `tests/concurrency/stock.ts` proving stock never goes negative. Remaining nuance: CORRECTION
+   concurrency (last-writer-wins on target) remains out of scope and documented.
 2. **F-01** — `product.validation.ts` for `POST /api/products` (and route wiring).
 
-Rationale: both gate data integrity in the flows every future feature builds on (stock and
-master data).
+Rationale: F-02 (stock integrity) is done; F-01 (master data validation) is the remaining
+P0 gate for the flows every future feature builds on.
 
 ### P1 — Should Fix Before Production
 3. **F-03** — stop leaking raw error messages on 500.
@@ -558,8 +560,9 @@ master data).
 
 *(Planned only — NOT implemented in this audit. To be reviewed with the project manager.)*
 
-1. **Milestone 7 — Concurrency hardening + atomic stock** (F-02): atomic decrement/guard +
-   a real two-request concurrency test + load verification; re-run SQL reconciliation invariants.
+1. **Milestone 7 — Concurrency hardening + atomic stock (F-02) — DONE.** Atomic conditional
+   decrement for SALE + DAMAGE; `tests/concurrency/stock.ts` (5 scenarios) + 12 HTTP regression
+   checks; D6 reconciliation re-verified. Tracking: GitHub issue ERP-001.
 2. **Milestone 8 — Products layering + validation** (F-01): add `product.validation.ts`,
    wire route, tighten error to 400s; add product validation tests.
 3. **Milestone 9 — Error privacy + input bounds** (F-03, F-04): generic 500s; quantity/amount

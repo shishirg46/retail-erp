@@ -152,6 +152,43 @@ seeded entirely through the HTTP API.
 
 ---
 
+## Milestone 7 — Concurrency hardening + atomic stock (F-02) (13 Aug 2026)
+
+**Shipped**
+
+- `ProductRepository.reserveStock(id, qty)` — atomic conditional decrement:
+  `updateMany({ where: { id, stockQty: { gte: qty } }, data: { stockQty:
+  { decrement: qty } } })`, returning the updated product on success or `null`
+  when stock is insufficient. Postgres re-evaluates the `WHERE` against the
+  latest committed row version under a lock, so two racing transactions cannot
+  both win the last unit. Guards `qty` as a positive integer.
+- `SaleService.createSale` — step 4 now uses `reserveStock`; a failed reserve
+  throws `InsufficientStockError` (409) and rolls the whole sale back. The
+  fast-path read check remains for a helpful message; the atomic update is the
+  authority.
+- `StockService.adjustStock` — DAMAGE now uses `reserveStock` (no read→check→
+  write race). CORRECTION keeps the original read→check→write path (target is
+  last-writer-wins; documented out of scope for F-02).
+- `tests/concurrency/stock.ts` + `npm run test:concurrency` — concurrency
+  regression suite running against the dedicated `erp_retail_test` database
+  (`TEST_DATABASE_URL`). Refuses to run against any other database.
+
+**Verified**
+
+- All 5 concurrency scenarios pass: 2 parallel sales on last unit; 10 parallel
+  sales on stock 5; 2 parallel DAMAGE on stock 2; parallel SALE+DAMAGE on last
+  unit; sell-out then purchase replenishment.
+- `Product.stockQty == Σ StockMovement.qtyChange` asserted per scenario.
+- DAMAGE verified to produce no wallet/customer/supplier side effects.
+- HTTP regression (12 checks via curl against the API): CORRECTION seed,
+  DAMAGE valid + 409 + 400, SALE valid + 409, CREDIT-sale-without-customer 400,
+  movements list, and the stock reconciliation invariant.
+- `npx tsc --noEmit`, `npm run lint`, `prisma validate` all green.
+- Dev database (`erp_retail`) untouched — row counts identical before/after.
+- Tracking: GitHub issue **ERP-001** (F-02: Harden stock concurrency).
+
+---
+
 ## Current state (13 Aug 2026)
 
 - **Done:** Products/Pricing, Sales, Purchasing, Suppliers + Supplier Payments,

@@ -33,6 +33,10 @@ export interface ProductRepository {
   findById(id: string): Promise<Product | null>;
   list(): Promise<Product[]>;
   updateStock(id: string, qtyChange: number): Promise<Product>;
+  // Atomically decrement stock if sufficient quantity is available (F-02).
+  // Returns the updated product on success, or null when stockQty < qty.
+  // The successful atomic update is the authority for availability.
+  reserveStock(id: string, qty: number): Promise<Product | null>;
   // Purchases reprice the product to the latest buying cost (see D2).
   updateCostPrice(id: string, costPrice: number): Promise<Product>;
 }

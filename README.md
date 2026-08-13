@@ -79,6 +79,9 @@ npm run dev
 ## Verification workflow
 
 - `npx tsc --noEmit` and `npm run lint` must stay green.
+- `npm run test:concurrency` runs the stock-concurrency regression suite against
+  the dedicated `erp_retail_test` database (`TEST_DATABASE_URL` in `.env`). It
+  refuses to run against any other database.
 - Import the Postman collection (`postman/Retail-ERP.postman_collection.json`)
   and run folders in order — ids chain via environment variables.
 - Reconciliation invariants, verified via SQL:
@@ -88,8 +91,10 @@ npm run dev
 
 ## Documentation
 
-- [`docs/business-decisions.md`](docs/business-decisions.md) — D1–D7 business
+- [`docs/business-decisions.md`](docs/business-decisions.md) — D1–D8 business
   and architecture decisions
 - [`docs/implementation-log.md`](docs/implementation-log.md) — milestone log
 - [`docs/project-progress.md`](docs/project-progress.md) — current status,
   roadmap, and known risks
+- [`docs/architecture-audit.md`](docs/architecture-audit.md) — audit findings
+  (F-01…F-16) and fix status

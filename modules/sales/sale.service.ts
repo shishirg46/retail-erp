@@ -34,6 +34,7 @@ export class SaleService {
 
       // 1. Resolve products, check stock, price each item independently.
       const drafts: SaleItemDraft[] = [];
+      const names = new Map<string, string>();
       let grandTotal = 0;
 
       for (const item of input.items) {
@@ -43,6 +44,11 @@ export class SaleService {
           throw new NotFoundError(`Product '${item.productId}' not found`);
         }
 
+        names.set(product.id, product.name);
+
+        // Fast-path availability check for a helpful error message. The
+        // authoritative check happens atomically in step 4 (F-02), so this
+        // read→check race can no longer oversell stock.
         if (product.stockQty < item.quantity) {
           throw new InsufficientStockError(
             `${product.name} has only ${product.stockQty} in stock but ${item.quantity} requested`
@@ -93,8 +99,21 @@ export class SaleService {
       });
 
       // 4. Move stock down and record an auditable movement per product.
+      //    The atomic conditional decrement is the authority for availability:
+      //    if the row no longer has enough stock it returns null and the whole
+      //    sale rolls back (F-02).
       for (const draft of drafts) {
-        await productRepository.updateStock(draft.productId, -draft.quantity);
+        const reserved = await productRepository.reserveStock(
+          draft.productId,
+          draft.quantity
+        );
+
+        if (!reserved) {
+          throw new InsufficientStockError(
+            `${names.get(draft.productId)} no longer has ${draft.quantity} units in stock`
+          );
+        }
+
         await stockRepository.createMovement({
           productId: draft.productId,
           qtyChange: -draft.quantity,

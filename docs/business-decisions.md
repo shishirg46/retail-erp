@@ -317,3 +317,63 @@ misrepresent true economics until a costing method is chosen (D2).
 **Testing impact:** each report value is re-derived by direct SQL and must match;
 date filters shrink `totalSales`/`totalPurchases` to records in range; wallet/
 customer/supplier/stock counts unchanged after report queries (read-only).
+
+---
+
+## D8 — Atomic stock availability via conditional decrement (F-02)
+
+**Status:** Accepted — 13 Aug 2026
+
+**Current behavior (before)**
+Sales and DAMAGE checked stock with a read (`findById` → `stockQty` comparison)
+before writing `stockQty` with an unconditional `increment`. Under Postgres
+READ COMMITTED, two concurrent transactions could both pass the check and both
+decrement — overselling the last unit and driving `stockQty` negative (audit
+finding F-02, violating D6's never-negative rule).
+
+**Proposed behavior**
+A new repository primitive, `ProductRepository.reserveStock(id, qty)`, performs
+an atomic **conditional decrement**:
+
+```
+UPDATE products
+SET stock_qty = stock_qty - qty
+WHERE id = <productId> AND stock_qty >= qty
+```
+
+The number of rows the UPDATE matches is the single authority for availability:
+
+- match (1 row) → stock reserved, returns the updated product;
+- no match → returns `null` → the service throws
+  `InsufficientStockError` (HTTP 409) and the whole `$transaction` rolls back.
+
+SALE (step 4 of `SaleService.createSale`) and DAMAGE
+(`StockService.adjustStock`) now reserve through this primitive. Postgres
+re-evaluates the `WHERE` clause against the latest committed row version when a
+row was concurrently modified, so two racing writers on the last unit cannot
+both win.
+
+**Reason**
+Stock must never go negative even under simultaneous counter requests; an
+app-layer read-check-write cannot guarantee that, and a database CHECK
+constraint alone would fail the whole transaction with an unhelpful 500. The
+atomic conditional UPDATE is cheap, requires no schema change, and preserves
+the one-transaction-per-operation boundary already in place.
+
+**Scope note**
+Only SALE and DAMAGE are hardened. **CORRECTION keeps the original
+read→check→write path** — its `quantity` means a *desired final level*, so
+concurrent CORRECTIONS are last-writer-wins on the target. This nuance is
+documented and deliberately out of scope for F-02. A DB `CHECK (stock_qty >= 0)`
+backstop is a separate finding (F-05), intentionally not bundled here.
+
+**Database impact:** none (no schema/migration change; the primitive is a
+conditional UPDATE on the existing `products.stock_qty`).
+**API impact:** none on payloads/status codes — insufficient stock already maps
+to `409 InsufficientStockError`, now also under concurrent requests.
+**Existing feature impact:** none for sequential behavior; concurrent SALE/DAMAGE
+can no longer oversell. Purchases and CORRECTION unchanged.
+**Testing impact:** `tests/concurrency/stock.ts` (`npm run test:concurrency`)
+runs 5 scenarios against the dedicated `erp_retail_test` database proving no
+oversell, D6 reconciliation, and no wallet/customer/supplier side effects from
+DAMAGE. Regression: `tsc`, `lint`, `prisma validate`, 12 HTTP checks.

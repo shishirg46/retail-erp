@@ -24,22 +24,45 @@ export class StockService {
         throw new NotFoundError(`Product '${input.productId}' not found`);
       }
 
-      // 2. Signed change per D6:
-      //    DAMAGE -> -quantity (amount ruined)
-      //    CORRECTION -> target - current (desired final level)
-      const qtyChange =
-        input.reason === "DAMAGE"
-          ? -input.quantity
-          : input.quantity - product.stockQty;
+      // DAMAGE: atomic conditional decrement (F-02). The successful atomic
+      // update is the authority for availability — a read→check→write race
+      // can no longer drive stock below zero.
+      if (input.reason === "DAMAGE") {
+        const reserved = await productRepository.reserveStock(
+          input.productId,
+          input.quantity
+        );
 
-      // 3. Never allow stock to go below zero — reject before any write.
+        if (!reserved) {
+          throw new InsufficientStockError(
+            `${product.name} no longer has ${input.quantity} units to adjust — stock cannot go negative`
+          );
+        }
+
+        const movement = await stockRepository.createMovement({
+          productId: input.productId,
+          qtyChange: -input.quantity,
+          reason: "DAMAGE",
+          note: input.note,
+        });
+
+        return {
+          product: { id: reserved.id, stockQty: reserved.stockQty },
+          movement,
+        };
+      }
+
+      // CORRECTION: target - current (desired final level), D6. Kept as the
+      // original read→check→write path — its concurrency model is
+      // last-writer-wins on the target, documented out of scope for F-02.
+      const qtyChange = input.quantity - product.stockQty;
+
       if (product.stockQty + qtyChange < 0) {
         throw new InsufficientStockError(
           `adjustment would leave ${product.name} at ${product.stockQty + qtyChange} units — stock cannot go negative`
         );
       }
 
-      // 4. Apply + audit, atomically. No wallet/customer/supplier side-effects.
       const updated = await productRepository.updateStock(
         input.productId,
         qtyChange
