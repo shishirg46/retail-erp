@@ -329,7 +329,8 @@ seeded entirely through the HTTP API.
 - `npx tsc --noEmit`, `npm run lint`, `prisma validate` all green.
 - Dev database (`erp_retail`) untouched — all application-table row counts
   byte-identical before/after the suites; no stray `next dev` servers left.
-- Tracking: GitHub issue **ERP-004** (F-04: DoS via unbounded quantity input).
+- Tracking: GitHub issue **ERP-004** (F-04: DoS via unbounded quantity input) —
+  *closed (PM-approved), Milestone 10 complete.*
 
 ---
 

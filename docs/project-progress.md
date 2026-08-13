@@ -226,7 +226,7 @@ SQL.
   unit (`test:bounds` 28/28) + HTTP (`test:http:bounds` 11/11, incl. boundary
   MAX success + liveness) suites added. Tracking:
   [GitHub issue ERP-004](https://github.com/shishirg46/retail-erp/issues/4).
-  Awaiting PM review before closing the issue.
+  Closed (PM-approved).
 - Next audit fix pending PM decision: P1 findings (F-10 auth, F-15 test
   framework, F-05 DB constraints/indexes).
 
@@ -398,10 +398,9 @@ INPUT SAFETY:     COMPLETE — quantity/amount/items upper bounds (F-04 fixed):
                   MAX_AMOUNT 10000000 enforced in all six validators; over-limit
                   → 400 before any allocation (DoS payload 1e8 rejected < 15 s)
 CURRENT TASK:     P0+P1 audit fixes through F-04 — F-02 (M7, closed), F-01
-                  (M8, closed), F-03 (M9, closed), F-04 (M10, ERP-004, awaiting
-                  PM review)
-NEXT TASK:        PM review of F-04 (ERP-004); then decide next audit fix
-                  (P1: F-10, F-15, F-05) per docs/architecture-audit.md
+                  (M8, closed), F-03 (M9, closed), F-04 (M10, ERP-004, closed)
+NEXT TASK:        Decide next audit fix (P1: F-10, F-15, F-05) per
+                  docs/architecture-audit.md — requires a separate PM decision
 PRODUCTION READY: NO — P1 audit findings (F-10, F-15, F-05),
                   regression testing, and auth/deployment decisions remain
 ```
