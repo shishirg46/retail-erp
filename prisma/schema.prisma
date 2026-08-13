@@ -1,0 +1,243 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Product {
+  id            String   @id @default(uuid())
+  name          String
+  category      String?
+  unit          String   // e.g. "pcs", "kg", "liter"
+  costPrice     Decimal  @map("cost_price")
+  currentPrice  Decimal  @map("current_price")
+  stockQty      Int      @default(0) @map("stock_qty")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  priceTiers      PriceTier[]
+  purchaseItems   PurchaseItem[]
+  saleItems       SaleItem[]
+  stockMovements  StockMovement[]
+
+  @@map("products")
+}
+
+// Tiered / bundle pricing, e.g. "1 for 10, 3 for 20"
+// Applied greedily at sale time: largest min_qty tier first, then smaller tiers,
+// remainder not converted to product (matches real shop behavior — no change given).
+model PriceTier {
+  id        String  @id @default(uuid())
+  productId String  @map("product_id")
+  minQty    Int     @map("min_qty")
+  price     Decimal
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, minQty])
+  @@map("price_tiers")
+}
+
+// ────────────────────────────────
+// Suppliers & Purchasing
+// ────────────────────────────────
+
+model Supplier {
+  id          String   @id @default(uuid())
+  name        String
+  contact     String?
+  balanceOwed Decimal  @default(0) @map("balance_owed") // what the shop owes this supplier
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  purchases        Purchase[]
+  supplierPayments SupplierPayment[]
+
+  @@map("suppliers")
+}
+
+// One purchase = one trip to wholesale, can contain multiple products
+model Purchase {
+  id          String               @id @default(uuid())
+  supplierId  String               @map("supplier_id")
+  date        DateTime             @default(now())
+  paymentType PurchasePaymentType  @map("payment_type")
+  total       Decimal
+
+  supplier Supplier       @relation(fields: [supplierId], references: [id])
+  items    PurchaseItem[]
+
+  @@map("purchases")
+}
+
+model PurchaseItem {
+  id          String  @id @default(uuid())
+  purchaseId  String  @map("purchase_id")
+  productId   String  @map("product_id")
+  qty         Int
+  costPerUnit Decimal @map("cost_per_unit") // price paid at time of purchase
+
+  purchase Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [productId], references: [id])
+
+  @@map("purchase_items")
+}
+
+// Payments made to a supplier against what the shop owes them
+model SupplierPayment {
+  id         String   @id @default(uuid())
+  supplierId String   @map("supplier_id")
+  amount     Decimal
+  date       DateTime @default(now())
+
+  supplier Supplier @relation(fields: [supplierId], references: [id])
+
+  @@map("supplier_payments")
+}
+
+// ────────────────────────────────
+// Customers & Sales
+// ────────────────────────────────
+
+model Customer {
+  id          String   @id @default(uuid())
+  name        String
+  contact     String?
+  balanceOwed Decimal  @default(0) @map("balance_owed") // what this customer owes the shop
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  sales          Sale[]
+  creditPayments CreditPayment[]
+
+  @@map("customers")
+}
+
+enum PaymentType {
+  CASH
+  ECASH  // digital payment (mobile wallet / QR)
+  CREDIT // loan — buy today, pay later
+}
+
+// How a purchase was paid for.
+enum PurchasePaymentType {
+  CASH   // paid in full at purchase time -> wallet withdrawal immediately
+  CREDIT // supplier carries the balance -> Supplier.balanceOwed increases
+}
+
+// One sale = one transaction at the counter, can contain multiple products
+model Sale {
+  id          String      @id @default(uuid())
+  customerId  String?     @map("customer_id") // null for anonymous cash sales
+  date        DateTime    @default(now())
+  paymentType PaymentType @map("payment_type")
+  total       Decimal
+
+  customer           Customer?           @relation(fields: [customerId], references: [id])
+  items              SaleItem[]
+  creditPayments     CreditPayment[]
+  walletTransactions WalletTransaction[]
+
+  @@map("sales")
+}
+
+model SaleItem {
+  id            String  @id @default(uuid())
+  saleId        String  @map("sale_id")
+  productId     String  @map("product_id")
+  qty           Int
+  pricePerUnit  Decimal @map("price_per_unit") // frozen price charged at time of sale
+
+  sale    Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@map("sale_items")
+}
+
+// Payments a customer makes toward what they owe.
+// saleId is optional — supports paying off one specific sale, or a lump-sum
+// payment against the customer's overall balance (saleId left null).
+model CreditPayment {
+  id         String   @id @default(uuid())
+  customerId String   @map("customer_id")
+  saleId     String?  @map("sale_id")
+  amount     Decimal
+  date       DateTime @default(now())
+
+  customer Customer @relation(fields: [customerId], references: [id])
+  sale     Sale?    @relation(fields: [saleId], references: [id])
+
+  walletTransactions WalletTransaction[]
+
+  @@map("credit_payments")
+}
+
+// ────────────────────────────────
+// Wallet (digital cash box)
+// ────────────────────────────────
+
+enum WalletTxnType {
+  DEPOSIT     // money coming in
+  WITHDRAWAL  // money taken out
+}
+
+enum WalletTxnSource {
+  SALE               // auto-created from a cash/e-cash sale
+  CREDIT_PAYMENT     // auto-created when a customer pays off owed credit
+  SUPPLIER_PAYMENT   // auto-created when a CASH purchase or supplier payment takes money out
+  OWNER_WITHDRAWAL   // owner takes cash out for personal use
+  EXPENSE            // cash paid out for a shop expense
+  BANK_DEPOSIT       // cash moved out of the box into a bank account
+  OTHER
+}
+
+// Running cash-box balance = sum of all wallet transactions.
+// Cash/e-cash sales and credit payoffs create a DEPOSIT automatically;
+// everything else is logged manually by whoever's managing the till.
+model WalletTransaction {
+  id              String          @id @default(uuid())
+  type            WalletTxnType
+  source          WalletTxnSource
+  amount          Decimal
+  date            DateTime        @default(now())
+  note            String?
+  saleId          String?         @map("sale_id")           // set when source = SALE
+  creditPaymentId String?         @map("credit_payment_id") // set when source = CREDIT_PAYMENT
+
+  sale          Sale?          @relation(fields: [saleId], references: [id])
+  creditPayment CreditPayment? @relation(fields: [creditPaymentId], references: [id])
+
+  @@map("wallet_transactions")
+}
+
+// ────────────────────────────────
+// Stock tracking
+// ────────────────────────────────
+
+enum StockReason {
+  PURCHASE
+  SALE
+  DAMAGE
+  CORRECTION
+}
+
+// Every stock change logged with a reason — audit trail instead of a silently
+// updated Product.stockQty number.
+model StockMovement {
+  id        String      @id @default(uuid())
+  productId String      @map("product_id")
+  qtyChange Int         @map("qty_change") // positive = stock in, negative = stock out
+  reason    StockReason
+  date      DateTime    @default(now())
+  note      String?
+
+  product Product @relation(fields: [productId], references: [id])
+
+  @@map("stock_movements")
+}
