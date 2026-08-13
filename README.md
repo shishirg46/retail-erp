@@ -2,8 +2,8 @@
 
 A production-style Retail ERP for a small shop — sales, purchasing, customer
 credit, inventory with an auditable stock ledger, and a read-only reporting
-layer. Built on Next.js API routes with a strict **Route → Service →
-Repository → Prisma** layering.
+layer. Built on Next.js API routes with a **Route → Service → Repository →
+Prisma** layering (simple CRUD features may skip the service layer).
 
 ## Stack
 
@@ -15,17 +15,33 @@ Repository → Prisma** layering.
 
 ## Architecture
 
-Every feature follows the same shape under `modules/<feature>/`:
+Modules under `modules/<feature>/` follow an opinionated but **not uniform**
+shape. Files exist where the feature needs them:
 
-| File | Responsibility |
-| ---- | -------------- |
-| `*.types.ts` | Domain types + repository interface |
-| `*.validation.ts` | Request validation → `ValidationError` (400) |
-| `*.mapper.ts` | Prisma model ↔ domain mapping (Decimal → number) |
-| `*.repository.ts` | Persistence; takes a transaction client |
-| `*.service.ts` | Business rules; one `$transaction` per multi-step operation |
+| File | Responsibility | Present |
+| ---- | -------------- | ------- |
+| `*.types.ts` | Domain types + repository interface | all modules |
+| `*.validation.ts` | Request validation → `ValidationError` (400) | sales, purchases, suppliers, supplier-payments, customers, customer-payments, stock, reports |
+| `*.mapper.ts` | Prisma model ↔ domain mapping (Decimal → number) | sales, purchases, customers, reports |
+| `*.repository.ts` | Persistence; takes a transaction client | all modules |
+| `*.service.ts` | Business rules; one `$transaction` per multi-step operation | products, sales, purchases, suppliers, supplier-payments, customers, customer-payments, stock, reports |
 
-Routes in `app/api/` are thin: validate → service → `toHttpResponse(error)`.
+Notes on the coverage:
+
+- Simple CRUD features (products, suppliers, customers) convert Decimal → number
+  inline in their repository/mapper rather than always having a dedicated
+  `*.mapper.ts`.
+- `modules/wallet/` is a shared repository only (types + repository) — wallet
+  side effects are driven by the sales/purchases/payment services.
+- The service layer is thin pass-through for pure CRUD features (products,
+  suppliers, customers) and holds the business rules for transactional flows
+  (sales, purchases, supplier-payments, customer-payments, stock).
+- **Products limitation:** `POST /api/products` has no request validation and
+  goes straight through to the repository — there is no `product.validation.ts`.
+  This is a known architecture/quality finding tracked for the upcoming audit.
+
+Routes in `app/api/` are thin: parse body → validate (where the module has a
+validator) → service/repository → `toHttpResponse(error)`.
 
 Money is `Decimal` in Postgres, `number` in the application (converted at
 repository boundaries). All business rules are enforced in services, never in
@@ -49,11 +65,16 @@ repositories. Historical prices are frozen (`SaleItem.pricePerUnit`,
 ## Setup
 
 ```bash
-cp .env.example .env   # DATABASE_URL -> your PostgreSQL
+# Create .env with your DATABASE_URL (no .env.example is shipped yet — see note)
+printf 'DATABASE_URL=postgresql://USER:PASS@localhost:5432/erp_retail\n' > .env
 npm install
 npx prisma migrate dev
 npm run dev
 ```
+
+> **Note:** `.env.example` does not currently exist in the repository (tracked as
+> a known gap for the upcoming audit). Provide `DATABASE_URL` in `.env` before
+> running Prisma.
 
 ## Verification workflow
 
@@ -70,3 +91,5 @@ npm run dev
 - [`docs/business-decisions.md`](docs/business-decisions.md) — D1–D7 business
   and architecture decisions
 - [`docs/implementation-log.md`](docs/implementation-log.md) — milestone log
+- [`docs/project-progress.md`](docs/project-progress.md) — current status,
+  roadmap, and known risks

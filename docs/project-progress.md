@@ -44,11 +44,13 @@ read-only reporting layer.
 Evidence:
 
 - **Branch:** `main`
-- **Latest commit:** `c2d6073 feat: wallet transaction ledger`
-- **Milestone/feature commits:** 9 feature/milestone commits after the initial
-  scaffold (10 commits total on `main`) — verifiable via
-  `git rev-list --count 9065199..HEAD`.
-- **Working tree:** clean (`git status -s` empty).
+- **Latest commit:** `8a28c10 docs: project progress tracker` (before this
+  reconciliation commit)
+- **Milestone/feature commits:** 10 commits after the initial scaffold (11 total
+  on `main`) — verifiable via `git rev-list --count 9065199..HEAD`.
+- **Working tree:** clean (`git status -s` empty). At the time of writing `main`
+  was 1 commit ahead of `origin/main`; the documentation reconciliation commit
+  below is pushed to sync them.
 - **Typecheck / lint:** currently pass — `npx tsc --noEmit` OK, `npm run lint`
   OK.
 
@@ -195,8 +197,9 @@ SQL.
 - Products & tier pricing, Sales, Purchasing, Suppliers, Supplier Payments,
   Customers, Customer Credit, Stock Adjustments, Wallet ledger, Reporting.
 - Business decision records D1–D7; milestone implementation log.
-- Postman API verification suite; README; repository committed and pushed to
-  GitHub (`shishirg46/retail-erp`, `main`), working tree clean.
+- Postman API verification suite; README; repository committed on GitHub
+  (`shishirg46/retail-erp`, `main`), working tree clean, `main` in sync with
+  `origin/main`.
 
 **WHAT IS CURRENTLY BEING WORKED ON**
 - Nothing new — the roadmap places the **FULL ERP ARCHITECTURE / IMPLEMENTATION
@@ -273,7 +276,7 @@ Derived from actual repository inspection. Issues are honest and verifiable.
 | Per-product sales `amount` carries the D1 ≤ 3 paisa drift | Low | `productQuantities.amount = Σ qty × pricePerUnit` (e.g. 340.06 vs 340) | Keep informational; document in report docs | KNOWN, ACCEPTED (D1) |
 | No pagination / search / filtering on list endpoints | Low | `GET /api/*` return full lists | Add after near-term hardening | OPEN |
 | No auth / authorization anywhere | High (for production) | No auth middleware or user model in schema | Decide as part of production readiness | FUTURE |
-| `tests/unit/` empty directory committed intent only | Low | Empty dir in tree | Fill with tests or remove | OPEN |
+| `tests/unit/` empty directory — untracked intent only | Low | Empty dir present on disk; `git ls-files tests/` shows nothing (git does not track empty directories) | Fill with tests or remove | OPEN |
 
 ## 12. Important Files
 
@@ -305,9 +308,13 @@ From `git log --oneline` (hashes are actual):
 | `c901cbf` | Business decisions D1–D7 + implementation log | Merged into history |
 | `1fe00b2` | Project README + agent conventions | Merged into history |
 | `510ca48` | Postman collection (58 requests / 9 folders) | Merged into history |
-| `c2d6073` | Wallet transaction ledger | HEAD / latest |
+| `c2d6073` | Wallet transaction ledger | Merged into history |
+| `8a28c10` | Project progress tracker (this file) | Merged into history |
+| docs reconciliation | Documentation reconciliation + sync with `origin/main` (this commit) | HEAD / latest |
 
 Branch `main`, tracked at `origin/main` (`github.com/shishirg46/retail-erp`).
+`8a28c10` was 1 commit ahead of `origin/main` until the documentation
+reconciliation commit that follows it was pushed.
 
 ## 14. How To Update This File
 
