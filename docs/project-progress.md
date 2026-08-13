@@ -41,7 +41,8 @@ read-only reporting layer.
 | Architecture audit | COMPLETE — see [`docs/architecture-audit.md`](architecture-audit.md) |
 | Audit fix — F-02 stock concurrency | COMPLETE (Milestone 7) — atomic conditional decrement for SALE + DAMAGE; concurrency regression suite |
 | Audit fix — F-01 product validation | COMPLETE (Milestone 8) — `product.validation.ts` wired into `POST /api/products`; invalid payloads → 400 |
-| Production readiness | NOT YET COMPLETE — requires remaining fixes from the audit (F-03, F-10, F-04, F-15, F-05…) |
+| Audit fix — F-03 error privacy | COMPLETE (Milestone 9) — generic 500 `{ "message": "Internal Server Error" }`, no raw message/path/DB/host leakage; server-side logging; unit + HTTP suites |
+| Production readiness | NOT YET COMPLETE — requires remaining fixes from the audit (F-10, F-04, F-15, F-05…) |
 
 Evidence:
 
@@ -77,6 +78,7 @@ verified live).
 | 12 | API verification | Postman collection | COMPLETE | `postman/Retail-ERP.postman_collection.json` | 58 requests / 9 folders covering success + failure paths |
 | 13 | Audit Fix | F-02 stock concurrency hardening | COMPLETE | `modules/products/product.repository.ts` (`reserveStock`), `modules/sales/sale.service.ts`, `modules/stock/stock.service.ts`, `tests/concurrency/stock.ts` | Atomic conditional decrement for SALE + DAMAGE; concurrency suite (5 scenarios) + 12 HTTP regression checks all pass; dev DB untouched |
 | 14 | Audit Fix | F-01 product validation | COMPLETE | `modules/products/product.validation.ts`, `app/api/products/route.ts`, `tests/unit/product.validation.ts` | `POST /api/products` validates before persist; invalid payloads → 400; unit tests 30/30 + 13 HTTP checks pass; dev DB untouched |
+| 15 | Audit Fix | F-03 error privacy (sanitized 500s) | COMPLETE | `lib/response.ts`, `tests/unit/error-response.ts`, `tests/http/error-handling.ts` | Generic 500 for all non-AppError failures (message/paths/DB/host/port never leaked), original error logged server-side; unit 11/11 + HTTP 12/12 incl. unreachable-DB leak-canary proof; F-01/F-02 regressions re-run green; dev DB untouched |
 
 ## 4. Business Decisions Locked
 
@@ -210,10 +212,15 @@ SQL.
   GitHub issue ERP-001.
 - **F-01 product validation is COMPLETE (Milestone 8)** — see
   [`docs/architecture-audit.md`](architecture-audit.md) (F-01 → FIXED) and
-  [`docs/implementation-log.md`](implementation-log.md) (Milestone 8). Tracking:
-  GitHub issue ERP-002. Awaiting PM review before closing the issue.
-- Next audit fix pending PM decision: P1 findings (F-03 error privacy, F-10 auth,
-  F-04 input bounds, F-15 test framework, F-05 DB constraints/indexes).
+  [`docs/implementation-log.md`](implementation-log.md) (Milestone 8). Closed in
+  ERP-002.
+- **F-03 error privacy is COMPLETE (Milestone 9)** — generic sanitized 500s with
+  server-side logging; unit (`test:error` 11/11) + HTTP (`test:http` 12/12,
+  unreachable-DB leak-canary proof) suites added. Tracking:
+  [GitHub issue ERP-003](https://github.com/shishirg46/retail-erp/issues/3).
+  Awaiting PM review before closing the issue.
+- Next audit fix pending PM decision: P1 findings (F-10 auth, F-04 input bounds,
+  F-15 test framework, F-05 DB constraints/indexes).
 
 **WHAT HAS NOT BEEN STARTED**
 - Remaining fixes from the audit (see [`docs/architecture-audit.md`](architecture-audit.md)
@@ -247,9 +254,9 @@ proving stock never goes negative); **(2) products validation for
 route; invalid payloads → 400; `tests/unit/product.validation.ts` 30/30).
 
 ### Step 2 — Fix Remaining HIGH/Selected Findings
-P1 (per audit): raw error-message leakage on 500 (F-03), auth/roles decision
-(F-10), input upper bounds (F-04), automated test framework (F-15), DB CHECK +
-indexes (F-05).
+P1 (per audit): raw error-message leakage on 500 (F-03) — **DONE (Milestone 9)**;
+auth/roles decision (F-10), input upper bounds (F-04), automated test framework
+(F-15), DB CHECK + indexes (F-05).
 
 ### Step 3 — Regression Testing
 Run the complete existing feature suite after fixes (Postman folders + SQL
@@ -264,10 +271,10 @@ Only after the audit findings and regression testing.
 Required to make the backend robust, per
 [`docs/architecture-audit.md`](architecture-audit.md) recommended fix order:
 **atomic stock / concurrency hardening (F-02) — DONE**; **products validation
-(F-01) — DONE**; error privacy (F-03), input bounds (F-04), automated tests for
-the existing flows (F-15), DB CHECK + indexes (F-05), `.env.example`,
-pagination / search / filtering on list endpoints, concurrency verification by
-load test.
+(F-01) — DONE**; **error privacy (F-03) — DONE**; input bounds (F-04),
+automated tests for the existing flows (F-15), DB CHECK + indexes (F-05),
+`.env.example`, pagination / search / filtering on list endpoints, concurrency
+verification by load test.
 
 ### Medium Term
 Features/modules that logically follow: authentication/authorization and
@@ -290,6 +297,7 @@ Derived from actual repository inspection. Issues are honest and verifiable.
 | ----- | -------- | -------- | ----------------------- | ------ |
 | No automated tests (unit/integration) | High | `tests/unit/` was empty; verification is manual/live + Postman | **PARTIAL (Milestones 7-8)** — concurrency suite (`tests/concurrency/`) + validator unit tests (`tests/unit/product.validation.ts`) added; full transactional-flow test framework is F-15 | OPEN (F-15) |
 | No `.env.example` | Medium | `README.md` instructs `cp .env.example .env` but the file does not exist | Create `.env.example` from `.env` shape | OPEN |
+| Raw error messages leaked on 500 | High | `lib/response.ts` returned `error.message` for non-`AppError` (F-03) | **RESOLVED (Milestone 9)** — generic 500 body; details logged server-side; `test:error` 11/11 + `test:http` 12/12 (incl. unreachable-DB leak-canary proof) | VERIFIED |
 | Concurrency not formally verified | Medium | Concurrent stock/sales ops never load-tested; `stockQty` updates rely on `increment` within transactions | **RESOLVED (Milestone 7)** — SALE + DAMAGE use atomic conditional decrement (`reserveStock`); `tests/concurrency/stock.ts` proves no oversell and D6 holds | VERIFIED |
 | CORRECTION with a negative target is a 400 (validation) rather than the 409 of D6 | Low | Validation rejects negative integers before the service's `InsufficientStockError`; 409 effectively reachable only via DAMAGE | Document or align semantics in the audit (behavior is safe) | KNOWN, DOCUMENTED |
 | Per-product sales `amount` carries the D1 ≤ 3 paisa drift | Low | `productQuantities.amount = Σ qty × pricePerUnit` (e.g. 340.06 vs 340) | Keep informational; document in report docs | KNOWN, ACCEPTED (D1) |
@@ -355,7 +363,7 @@ reconciliation commit that follows it was pushed.
 ## 15. Final Status Snapshot
 
 ```
-PROJECT STATUS:   BACKEND COMPLETE; AUDIT COMPLETE; P0 F-02 + F-01 FIXED
+PROJECT STATUS:   BACKEND COMPLETE; AUDIT COMPLETE; P0 F-02/F-01 + P1 F-03 FIXED
 CORE BACKEND:     COMPLETE — products, sales, purchases, suppliers, customers,
                   customer credit, stock adjustments, wallet ledger
 FINANCIAL FLOWS:  COMPLETE — wallet balance, supplier balance, signed customer
@@ -365,17 +373,21 @@ INVENTORY:        COMPLETE — auditable StockMovement ledger; invariant holds p
                   CORRECTION target stays last-writer-wins (documented)
 MASTER DATA:      COMPLETE — products validated before persist (F-01 fixed):
                   price polarity, tier shape, string caps, 400 on invalid
+ERROR HANDLING:   COMPLETE — sanitized 500s (F-03 fixed): unexpected errors return
+                  exactly {message:"Internal Server Error"}, no message/path/DB/
+                  host leak; details logged server-side; 400/404/409 unchanged
 REPORTING:        COMPLETE — 6 read-only reports, SQL-verified, no stored totals
                   (D7)
 DOCUMENTATION:    COMPLETE — README, AGENTS.md, business-decisions (D1–D8),
                   implementation-log, project-progress, architecture-audit,
                   postman suite
-TESTING:          PARTIAL → IMPROVED — Postman + live/SQL verification pass;
-                  automated concurrency suite (5 scenarios) + validator unit
-                  tests (30/30) green; full unit/integration framework is F-15
-CURRENT TASK:     P0 audit fixes complete — F-02 (M7, closed) + F-01 (M8, ERP-002)
-NEXT TASK:        PM review of F-01 (ERP-002); then decide next audit fix
-                  (P1: F-03, F-10, F-04, F-15, F-05) per docs/architecture-audit.md
-PRODUCTION READY: NO — P1 audit findings (F-03, F-10, F-04, F-15, F-05),
+TESTING:          IMPROVED — concurrency (5/5), validator unit (30/30), error
+                  unit (11/11), HTTP error integration (12/12) all green;
+                  full unit/integration framework is F-15
+CURRENT TASK:     P0+P1 audit fixes through F-03 — F-02 (M7, closed), F-01
+                  (M8, closed), F-03 (M9, ERP-003, awaiting PM review)
+NEXT TASK:        PM review of F-03 (ERP-003); then decide next audit fix
+                  (P1: F-10, F-04, F-15, F-05) per docs/architecture-audit.md
+PRODUCTION READY: NO — P1 audit findings (F-10, F-04, F-15, F-05),
                   regression testing, and auth/deployment decisions remain
 ```

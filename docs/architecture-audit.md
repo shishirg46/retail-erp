@@ -269,16 +269,13 @@ Weaknesses:
 | 400 for validation/business-input errors | ✓ |
 | 404 for missing resources | ✓ (`[id]` routes and services both return consistent `{ message }` 404) |
 | 409 for conflicts / insufficient stock | ✓ (`InsufficientStockError`), also stock adjustment guard |
-| 500 for unexpected errors | ⚠️ **leaks `error.message`** — see F-03 |
-| Raw Prisma/driver errors can leak | **Yes.** `error instanceof Error ? error.message : "Internal Server Error"` returns the raw (driver-level) message with status 500. The method’s own comment claims these are “never leaked” — the code contradicts it. |
+| 500 for unexpected errors | ✓ **FIXED (F-03, Milestone 9)** — generic message exactly |
+| Raw Prisma/driver errors can leak | **No.** `lib/response.ts` returns `{ message: "Internal Server Error" }` for any non-`AppError` (message, stack, Prisma meta, paths, DB/host/port never serialized); the original error is logged server-side via `console.error`. Proven over real HTTP with an unreachable DB (`tests/http/error-handling.ts`). |
 | Stack traces can leak | No — stack is not serialized. |
 | Inconsistent error formats | No — all errors are `{ message }`. |
 | Errors swallowed | No — all async callbacks rethrow; failed txn rolls back and is mapped. |
 
-**F-03 (HIGH):** `lib/response.ts:16-19` returns the raw `Error.message` for any non-`AppError`.
-A Prisma/driver failure (e.g. a constraint error or a transient connection message) is shown
-verbatim to the client. Recommended: always return a generic message for non-`AppError`
-(and log the detail server-side).
+**F-03 (HIGH) — FIXED (Milestone 9):** `lib/response.ts` previously returned the raw `Error.message` for any non-`AppError`. Now every unexpected failure maps to exactly `{ "message": "Internal Server Error" }` (500), with the original error logged server-side (`console.error("[unhandled-error]", error)`). Covered by `tests/unit/error-response.ts` (11/11) and `tests/http/error-handling.ts` (12/12), the latter proving over real HTTP — against an unreachable database — that no driver text, filesystem paths, DB names, hosts, ports, or Prisma invocation details reach the client.
 
 ---
 
@@ -331,7 +328,7 @@ audit confirms they are genuinely absent.
 | Authorization / roles | **None.** Every endpoint open to any caller. **(F-10)** |
 | IDOR / resource ownership | N/A until auth exists. |
 | Unrestricted POST endpoints | All 8 POST endpoints unauthenticated. |
-| Sensitive error leakage | **F-03** — raw `error.message` on 500. |
+| Sensitive error leakage | **FIXED (F-03, Milestone 9)** — generic 500 body, details logged server-side. |
 | Input validation | Products now validated (F-01 fixed); no quantity upper bounds (F-04). |
 | SQL injection | **Safe** — all queries are parameterized Prisma; no raw SQL/string interpolation. |
 | Secrets in Git | **None.** `.env` is gitignored and untracked (`git ls-files | grep .env` empty — verified). |
@@ -504,7 +501,7 @@ No hygiene action required (beyond the audit commit itself).
 | -- | -------- | ---- | ------- | -------- | --------------- | ------------------ | :--------: | :----------: | ------ |
 | **F-02** | **HIGH** | Concurrency | Stock availability check is read→check→write with no lock/no conditional update/no serializable isolation | `sale.service.ts:46-49,97`; `stock.service.ts:21-46`; no `isolationLevel`/`FOR UPDATE` in repo | Concurrent sales/adjustments can oversell last stock → negative stock, violating D6 | **FIXED (Milestone 7):** atomic conditional decrement via `ProductRepository.reserveStock` (`updateMany … stockQty.gte`) used for SALE + DAMAGE; `tests/concurrency/stock.ts` proves stock never goes negative; D6 reconciliation re-verified | NO | YES | FIXED |
 | **F-01** | **HIGH** | Architecture/Validation | Products endpoint has no validation, bypasses service, casts `body as CreateProductInput` | `app/api/products/route.ts:18-19`; no `product.validation.ts` | Master data other modules price off can be invalid (negative prices, bad tiers) and errors become raw 500s | **FIXED (Milestone 8):** added `product.validation.ts` (price polarity, tier shape, duplicate-`minQty`, string caps, unknown-fields-ignored) and wired the route to validate before persist; `tests/unit/product.validation.ts` (30/30) + 13 HTTP checks green | NO | YES | FIXED |
-| **F-03** | **HIGH** | Error handling/Security | 500 responses return raw `error.message`, contradicting the method’s own “never leaked” comment | `lib/response.ts:16-19` | Driver/DB internals leak to clients | Return generic message for non-`AppError`; log details server-side | NO | YES | OPEN |
+| **F-03** | **HIGH** | Error handling/Security | 500 responses return raw `error.message`, contradicting the method’s own “never leaked” comment | `lib/response.ts:16-19` | Driver/DB internals leak to clients | **FIXED (Milestone 9):** generic 500 `{ "message": "Internal Server Error" }` for any non-`AppError`, details logged server-side; `tests/unit/error-response.ts` (11/11) + `tests/http/error-handling.ts` (12/12) incl. unreachable-DB leak-canary checks | NO | YES | FIXED |
 | **F-10** | **HIGH** | Security | No authentication/authorization/roles anywhere | No middleware; no user model; all routes unguarded | Backend cannot be exposed beyond trusted network; blocks production | Design auth/roles decision; implement as a gated milestone | NO | YES | PLANNED (preexisting) |
 | **F-04** | **MEDIUM** | Security/DoS | Unbounded sale quantity → `new Array(qty + 1)` allocation server-side | `product.service.ts:16`; `sale.validation.ts` has no upper bound | Unauthenticated large `quantity` → memory exhaustion | Add sane quantity/amount upper bounds before allocation; validate then allocate | NO | YES | OPEN |
 | **F-05** | **MEDIUM** | Database | No CHECK constraints (notably `stock_qty >= 0`) and no secondary indexes on report/FK columns | `schema.prisma`; `prisma/migrations/*` | Negative stock physically storable; report joins scan as tables grow | Add constraint via migration (or DB-level guard) + indexes on `(product_id, date)`, `date`/`source`, `customer_id`, `supplier_id` | YES | YES | OPEN |
@@ -536,11 +533,14 @@ corrupt *data* (and only under concurrent requests).
    the route (price polarity, tier shape, duplicate-`minQty`, string caps); invalid payloads
    return 400. Unit tests (30/30) + 13 HTTP checks green.
 
-Rationale: F-02 (stock integrity) and F-01 (master data validation) — the two P0 gates — are
-both done. P1 findings (F-03, F-10, F-04, F-15, F-05) are next.
+Rationale: F-02 (stock integrity), F-01 (master data validation), and F-03
+(error privacy) — three of the four actionable HIGHs — are done. P1 findings
+(F-10, F-04, F-15, F-05) are next.
 
 ### P1 — Should Fix Before Production
-3. **F-03** — stop leaking raw error messages on 500.
+3. **F-03 — FIXED (Milestone 9).** Generic 500 (no message/path/DB/host/port
+   leakage) with server-side logging; unit suite (11/11) + HTTP suite (12/12)
+   incl. unreachable-DB leak-canary proof.
 4. **F-10** — authentication/authorization decision + implementation (production blocker).
 5. **F-04** — quantity/amount upper bounds (removes DoS surface).
 6. **F-15** — automated test framework with unit, integration, rollback, and concurrency
@@ -570,8 +570,11 @@ both done. P1 findings (F-03, F-10, F-04, F-15, F-05) are next.
    `product.validation.ts` and wired the route; invalid payloads → 400;
    `tests/unit/product.validation.ts` (30/30) + 13 HTTP checks green.
    Tracking: GitHub issue ERP-002.
-3. **Milestone 9 — Error privacy + input bounds** (F-03, F-04): generic 500s; quantity/amount
-   caps; server-side error logging.
+3. **Milestone 9 — Error privacy (F-03) — DONE.** Generic 500 with server-side
+   logging (`lib/response.ts`); `tests/unit/error-response.ts` (11/11) +
+   `tests/http/error-handling.ts` (12/12, unreachable-DB leak-canary proof).
+   Tracking: GitHub issue ERP-003. (Note: audit draft grouped F-04 here; F-04
+   is now a separate milestone.)
 4. **Milestone 10 — Automated regression suite** (F-15): unit (pricing, validation) +
    integration (each flow against a test Postgres, asserting wallet/customer/supplier/stock
    side effects and rollback behavior).

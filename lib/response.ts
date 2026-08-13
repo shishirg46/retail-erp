@@ -13,8 +13,7 @@ export function toHttpResponse(error: unknown): NextResponse {
     );
   }
 
-  const message =
-    error instanceof Error ? error.message : "Internal Server Error";
+  console.error("[unhandled-error]", error);
 
-  return NextResponse.json({ message }, { status: 500 });
+  return NextResponse.json({ message: "Internal Server Error" }, { status: 500 });
 }

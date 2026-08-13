@@ -225,15 +225,67 @@ seeded entirely through the HTTP API.
 
 ---
 
+## Milestone 9 — Error privacy / sanitized 500s (F-03) (13 Aug 2026)
+
+**Shipped**
+
+- `lib/response.ts` — the generic (non-`AppError`) branch of `toHttpResponse`
+  no longer returns `error.message`. Every unexpected failure now maps to
+  exactly `{ "message": "Internal Server Error" }` with status 500, and the
+  original error is logged server-side via `console.error("[unhandled-error]", error)`.
+  This is the single choke point all 20 API route handlers already funnel
+  through, so no route, service, or repository changed. `AppError` handling
+  (400/404/409) is untouched.
+- `tests/unit/error-response.ts` + `npm run test:error` — unit tests for
+  `toHttpResponse`: every `AppError` subclass keeps status + message; raw
+  `Error`, Prisma-style errors (code/meta), connection-string errors, and
+  non-`Error` thrown values all map to the sanitized 500; leak-canary
+  assertions (driver text, paths, host/port, DB names, `findMany`, stack);
+  server-side logging asserted.
+- `tests/http/error-handling.ts` + `npm run test:http` — real HTTP integration
+  suite that spawns a Next.js dev server against `erp_retail_test`:
+  - Phase 1 (test DB): expected errors keep status + message — malformed JSON
+    400, invalid product payload 400, CREDIT-without-customer 400, unknown
+    product/sale id 404, DAMAGE-above-stock 409, valid product 201 + list 200.
+  - Phase 2 (unreachable `DATABASE_URL`): genuine Prisma driver failure proves
+    the actual HTTP response is sanitized — `GET /api/products`,
+    `POST /api/products`, `GET /api/sales`, and `GET /api/reports/sales` all
+    return exactly `{ "message": "Internal Server Error" }` with 500 and no
+    leak of paths, Prisma text, DB names, hosts, ports, or driver messages.
+  - Guards: refuses to run unless `TEST_DATABASE_URL` points at
+    `erp_retail_test`; detects a foreign (developer's) `next dev` server via
+    `.next/dev/lock` and fails clearly; cleans up its own servers and stale
+    locks on exit. No new dependencies.
+- `package.json` — added `test:error` and `test:http` scripts.
+
+**Verified**
+
+- `npm run test:error`: 11/11 pass.
+- `npm run test:http`: 12/12 pass (8 Phase-1 regression checks + 4 Phase-2
+  sanitized-500 checks with leak-canary assertions).
+- Deviation found and fixed during implementation: Next 16 dev writes
+  `.next/dev/lock` and refuses a second dev server in the same project —
+  harness now handles stale/foreign locks explicitly.
+- F-01/F-02 regressions unchanged: `npm run test:unit` 30/30, concurrency 5/5.
+- `npx tsc --noEmit`, `npm run lint`, `prisma validate` all green.
+- Dev database (`erp_retail`) untouched — all 12 application-table row counts
+  byte-identical before/after the suites.
+- Tracking: GitHub issue **ERP-003** (F-03: Prevent internal error information
+  leakage).
+
+---
+
 ## Current state (13 Aug 2026)
 
 - **Done:** Products/Pricing, Sales, Purchasing, Suppliers + Supplier Payments,
-  Customers + Credit Payments, Stock Adjustments, Reporting. All green on
-  `tsc --noEmit` and `eslint`.
+  Customers + Credit Payments, Stock Adjustments, Reporting, plus audit fixes
+  F-02 (concurrency), F-01 (product validation), F-03 (error privacy). All
+  green on `tsc --noEmit` and `eslint`; unit/error/http/concurrency suites pass.
 - **Test data:** Rice stock 13, Oil 10, Biscuits 30; Kathmandu Wholesale balance
   0; customers Ramesh −5, Sita −100 (prepaid); wallet −4235; credit payments 405.
 - **Postman:** `postman/Retail-ERP.postman_collection.json` — 58 requests,
   9 folders (Products, Suppliers, Purchases, Supplier Payments, Stock
   Adjustments, Customers, Customer Payments & Credit Lifecycle, Sales — Tier
   Pricing & Payment Types, Reports).
-- **Next:** full ERP architecture audit before adding more features.
+- **Next:** remaining P1 audit fixes (F-10 auth, F-04 input bounds, F-15 test
+  framework, F-05 DB constraints/indexes) — each a separate planned milestone.

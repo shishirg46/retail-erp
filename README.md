@@ -42,7 +42,10 @@ Notes on the coverage:
   persisting; invalid payloads return 400.
 
 Routes in `app/api/` are thin: parse body → validate (where the module has a
-validator) → service/repository → `toHttpResponse(error)`.
+validator) → service/repository → `toHttpResponse(error)`. Every unexpected
+(non-`AppError`) failure returns exactly `{ "message": "Internal Server Error" }`
+with status 500 — raw error details are logged server-side and never exposed to
+clients (F-03).
 
 Money is `Decimal` in Postgres, `number` in the application (converted at
 repository boundaries). All business rules are enforced in services, never in
@@ -83,6 +86,15 @@ npm run dev
 - `npm run test:concurrency` runs the stock-concurrency regression suite against
   the dedicated `erp_retail_test` database (`TEST_DATABASE_URL` in `.env`). It
   refuses to run against any other database.
+- `npm run test:unit` runs the product-validation unit tests (F-01).
+- `npm run test:error` runs the error-response unit tests (F-03): expected
+  application errors keep their 400/404/409 status + message; every unexpected
+  failure maps to exactly `{ "message": "Internal Server Error" }`.
+- `npm run test:http` spawns a Next.js dev server against `erp_retail_test`
+  and verifies the error contract over real HTTP, including a phase where the
+  database is unreachable — proving no driver text, paths, DB names, hosts, or
+  ports leak on 500. Refuses to run if `TEST_DATABASE_URL` is not
+  `erp_retail_test` or a dev server is already running for the project.
 - Import the Postman collection (`postman/Retail-ERP.postman_collection.json`)
   and run folders in order — ids chain via environment variables.
 - Reconciliation invariants, verified via SQL:
