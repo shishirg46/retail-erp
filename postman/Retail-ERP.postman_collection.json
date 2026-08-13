@@ -1,0 +1,1524 @@
+{
+  "info": {
+    "name": "Retail ERP — Full Coverage",
+    "description": "Products, Suppliers, Purchases, Supplier Payments, Customers, Customer Payments, Sales. Run folders in order; ids chain via environment variables. Products/Sales pricing run off the min-cost DP; customer credit lifecycle plus D4/D5 semantics are covered in the Customer Payments folder.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3001"
+    }
+  ],
+  "item": [
+    {
+      "name": "Products",
+      "item": [
+        {
+          "name": "Create Regular Product",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "pm.test('stock 0', () => pm.expect(pm.response.json().stockQty).to.eql(0));",
+                  "pm.test('chain regularId', () => pm.environment.set('regularId', pm.response.json().id));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/products",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"Regular Item\",\"category\":\"Grocery\",\"unit\":\"pcs\",\"costPrice\":10,\"currentPrice\":20}"
+            }
+          }
+        },
+        {
+          "name": "Create Tiered Product",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "pm.test('2 tiers', () => pm.expect(pm.response.json().priceTiers).to.have.lengthOf(2));",
+                  "pm.test('chain tieredId', () => pm.environment.set('tieredId', pm.response.json().id));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/products",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"Tiered Item\",\"category\":\"Grocery\",\"unit\":\"pcs\",\"costPrice\":30,\"currentPrice\":20,\"priceTiers\":[{\"minQty\":3,\"price\":50},{\"minQty\":5,\"price\":90}]}"
+            }
+          }
+        },
+        {
+          "name": "List Products",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('list', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/products",
+            "header": []
+          }
+        },
+        {
+          "name": "Get Product by id",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/products/{{regularId}}",
+            "header": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "Suppliers",
+      "item": [
+        {
+          "name": "Create Supplier",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "pm.test('balance 0', () => pm.expect(pm.response.json().balanceOwed).to.eql(0));",
+                  "pm.test('chain supplierId', () => pm.environment.set('supplierId', pm.response.json().id));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/suppliers",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"Kathmandu Wholesale\",\"contact\":\"9841000000\"}"
+            }
+          }
+        },
+        {
+          "name": "List Suppliers",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('list', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/suppliers",
+            "header": []
+          }
+        },
+        {
+          "name": "Blank name → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/suppliers",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\" \"}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Purchases",
+      "description": "Stock comes from purchases (D2/D3). CASH debits the wallet immediately; CREDIT raises supplier balance.",
+      "item": [
+        {
+          "name": "CASH Purchase — multi-item (2000)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "pm.test('total 2000', () => pm.expect(pm.response.json().total).to.eql(2000));",
+                  "pm.test('chain cashPurchaseId', () => pm.environment.set('cashPurchaseId', pm.response.json().id));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/purchases",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"supplierId\":\"{{supplierId}}\",\"paymentType\":\"CASH\",\"items\":[{\"productId\":\"{{regularId}}\",\"quantity\":50,\"costPerUnit\":10},{\"productId\":\"{{tieredId}}\",\"quantity\":50,\"costPerUnit\":30}]}"
+            }
+          }
+        },
+        {
+          "name": "CREDIT Purchase — multi-item (1000)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "pm.test('total 1000', () => pm.expect(pm.response.json().total).to.eql(1000));",
+                  "pm.test('chain creditPurchaseId', () => pm.environment.set('creditPurchaseId', pm.response.json().id));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/purchases",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"supplierId\":\"{{supplierId}}\",\"paymentType\":\"CREDIT\",\"items\":[{\"productId\":\"{{regularId}}\",\"quantity\":30,\"costPerUnit\":12},{\"productId\":\"{{tieredId}}\",\"quantity\":20,\"costPerUnit\":32}]}"
+            }
+          }
+        },
+        {
+          "name": "Missing supplier → 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/purchases",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"supplierId\":\"ghost\",\"paymentType\":\"CASH\",\"items\":[{\"productId\":\"{{regularId}}\",\"quantity\":1,\"costPerUnit\":10}]}"
+            }
+          }
+        },
+        {
+          "name": "Invalid paymentType → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/purchases",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"supplierId\":\"{{supplierId}}\",\"paymentType\":\"RTGS\",\"items\":[{\"productId\":\"{{regularId}}\",\"quantity\":1,\"costPerUnit\":10}]}"
+            }
+          }
+        },
+        {
+          "name": "Get purchase by id",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/purchases/{{cashPurchaseId}}",
+            "header": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "Supplier Payments",
+      "item": [
+        {
+          "name": "Partial payment 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/supplier-payments",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"supplierId\":\"{{supplierId}}\",\"amount\":400}"
+            }
+          }
+        },
+        {
+          "name": "Remaining payment 600",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/supplier-payments",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"supplierId\":\"{{supplierId}}\",\"amount\":600}"
+            }
+          }
+        },
+        {
+          "name": "Amount ≤ 0 → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/supplier-payments",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"supplierId\":\"{{supplierId}}\",\"amount\":0}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Stock Adjustments",
+      "description": "D6 semantics: DAMAGE quantity = amount ruined (-delta); CORRECTION quantity = desired final level (change = target - current). Negative results are rejected.",
+      "item": [
+        {
+          "name": "DAMAGE 2 (Biscuits)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "pm.test('movement -2', () => pm.expect(pm.response.json().movement.qtyChange).to.eql(-2));",
+                  "pm.test('reason DAMAGE', () => pm.expect(pm.response.json().movement.reason).to.eql('DAMAGE'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/stock/adjustments",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"productId\":\"{{tieredId}}\",\"reason\":\"DAMAGE\",\"quantity\":2,\"note\":\"burst\"}"
+            }
+          }
+        },
+        {
+          "name": "CORRECTION up (target) ",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "pm.test('stock 1000', () => pm.expect(pm.response.json().product.stockQty).to.eql(1000));",
+                  "pm.test('reason CORRECTION', () => pm.expect(pm.response.json().movement.reason).to.eql('CORRECTION'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/stock/adjustments",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"productId\":\"{{regularId}}\",\"reason\":\"CORRECTION\",\"quantity\":1000,\"note\":\"physical count\"}"
+            }
+          }
+        },
+        {
+          "name": "CORRECTION down (regular to 500)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "pm.test('stock 500', () => pm.expect(pm.response.json().product.stockQty).to.eql(500));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/stock/adjustments",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"productId\":\"{{regularId}}\",\"reason\":\"CORRECTION\",\"quantity\":500}"
+            }
+          }
+        },
+        {
+          "name": "Missing product → 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/stock/adjustments",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"productId\":\"ghost\",\"reason\":\"DAMAGE\",\"quantity\":1}"
+            }
+          }
+        },
+        {
+          "name": "DAMAGE above stock → 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/stock/adjustments",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"productId\":\"{{regularId}}\",\"reason\":\"DAMAGE\",\"quantity\":999999}"
+            }
+          }
+        },
+        {
+          "name": "Invalid reason → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/stock/adjustments",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"productId\":\"{{regularId}}\",\"reason\":\"THEFT\",\"quantity\":1}"
+            }
+          }
+        },
+        {
+          "name": "DAMAGE quantity 0 → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/stock/adjustments",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"productId\":\"{{regularId}}\",\"reason\":\"DAMAGE\",\"quantity\":0}"
+            }
+          }
+        },
+        {
+          "name": "Get movements (all)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('list', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/stock/movements",
+            "header": []
+          }
+        },
+        {
+          "name": "Get movements (by product)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('list', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/stock/movements?productId={{regularId}}",
+            "header": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "Customers",
+      "item": [
+        {
+          "name": "Create Customer",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "pm.test('balance 0', () => pm.expect(pm.response.json().balanceOwed).to.eql(0));",
+                  "pm.test('chain creditCustomerId', () => pm.environment.set('creditCustomerId', pm.response.json().id));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/customers",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"Ramesh Khatiwada\",\"contact\":\"9841111111\"}"
+            }
+          }
+        },
+        {
+          "name": "List Customers",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('list', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/customers",
+            "header": []
+          }
+        },
+        {
+          "name": "Get Customer by id",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/customers/{{creditCustomerId}}",
+            "header": []
+          }
+        },
+        {
+          "name": "Blank name → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/customers",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"\"}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Customer Payments & Credit Lifecycle",
+      "description": "CREDIT sales create no wallet entry; payments deposit into the wallet and may overpay (D4). saleId is traceability only (D5): must match owner and be a CREDIT sale.",
+      "item": [
+        {
+          "name": "CREDIT sale (customer, tiered qty6 = 100)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "pm.test('total 100', () => pm.expect(pm.response.json().total).to.eql(100));",
+                  "pm.test('CREDIT', () => pm.expect(pm.response.json().paymentType).to.eql('CREDIT'));",
+                  "pm.test('chain creditSaleId', () => pm.environment.set('creditSaleId', pm.response.json().id));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/sales",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"paymentType\":\"CREDIT\",\"customerId\":\"{{creditCustomerId}}\",\"items\":[{\"productId\":\"{{tieredId}}\",\"quantity\":6}]}"
+            }
+          }
+        },
+        {
+          "name": "Payment 40 → balance 60",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/customer-payments",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"customerId\":\"{{creditCustomerId}}\",\"amount\":40}"
+            }
+          }
+        },
+        {
+          "name": "Payment 60 → balance 0",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/customer-payments",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"customerId\":\"{{creditCustomerId}}\",\"amount\":60}"
+            }
+          }
+        },
+        {
+          "name": "Overpayment 700 → prepaid -660 (D4)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/customer-payments",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"customerId\":\"{{creditCustomerId}}\",\"amount\":700}"
+            }
+          }
+        },
+        {
+          "name": "Sale-linked payment (valid, D5)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "pm.test('echoes saleId', () => pm.expect(pm.response.json().saleId).to.eql(pm.environment.get('creditSaleId')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/customer-payments",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"customerId\":\"{{creditCustomerId}}\",\"amount\":5,\"saleId\":\"{{creditSaleId}}\"}"
+            }
+          }
+        },
+        {
+          "name": "CASH-sale link → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/customer-payments",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"customerId\":\"{{creditCustomerId}}\",\"amount\":5,\"saleId\":\"not-a-credit-sale\"}"
+            }
+          }
+        },
+        {
+          "name": "Nonexistent sale → 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/customer-payments",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"customerId\":\"{{creditCustomerId}}\",\"amount\":5,\"saleId\":\"not-real\"}"
+            }
+          }
+        },
+        {
+          "name": "Missing customer → 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/customer-payments",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"customerId\":\"ghost\",\"amount\":5}"
+            }
+          }
+        },
+        {
+          "name": "Amount ≤ 0 → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/customer-payments",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"customerId\":\"{{creditCustomerId}}\",\"amount\":0}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Sales — Tier Pricing & Payment Types",
+      "item": [
+        {
+          "name": "Tiered qty 1 = 20",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "pm.test('total 20', () => pm.expect(pm.response.json().total).to.eql(20));",
+                  "pm.test('pricePerUnit 20', () => pm.expect(Number(pm.response.json().items[0].pricePerUnit)).to.eql(20));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/sales",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"paymentType\":\"CASH\",\"items\":[{\"productId\":\"{{tieredId}}\",\"quantity\":1}]}"
+            }
+          }
+        },
+        {
+          "name": "Tiered qty 2 = 40",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "pm.test('total 40', () => pm.expect(pm.response.json().total).to.eql(40));",
+                  "pm.test('pricePerUnit 20', () => pm.expect(Number(pm.response.json().items[0].pricePerUnit)).to.eql(20));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/sales",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"paymentType\":\"CASH\",\"items\":[{\"productId\":\"{{tieredId}}\",\"quantity\":2}]}"
+            }
+          }
+        },
+        {
+          "name": "Tiered qty 3 = 50",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "pm.test('total 50', () => pm.expect(pm.response.json().total).to.eql(50));",
+                  "pm.test('pricePerUnit 16.67', () => pm.expect(Number(pm.response.json().items[0].pricePerUnit)).to.eql(16.67));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/sales",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"paymentType\":\"CASH\",\"items\":[{\"productId\":\"{{tieredId}}\",\"quantity\":3}]}"
+            }
+          }
+        },
+        {
+          "name": "Tiered qty 4 = 70",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "pm.test('total 70', () => pm.expect(pm.response.json().total).to.eql(70));",
+                  "pm.test('pricePerUnit 17.5', () => pm.expect(Number(pm.response.json().items[0].pricePerUnit)).to.eql(17.5));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/sales",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"paymentType\":\"CASH\",\"items\":[{\"productId\":\"{{tieredId}}\",\"quantity\":4}]}"
+            }
+          }
+        },
+        {
+          "name": "Tiered qty 5 = 90",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "pm.test('total 90', () => pm.expect(pm.response.json().total).to.eql(90));",
+                  "pm.test('pricePerUnit 18', () => pm.expect(Number(pm.response.json().items[0].pricePerUnit)).to.eql(18));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/sales",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"paymentType\":\"CASH\",\"items\":[{\"productId\":\"{{tieredId}}\",\"quantity\":5}]}"
+            }
+          }
+        },
+        {
+          "name": "Tiered qty 6 = 100",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "pm.test('total 100', () => pm.expect(pm.response.json().total).to.eql(100));",
+                  "pm.test('pricePerUnit 16.67', () => pm.expect(Number(pm.response.json().items[0].pricePerUnit)).to.eql(16.67));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/sales",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"paymentType\":\"CASH\",\"items\":[{\"productId\":\"{{tieredId}}\",\"quantity\":6}]}"
+            }
+          }
+        },
+        {
+          "name": "CASH sale (regular x2) = 40",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "pm.test('total 40', () => pm.expect(pm.response.json().total).to.eql(40));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/sales",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"paymentType\":\"CASH\",\"items\":[{\"productId\":\"{{regularId}}\",\"quantity\":2}]}"
+            }
+          }
+        },
+        {
+          "name": "ECASH sale (tiered x6) = 100",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "pm.test('total 100', () => pm.expect(pm.response.json().total).to.eql(100));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/sales",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"paymentType\":\"ECASH\",\"items\":[{\"productId\":\"{{tieredId}}\",\"quantity\":6}]}"
+            }
+          }
+        },
+        {
+          "name": "CREDIT without customer → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/sales",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"paymentType\":\"CREDIT\",\"items\":[{\"productId\":\"{{regularId}}\",\"quantity\":1}]}"
+            }
+          }
+        },
+        {
+          "name": "Insufficient stock → 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/sales",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"paymentType\":\"CASH\",\"items\":[{\"productId\":\"{{regularId}}\",\"quantity\":99999}]}"
+            }
+          }
+        },
+        {
+          "name": "Missing product → 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/sales",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"paymentType\":\"CASH\",\"items\":[{\"productId\":\"nope\",\"quantity\":1}]}"
+            }
+          }
+        },
+        {
+          "name": "Invalid paymentType → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/sales",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"paymentType\":\"VOID\",\"items\":[{\"productId\":\"{{regularId}}\",\"quantity\":1}]}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reports",
+      "description": "Read-only derivation over transactional tables (D7). No date filter = full history; from/to are inclusive. Reports never write.",
+      "item": [
+        {
+          "name": "Sales (full)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('totalSales is number', () => pm.expect(typeof pm.response.json().totalSales).to.eql('number'));",
+                  "pm.test('byPaymentType present', () => pm.expect(pm.response.json().byPaymentType).to.be.an('array'));",
+                  "pm.test('productQuantities present', () => pm.expect(pm.response.json().productQuantities).to.be.an('array'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/reports/sales",
+            "header": []
+          }
+        },
+        {
+          "name": "Sales (date range)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('range echoed', () => pm.expect(pm.response.json().range.from).to.not.eql(null));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/reports/sales?from=2026-01-01&to=2026-08-13",
+            "header": []
+          }
+        },
+        {
+          "name": "Purchases (full)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('supplierTotals present', () => pm.expect(pm.response.json().supplierTotals).to.be.an('array'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/reports/purchases",
+            "header": []
+          }
+        },
+        {
+          "name": "Stock",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('currentStock present', () => pm.expect(pm.response.json().currentStock).to.be.an('array'));",
+                  "pm.test('movementSummary present', () => pm.expect(pm.response.json().movementSummary).to.be.an('array'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/reports/stock",
+            "header": []
+          }
+        },
+        {
+          "name": "Customers",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('outstandingCredit is number', () => pm.expect(typeof pm.response.json().outstandingCredit).to.eql('number'));",
+                  "pm.test('prepaidCredit is number', () => pm.expect(typeof pm.response.json().prepaidCredit).to.eql('number'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/reports/customers",
+            "header": []
+          }
+        },
+        {
+          "name": "Suppliers",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('outstandingBalance is number', () => pm.expect(typeof pm.response.json().outstandingBalance).to.eql('number'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/reports/suppliers",
+            "header": []
+          }
+        },
+        {
+          "name": "Wallet",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('balance is number', () => pm.expect(typeof pm.response.json().balance).to.eql('number'));",
+                  "pm.test('bySource present', () => pm.expect(pm.response.json().bySource).to.be.an('array'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/reports/wallet",
+            "header": []
+          }
+        },
+        {
+          "name": "Invalid date → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/reports/sales?from=nope",
+            "header": []
+          }
+        },
+        {
+          "name": "from after to → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/reports/sales?from=2026-08-31&to=2026-01-01",
+            "header": []
+          }
+        }
+      ]
+    }
+  ]
+}
