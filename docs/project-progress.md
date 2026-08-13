@@ -38,8 +38,8 @@ read-only reporting layer.
 | Financial architecture (wallet, balances) | COMPLETE |
 | Inventory architecture (stock ledger) | COMPLETE |
 | Reporting | COMPLETE |
-| Architecture audit | NEXT |
-| Production readiness | NOT YET COMPLETE |
+| Architecture audit | COMPLETE — see [`docs/architecture-audit.md`](architecture-audit.md) |
+| Production readiness | NOT YET COMPLETE — requires fixes from the audit |
 
 Evidence:
 
@@ -202,12 +202,13 @@ SQL.
   `origin/main`.
 
 **WHAT IS CURRENTLY BEING WORKED ON**
-- Nothing new — the roadmap places the **FULL ERP ARCHITECTURE / IMPLEMENTATION
-  AUDIT** next (per `docs/implementation-log.md` "Current state / Next" and the
-  project plan).
+- Nothing new — the **FULL ERP ARCHITECTURE AUDIT** is now COMPLETE. Findings and
+  fix order in [`docs/architecture-audit.md`](architecture-audit.md). No code
+  fixes started yet; awaiting project-manager decision on which findings to fix.
 
 **WHAT HAS NOT BEEN STARTED**
-- Architecture audit (next, not yet done).
+- Fixes from the audit (see [`docs/architecture-audit.md`](architecture-audit.md)
+  "Recommended Fix Order" — P0: atomic stock / concurrency, products validation).
 - Automated unit/integration tests (`tests/unit/` is empty).
 - Authentication / authorization / roles.
 - Frontend UI; dashboards; advanced reporting; exports; pagination/search.
@@ -223,32 +224,38 @@ SQL.
 
 ## 9. Immediate Next Steps
 
-Expected next major task (verify before starting): full ERP audit.
+The **full ERP architecture audit is complete** — see
+[`docs/architecture-audit.md`](architecture-audit.md) for the 16-section report,
+finding table (F-01…F-16), recommended fix order (P0–P3), and proposed next
+milestones. Nothing in the audit was fixed; all items below are proposals to
+review with the project manager.
 
-### Step 1 — Full Architecture Audit
-Audit: architecture, database/schema, modules, transactions, concurrency,
-validation, error handling, repository/service boundaries, Decimal → number
-mapping, unsafe casts / `any`, database constraints, API consistency, security,
-reporting, test coverage, documentation, Postman. Do NOT claim the audit is
-complete unless it actually is.
+### Step 1 — Decide & Fix P0 Findings
+P0 (per audit): (1) atomic stock availability under concurrency (F-02) with a
+concurrency test proving stock never goes negative; (2) products validation
+layer for `POST /api/products` (F-01).
 
-### Step 2 — Fix Audit Findings
-Only after the audit is documented. Classify findings: Critical / High /
-Medium / Low / Nice-to-have.
+### Step 2 — Fix Remaining HIGH/Selected Findings
+P1 (per audit): raw error-message leakage on 500 (F-03), auth/roles decision
+(F-10), input upper bounds (F-04), automated test framework (F-15), DB CHECK +
+indexes (F-05).
 
 ### Step 3 — Regression Testing
 Run the complete existing feature suite after fixes (Postman folders + SQL
 reconciliation invariants + `tsc`/`lint`).
 
 ### Step 4 — Production Readiness
-Only after the audit and regression testing.
+Only after the audit findings and regression testing.
 
 ## 10. Future Roadmap
 
 ### Near Term
-Things required to make the current backend robust: automated tests for the
-existing flows, `.env.example` (referenced by README but absent), pagination /
-search / filtering on list endpoints, concurrency verification.
+Required to make the backend robust, per
+[`docs/architecture-audit.md`](architecture-audit.md) recommended fix order:
+atomic stock / concurrency hardening (F-02), products validation (F-01), error
+privacy (F-03), input bounds (F-04), automated tests for the existing flows
+(F-15), DB CHECK + indexes (F-05), `.env.example`, pagination / search /
+filtering on list endpoints, concurrency verification by load test.
 
 ### Medium Term
 Features/modules that logically follow: authentication/authorization and
@@ -287,6 +294,7 @@ Derived from actual repository inspection. Issues are honest and verifiable.
 | `docs/business-decisions.md` | WHAT was decided and WHY (D1–D7, change-management format) |
 | `docs/implementation-log.md` | Detailed technical history — what shipped per milestone + verification evidence |
 | `docs/project-progress.md` | WHERE WE ARE / WHERE WE GO NEXT (this file) |
+| `docs/architecture-audit.md` | The full ERP architecture audit — findings F-01…F-16, fix order P0–P3, next milestones |
 | `prisma/schema.prisma` | Canonical data model (source of truth for the database shape) |
 | `prisma/migrations/` | Applied database migrations history |
 | `postman/Retail-ERP.postman_collection.json` | Executable API verification suite |
@@ -310,7 +318,8 @@ From `git log --oneline` (hashes are actual):
 | `510ca48` | Postman collection (58 requests / 9 folders) | Merged into history |
 | `c2d6073` | Wallet transaction ledger | Merged into history |
 | `8a28c10` | Project progress tracker (this file) | Merged into history |
-| docs reconciliation | Documentation reconciliation + sync with `origin/main` (this commit) | HEAD / latest |
+| docs reconciliation | Documentation reconciliation + sync with `origin/main` | Merged into history |
+| audit | Full ERP architecture audit (this commit — `docs/architecture-audit.md`) | HEAD / latest |
 
 Branch `main`, tracked at `origin/main` (`github.com/shishirg46/retail-erp`).
 `8a28c10` was 1 commit ahead of `origin/main` until the documentation
@@ -334,21 +343,23 @@ reconciliation commit that follows it was pushed.
 ## 15. Final Status Snapshot
 
 ```
-PROJECT STATUS:   IMPLEMENTATION COMPLETE (backend + reporting); AUDIT NEXT
+PROJECT STATUS:   BACKEND COMPLETE; ARCHITECTURE AUDIT COMPLETE; FIXES PENDING
 CORE BACKEND:     COMPLETE — products, sales, purchases, suppliers, customers,
                   customer credit, stock adjustments, wallet ledger
 FINANCIAL FLOWS:  COMPLETE — wallet balance, supplier balance, signed customer
                   credit (D3/D4), no COGS/profit (D2/D7)
 INVENTORY:        COMPLETE — auditable StockMovement ledger; invariant holds per
-                  product (D6)
+                  product (D6); concurrency race noted in audit (F-02)
 REPORTING:        COMPLETE — 6 read-only reports, SQL-verified, no stored totals
                   (D7)
 DOCUMENTATION:    COMPLETE — README, AGENTS.md, business-decisions (D1–D7),
-                  implementation-log, project-progress, postman suite
+                  implementation-log, project-progress, architecture-audit,
+                  postman suite
 TESTING:          PARTIAL — Postman + live/SQL verification pass; no automated
                   tests; concurrency unverified
-CURRENT TASK:     Recording project state (this file); no code work pending
-NEXT TASK:        FULL ERP ARCHITECTURE / IMPLEMENTATION AUDIT (part 0 of 0)
-PRODUCTION READY: NO — audit, fixes, regression testing, and auth/deployment
-                  decisions remain
+CURRENT TASK:     Architecture audit completed and documented (this file + audit)
+NEXT TASK:        Decide & fix P0 findings (atomic stock F-02, products
+                  validation F-01) per docs/architecture-audit.md
+PRODUCTION READY: NO — P0/P1 audit findings, regression testing, and
+                  auth/deployment decisions remain
 ```
