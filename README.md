@@ -89,24 +89,33 @@ npm run dev
 ## Verification workflow
 
 - `npx tsc --noEmit` and `npm run lint` must stay green.
-- `npm run test:concurrency` runs the stock-concurrency regression suite against
-  the dedicated `erp_retail_test` database (`TEST_DATABASE_URL` in `.env`). It
-  refuses to run against any other database.
-- `npm run test:unit` runs the product-validation unit tests (F-01).
-- `npm run test:error` runs the error-response unit tests (F-03): expected
-  application errors keep their 400/404/409 status + message; every unexpected
-  failure maps to exactly `{ "message": "Internal Server Error" }`.
-- `npm run test:http` spawns a Next.js dev server against `erp_retail_test`
-  and verifies the error contract over real HTTP, including a phase where the
-  database is unreachable — proving no driver text, paths, DB names, hosts, or
-  ports leak on 500. Refuses to run if `TEST_DATABASE_URL` is not
-  `erp_retail_test` or a dev server is already running for the project.
-- `npm run test:bounds` runs the input-upper-bound unit tests (F-04): values
-  at the caps pass, caps+1 rejected, lower-bound semantics preserved.
-- `npm run test:http:bounds` spawns a Next.js dev server against
-  `erp_retail_test` and verifies over-limit inputs are rejected with 400 before
-  allocation (incl. the documented `quantity: 1e8` DoS payload returning 400
-  quickly), while boundary-maximum values still succeed end to end.
+- `npm run test:all` runs the full D1–D7 regression gate — 17 suites / 197
+  assertions — exclusively against the dedicated `erp_retail_test` database
+  (`TEST_DATABASE_URL` in `.env`); every suite refuses to run against any other
+  database. It covers unit (product validation, error mapping, pricing, D1–D7
+  validators, input bounds), integration (sales, purchases, customer-payments,
+  supplier-payments, stock adjustments, rollback, ledger, reports), HTTP
+  (error contract, input bounds, full D1–D7 API smoke), and concurrency
+  (stock never goes negative).
+- Individual suites:
+  - `npm run test:unit` — product-validation unit tests (F-01).
+  - `npm run test:error` — error-response unit tests (F-03).
+  - `npm run test:unit:pricing` — D1 tier-price unit tests.
+  - `npm run test:unit:validators` — D1–D7 request-validator unit tests.
+  - `npm run test:concurrency` — stock-concurrency regression suite (F-02).
+  - `npm run test:bounds` — input-upper-bound unit tests (F-04).
+  - `npm run test:integration:*` — one suite per transactional flow
+    (sales, purchases, customer-payments, supplier-payments, stock,
+    rollback, ledger, reports) against `erp_retail_test`.
+  - `npm run test:http` — error-contract tests over real HTTP (F-03),
+    including a phase where the database is unreachable — proving no driver
+    text, paths, DB names, hosts, or ports leak on 500.
+  - `npm run test:http:bounds` — over-limit inputs rejected with 400 before
+    allocation over real HTTP (incl. the documented `quantity: 1e8` DoS
+    payload returning 400 quickly).
+  - `npm run test:http:smoke` — full D1–D7 API walk over real HTTP.
+  - All HTTP suites refuse to run if `TEST_DATABASE_URL` is not
+    `erp_retail_test` or a dev server is already running for the project.
 - Import the Postman collection (`postman/Retail-ERP.postman_collection.json`)
   and run folders in order — ids chain via environment variables.
 - Reconciliation invariants, verified via SQL:

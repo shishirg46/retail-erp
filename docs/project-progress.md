@@ -43,7 +43,8 @@ read-only reporting layer.
 | Audit fix — F-01 product validation | COMPLETE (Milestone 8) — `product.validation.ts` wired into `POST /api/products`; invalid payloads → 400 |
 | Audit fix — F-03 error privacy | COMPLETE (Milestone 9) — generic 500 `{ "message": "Internal Server Error" }`, no raw message/path/DB/host leakage; server-side logging; unit + HTTP suites |
 | Audit fix — F-04 input upper bounds | COMPLETE (Milestone 10) — `lib/bounds.ts` caps (`MAX_ITEM_QUANTITY`, `MAX_ITEMS_PER_DOCUMENT`, `MAX_AMOUNT`) enforced in all six validators; over-limit → 400 before allocation; unit + HTTP suites |
-| Production readiness | NOT YET COMPLETE — requires remaining fixes from the audit (F-10, F-15, F-05…) |
+| Audit fix — F-15 regression suite | COMPLETE (Milestone 11) — full D1–D7 automated gate (`npm run test:all`, 17 suites / 197 assertions) against `erp_retail_test` only; dev DB proven byte-identical before/after |
+| Production readiness | NOT YET COMPLETE — requires remaining fixes from the audit (F-10, F-05…) |
 
 Evidence:
 
@@ -227,13 +228,21 @@ SQL.
   MAX success + liveness) suites added. Tracking:
   [GitHub issue ERP-004](https://github.com/shishirg46/retail-erp/issues/4).
   Closed (PM-approved).
-- Next audit fix pending PM decision: P1 findings (F-10 auth, F-15 test
-  framework, F-05 DB constraints/indexes).
+- **F-15 automated regression suite is COMPLETE (Milestone 11)** — the full
+  D1–D7 gate (`npm run test:all`, 17 suites / 197 assertions, 0 failures) runs
+  exclusively against `erp_retail_test` and covers: unit (pricing D1 +
+  validators D1–D7), integration (sales, purchases, customer-payments,
+  supplier-payments, stock, rollback, ledger, reports), HTTP smoke across the
+  D1–D7 API surface, plus the existing concurrency/bounds/error suites. Dev
+  database (`erp_retail`) proven byte-identical before/after. Tracking:
+  [GitHub issue ERP-005](https://github.com/shishirg46/retail-erp/issues/5).
+  Evidence commented; left open for PM review.
+- Next audit fix pending PM decision: P1 findings (F-10 auth, F-05 DB
+  constraints/indexes).
 
 **WHAT HAS NOT BEEN STARTED**
 - Remaining fixes from the audit (see [`docs/architecture-audit.md`](architecture-audit.md)
-  "Recommended Fix Order" — P1: F-10, F-15, F-05; P2/P3: F-06, F-07, F-09, F-08, F-11).
-- Automated unit/integration tests (`tests/unit/` is empty).
+  "Recommended Fix Order" — P1: F-10, F-05; P2/P3: F-06, F-07, F-09, F-08, F-11).
 - Authentication / authorization / roles.
 - Frontend UI; dashboards; advanced reporting; exports; pagination/search.
 - Deployment, backups, observability.
@@ -303,7 +312,7 @@ Derived from actual repository inspection. Issues are honest and verifiable.
 
 | Issue | Severity | Evidence | Recommended Next Action | Status |
 | ----- | -------- | -------- | ----------------------- | ------ |
-| No automated tests (unit/integration) | High | `tests/unit/` was empty; verification is manual/live + Postman | **PARTIAL (Milestones 7-8)** — concurrency suite (`tests/concurrency/`) + validator unit tests (`tests/unit/product.validation.ts`) added; full transactional-flow test framework is F-15 | OPEN (F-15) |
+| No automated tests (unit/integration) | High | `tests/unit/` was empty; verification is manual/live + Postman | **RESOLVED (Milestone 11)** — full D1–D7 gate `npm run test:all`: 17 suites / 197 assertions (unit, integration, HTTP, concurrency, bounds, rollback, ledger, reports) against `erp_retail_test` only | VERIFIED |
 | No `.env.example` | Medium | `README.md` instructs `cp .env.example .env` but the file does not exist | Create `.env.example` from `.env` shape | OPEN |
 | Raw error messages leaked on 500 | High | `lib/response.ts` returned `error.message` for non-`AppError` (F-03) | **RESOLVED (Milestone 9)** — generic 500 body; details logged server-side; `test:error` 11/11 + `test:http` 12/12 (incl. unreachable-DB leak-canary proof) | VERIFIED |
 | Concurrency not formally verified | Medium | Concurrent stock/sales ops never load-tested; `stockQty` updates rely on `increment` within transactions | **RESOLVED (Milestone 7)** — SALE + DAMAGE use atomic conditional decrement (`reserveStock`); `tests/concurrency/stock.ts` proves no oversell and D6 holds | VERIFIED |
@@ -389,18 +398,22 @@ REPORTING:        COMPLETE — 6 read-only reports, SQL-verified, no stored tota
 DOCUMENTATION:    COMPLETE — README, AGENTS.md, business-decisions (D1–D8),
                   implementation-log, project-progress, architecture-audit,
                   postman suite
-TESTING:          IMPROVED — concurrency (5/5), validator unit (30/30), error
-                  unit (11/11), HTTP error integration (12/12), input-bounds
-                  unit (28/28), input-bounds HTTP (11/11) all green; full
-                  unit/integration framework is F-15
+TESTING:          COMPLETE — full D1–D7 gate (`npm run test:all`, 17 suites,
+                  197 assertions, 0 failures) against erp_retail_test only:
+                  unit pricing 6/6 + validators 30/30, integration sales 10/10,
+                  purchases 6/6, customer-payments 8/8, supplier-payments 5/5,
+                  stock 8/8, rollback 8/8, ledger 2/2, reports 2/2; HTTP error
+                  12/12, HTTP bounds 11/11, HTTP D1–D7 smoke 15/15; concurrency
+                  5/5, unit 30/30, error 11/11, bounds 28/28 (F-15 fixed)
 INPUT SAFETY:     COMPLETE — quantity/amount/items upper bounds (F-04 fixed):
                   MAX_ITEM_QUANTITY 100000, MAX_ITEMS_PER_DOCUMENT 100,
                   MAX_AMOUNT 10000000 enforced in all six validators; over-limit
                   → 400 before any allocation (DoS payload 1e8 rejected < 15 s)
-CURRENT TASK:     P0+P1 audit fixes through F-04 — F-02 (M7, closed), F-01
-                  (M8, closed), F-03 (M9, closed), F-04 (M10, ERP-004, closed)
-NEXT TASK:        Decide next audit fix (P1: F-10, F-15, F-05) per
+CURRENT TASK:     P0+P1 audit fixes through F-04 + F-15 — F-02 (M7, closed),
+                  F-01 (M8, closed), F-03 (M9, closed), F-04 (M10, ERP-004,
+                  closed), F-15 (M11, ERP-005, evidence commented, open for PM)
+NEXT TASK:        Decide next audit fix (P1: F-10, F-05) per
                   docs/architecture-audit.md — requires a separate PM decision
-PRODUCTION READY: NO — P1 audit findings (F-10, F-15, F-05),
-                  regression testing, and auth/deployment decisions remain
+PRODUCTION READY: NO — P1 audit findings (F-10, F-05), auth/deployment
+                  decisions, and load testing remain
 ```

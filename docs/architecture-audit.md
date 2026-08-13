@@ -513,7 +513,7 @@ No hygiene action required (beyond the audit commit itself).
 | **F-12** | INFO | Type safety | Enum/Decimal `as` casts rely on DB guarantees | `wallet.repository`, `report.repository` enum casts | Acceptable; no invalid value reachable via DB enums | None (or tighten via `satisfies`) | NO | NO | ACCEPTED |
 | **F-13** | INFO | Transactions | All 5 multi-step ops transactional & correct; balances atomic; no partial-state | §3 table | Foundation is sound | No action | NO | NO | OK |
 | **F-14** | INFO | Financial/Inventory | Invariants hold by construction; only stock race (F-02) can break “never negative” | §10, §11 | Ledger soundness confirmed | Resolve via F-02 | NO | NO | OK |
-| **F-15** | INFO | Testing | No automated tests; D1–D7 correctness rests on manual Postman+SQL | `package.json` (no test script); empty `tests/unit/` | Regression risk highest on concurrency & rollback paths | Add unit + integration + concurrency tests (see §14) in a P1 milestone | NO | YES | OPEN |
+| **F-15** | INFO | Testing | No automated tests; D1–D7 correctness rests on manual Postman+SQL | `package.json` (no test script); empty `tests/unit/` | Regression risk highest on concurrency & rollback paths | Add unit + integration + concurrency tests (see §14) in a P1 milestone | YES | YES | FIXED (Milestone 11) |
 | **F-16** | INFO | Docs/Git | Documentation accurate; tree clean; main == origin/main; secrets untracked | §15, §16 | Audit baseline good | Keep going | NO | NO | OK |
 
 Severity scale used: CRITICAL (none found) → HIGH → MEDIUM → LOW → INFO. No finding is
@@ -534,9 +534,9 @@ corrupt *data* (and only under concurrent requests).
    return 400. Unit tests (30/30) + 13 HTTP checks green.
 
 Rationale: F-02 (stock integrity), F-01 (master data validation), F-03
-(error privacy), and F-04 (DoS input bounds) are done — every actionable
-HIGH plus the first P1 finding are closed. Remaining P1 findings (F-10,
-F-15, F-05) are next.
+(error privacy), F-04 (DoS input bounds), and F-15 (automated regression gate)
+are done — every actionable HIGH plus the first two P1 findings are closed.
+Remaining P1 findings (F-10, F-05) are next.
 
 ### P1 — Should Fix Before Production
 3. **F-03 — FIXED (Milestone 9).** Generic 500 (no message/path/DB/host/port
@@ -548,10 +548,15 @@ F-15, F-05) are next.
    reached (the documented `quantity: 1e8` DoS payload returns 400 < 15 s).
    Unit (28/28) + HTTP (11/11) suites, incl. boundary-MAX success paths and a
    post-attempt liveness check.
-5. **F-10** — authentication/authorization decision + implementation (production blocker).
-6. **F-15** — automated test framework with unit, integration, rollback, and concurrency
-   coverage for all D1–D7 flows.
-7. **F-05** — DB CHECK constraint (`stock_qty >= 0`) + secondary indexes for report/FK joins.
+ 5. **F-10** — authentication/authorization decision + implementation (production blocker).
+ 6. **F-15 — FIXED (Milestone 11).** Full D1–D7 automated regression gate
+    (`npm run test:all`, 17 suites / 197 assertions, 0 failures) against
+    `erp_retail_test` only: unit (pricing 6/6, validators 30/30) + integration
+    (sales 10/10, purchases 6/6, customer-payments 8/8, supplier-payments 5/5,
+    stock 8/8, rollback 8/8, ledger 2/2, reports 2/2) + HTTP smoke 15/15, on top
+    of the existing concurrency 5/5, unit 30/30, error 11/11, bounds 28/28,
+    http error 12/12, http bounds 11/11 suites.
+ 7. **F-05** — DB CHECK constraint (`stock_qty >= 0`) + secondary indexes for report/FK joins.
 
 ### P2 — Important Quality Improvements
 8. **F-06** — paisa-wide money rounding at computed-total boundaries.
@@ -586,9 +591,13 @@ F-15, F-05) are next.
    `tests/unit/input-bounds.ts` (28/28) + `tests/http/input-bounds.ts`
    (11/11, incl. the documented `quantity: 1e8` DoS payload rejected < 15 s
    and boundary-MAX success paths). Tracking: GitHub issue ERP-004.
-5. **Milestone 11 — Automated regression suite** (F-15): unit (pricing, validation) +
-   integration (each flow against a test Postgres, asserting wallet/customer/supplier/stock
-   side effects and rollback behavior).
+5. **Milestone 11 — Automated regression suite — DONE.** Full D1–D7 gate
+   against `erp_retail_test` only: unit (pricing 6/6, validators 30/30),
+   integration (sales 10/10, purchases 6/6, customer-payments 8/8,
+   supplier-payments 5/5, stock 8/8, rollback 8/8, ledger 2/2, reports 2/2),
+   HTTP D1–D7 smoke 15/15, plus existing concurrency/bounds/error suites.
+   `npm run test:all` green; dev DB (`erp_retail`) byte-identical before/after.
+   Tracking: GitHub issue ERP-005.
 6. **Milestone 12 — DB hardening** (F-05): CHECK constraint + targeted indexes + migration.
 7. **Milestone 13 — Auth design + implementation** (F-10) — requires a business decision
    (roles/permissions) before code.

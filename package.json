@@ -12,7 +12,19 @@
     "test:http": "tsx tests/http/error-handling.ts",
     "test:concurrency": "tsx tests/concurrency/stock.ts",
     "test:bounds": "tsx tests/unit/input-bounds.ts",
-    "test:http:bounds": "tsx tests/http/input-bounds.ts"
+    "test:http:bounds": "tsx tests/http/input-bounds.ts",
+    "test:unit:pricing": "tsx tests/unit/pricing.ts",
+    "test:unit:validators": "tsx tests/unit/validators.ts",
+    "test:integration:sales": "tsx tests/integration/sales.ts",
+    "test:integration:purchases": "tsx tests/integration/purchases.ts",
+    "test:integration:customer-payments": "tsx tests/integration/customer-payments.ts",
+    "test:integration:supplier-payments": "tsx tests/integration/supplier-payments.ts",
+    "test:integration:stock": "tsx tests/integration/stock-adjustments.ts",
+    "test:integration:rollback": "tsx tests/integration/rollback.ts",
+    "test:integration:ledger": "tsx tests/integration/ledger.ts",
+    "test:integration:reports": "tsx tests/integration/reports.ts",
+    "test:http:smoke": "tsx tests/http/d1-d7-smoke.ts",
+    "test:all": "npm run test:unit && npm run test:error && npm run test:unit:pricing && npm run test:unit:validators && npm run test:concurrency && npm run test:bounds && npm run test:integration:sales && npm run test:integration:purchases && npm run test:integration:customer-payments && npm run test:integration:supplier-payments && npm run test:integration:stock && npm run test:integration:rollback && npm run test:integration:ledger && npm run test:integration:reports && npm run test:http && npm run test:http:bounds && npm run test:http:smoke"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.9.0",

@@ -334,18 +334,78 @@ seeded entirely through the HTTP API.
 
 ---
 
+## Milestone 11 — Automated regression suite as the gate (F-15, ERP-005) (13 Aug 2026)
+
+**Scope (per ERP-005, test layer only — no service/schema changes):**
+
+- Extended the automated framework into a full D1–D7 regression gate that runs
+  entirely against the dedicated `erp_retail_test` database. Every suite refuses
+  to run unless `TEST_DATABASE_URL` points at `erp_retail_test`; `createDbSuite`
+  auto-reconciles the D3/D4/D6/wallet invariants after every scenario.
+- `tests/helpers/db.ts` — `resolveTestDbUrl` guard, `createTestPrisma`,
+  `truncateAll`, `tableCounts`, `reconcile` (D3/D4/D6/wallet invariants).
+- `tests/helpers/seed.ts` — `createProduct`, `createCustomer`,
+  `createSupplier`, `seedStock` (through repos/services).
+- `tests/helpers/runner.ts` — `createUnit` / `createDbSuite`.
+- `tests/helpers/http.ts` — dev-server lifecycle + port selection,
+  `startServer/stopServer/waitReady/httpGet/httpPost/errorBody/
+  ensureNoForeignDevServer` (handles the Next 16 `.next/dev/lock` guard).
+- Unit suites (new): `tests/unit/pricing.ts` (6/6 — D1 tier price
+  calculation), `tests/unit/validators.ts` (30/30 — D1–D7 request-validator
+  coverage).
+- Integration suites (new, all against `erp_retail_test`):
+  - `tests/integration/sales.ts` 10/10 — CASH/ECASH/CREDIT, tier pricing,
+    multi-item, failures S6–S9, S10 balance untouched.
+  - `tests/integration/purchases.ts` 6/6 — CASH/CREDIT, D2 cost repricing,
+    failures P4/P5.
+  - `tests/integration/customer-payments.ts` 8/8 — D4 prepaid lifecycle,
+    D5 sale-link, failures C4–C7.
+  - `tests/integration/supplier-payments.ts` 5/5 — SP1–SP5.
+  - `tests/integration/stock-adjustments.ts` 8/8 — DAMAGE/CORRECTION,
+    failures A5–A7, ledger A8.
+  - `tests/integration/rollback.ts` 8/8 — R1 acceptance (multi-line sale with
+    one out-of-stock line leaves zero partial rows), R0 positive control,
+    R7 happy-path counts.
+  - `tests/integration/ledger.ts` 2/2 — L1 all-ledger raw-SQL reconciliation;
+    L2 prepaid credit cycle.
+  - `tests/integration/reports.ts` 2/2 — RP1 every report cross-checked
+    against raw SQL plus a read-only table-count proof; RP2 range filtering.
+- `tests/http/d1-d7-smoke.ts` 15/15 — full D1–D7 API walk over real HTTP:
+  products, stock adjustments, purchases CASH/CREDIT, supplier-payments,
+  customers, sales CASH/ECASH/CREDIT, customer-payments, reports, 404s, and
+  final liveness.
+- `package.json` — per-suite scripts (`test:unit:pricing`, `test:unit:validators`,
+  `test:integration:*`, `test:http:smoke`) plus `test:all`, the full D1–D7 gate.
+  No new dependencies (tsx + node:assert only).
+
+**Verified**
+
+- `npm run test:all` (the whole gate): **17 suites, 197 assertions, 0 failures,
+  exit 0** — unit 30/30, error 11/11, pricing 6/6, validators 30/30,
+  concurrency 5/5, bounds 28/28; integration sales 10/10, purchases 6/6,
+  customer-payments 8/8, supplier-payments 5/5, stock 8/8, rollback 8/8,
+  ledger 2/2, reports 2/2; http error 12/12, http bounds 11/11, http smoke 15/15.
+- `npx tsc --noEmit` green and `npm run lint` green with **0 warnings**.
+- Dev database (`erp_retail`) untouched — all 12 application-table row counts
+  byte-identical before/after the full gate; tests touched only `erp_retail_test`.
+- Tracking: GitHub issue **ERP-005** (F-15: Automated regression suite as the
+  gate) — left open, evidence commented for PM review.
+
+---
+
 ## Current state (13 Aug 2026)
 
 - **Done:** Products/Pricing, Sales, Purchasing, Suppliers + Supplier Payments,
   Customers + Credit Payments, Stock Adjustments, Reporting, plus audit fixes
   F-02 (concurrency), F-01 (product validation), F-03 (error privacy),
-  F-04 (input upper bounds). All green on `tsc --noEmit` and `eslint`;
-  unit/bounds/error/http/concurrency/bounds-http suites pass.
+  F-04 (input upper bounds), F-15 (automated regression suite as the gate).
+  All green on `tsc --noEmit` and `eslint`; the full `npm run test:all` gate
+  (17 suites, 197 assertions) passes against `erp_retail_test`.
 - **Test data:** Rice stock 13, Oil 10, Biscuits 30; Kathmandu Wholesale balance
   0; customers Ramesh −5, Sita −100 (prepaid); wallet −4235; credit payments 405.
 - **Postman:** `postman/Retail-ERP.postman_collection.json` — 58 requests,
   9 folders (Products, Suppliers, Purchases, Supplier Payments, Stock
   Adjustments, Customers, Customer Payments & Credit Lifecycle, Sales — Tier
   Pricing & Payment Types, Reports).
-- **Next:** remaining P1 audit fixes (F-10 auth, F-15 test framework, F-05 DB
-  constraints/indexes) — each a separate planned milestone.
+- **Next:** remaining P1 audit fixes (F-10 auth, F-05 DB constraints/indexes) —
+  each a separate planned milestone.
