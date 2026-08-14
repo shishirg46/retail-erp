@@ -46,7 +46,7 @@ read-only reporting layer.
 | Audit fix — F-15 regression suite | COMPLETE (Milestone 11) — full D1–D7 automated gate (`npm run test:all`, 17 suites / 197 assertions) against `erp_retail_test` only; dev DB proven byte-identical before/after. **Standardized on Vitest (Milestone 12)** — single runner, same 197 tests, exit 0. **CLOSED (PM-approved) — ERP-005** |
 | Audit fix — F-05 DB hardening | COMPLETE (Milestone 13) — 17 CHECK constraints + 9 report indexes (migration `20260814034336_db_hardening_f05`); pre-migration validator green on both DBs; `tests/integration/db-hardening.test.ts` 24/24 (constraints/indexes exist, raw-SQL rejections, signed semantics preserved). Gate now 18 suites / 221 tests. **CLOSED (PM-approved) — ERP-006** |
 | Audit fix — F-10 auth & roles | COMPLETE (Milestone 14) — Better Auth (local username+password, no sign-up), OWNER/CASHIER role matrix (D9.3), every ERP route guarded, OWNER user management; `app/api/users`, `modules/users/`, seed script. Gate now 21 suites / 259 tests. Evidence on ERP-007, left open for PM review |
-| Audit fix — F-06/F-09 money & timezone | COMPLETE (Milestone 15) — D11 integer-paisa domain money (`lib/money.ts`; validators/ services/repositories/routes converted, rupees in/out at the API unchanged, Postgres DECIMAL rupees unchanged — no migration) + D10 shop-local timezone (`lib/timezone.ts`, `ERP_TIMEZONE`, default `Asia/Kathmandu`; shop-local naive report params, offset-string range echo). Robustness ride-along: `lib/auth/session-cookie.ts` shared cookie gate + `requireUser` cookie short-circuit. Gate now 22 suites / 283 tests. Evidence on ERP-008, left open for PM review |
+| Audit fix — F-06/F-09 money & timezone | COMPLETE (Milestone 15) — D11 integer-paisa domain money (`lib/money.ts`; validators/ services/repositories/routes converted, rupees in/out at the API unchanged, Postgres DECIMAL rupees unchanged — no migration) + D10 shop-local timezone (`lib/timezone.ts`, `ERP_TIMEZONE`, default `Asia/Kathmandu`; shop-local naive report params, offset-string range echo). Robustness ride-along: `lib/auth/session-cookie.ts` shared cookie gate + `requireUser` cookie short-circuit. Gate now 23 test files / 283 tests. Evidence on ERP-008, left open for PM review |
 | Production readiness | NOT YET COMPLETE — F-10 auth implemented (ERP-007 pending PM review) and F-06/F-09 done (ERP-008 pending PM review); remaining audit fixes F-07/08/11, deployment, and load testing still open |
 
 Evidence:
@@ -274,7 +274,7 @@ SQL.
   ride-along: shared `lib/auth/session-cookie.ts` + `requireUser` cookie
   short-circuit. New unit suites `money` (12) + `timezone`; all suites
   converted to paisa domain expectations (HTTP/report rupee values unchanged);
-  all four HTTP suites now warm their routes. Full gate now 22 suites / 283
+  all four HTTP suites now warm their routes. Full gate now 23 test files / 283
   tests, exit 0; dev DB byte-identical before/after. Tracking:
   [GitHub issue ERP-008](https://github.com/shishirg46/retail-erp/issues/8).
   Evidence commented; left open for PM review.
@@ -445,7 +445,7 @@ DOCUMENTATION:    COMPLETE — README, AGENTS.md, business-decisions (D1–D11),
                   implementation-log, project-progress, architecture-audit,
                   postman suite
 TESTING:          COMPLETE — full D1–D7 + F-10 + money/timezone gate
-                  (`npm run test:all`, 22 suites, 283 tests, 0 failures,
+                  (`npm run test:all`, 23 test files, 283 tests, 0 failures,
                   Vitest) against erp_retail_test only: unit 150/150
                   (validation 30, error 11, pricing 6, validators 30, bounds
                   28, auth-config 10, user-management 11, money 12, timezone

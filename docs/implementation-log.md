@@ -648,7 +648,7 @@ into the gate).
 
 - `npx tsc --noEmit`, `npm run lint` (0 warnings), `npx prisma validate` all
   green.
-- `npm run test:all` — **22 suites, 283 tests, 0 failures, exit 0**: unit
+- `npm run test:all` — **23 test files, 283 tests, 0 failures, exit 0**: unit
   150/150 (incl. money 12 + timezone new), integration 73/73, concurrency 5/5,
   HTTP error 12/12 (incl. unreachable-DB leak-canaries), HTTP bounds 11/11,
   HTTP smoke 15/15, F-10 HTTP auth-flow 17/17. Report/HTTP rupee values proven
@@ -674,7 +674,7 @@ into the gate).
   OWNER/CASHIER matrix, all routes guarded, OWNER user management)**, and
   **F-06/F-09 (integer-paisa domain money D11 + shop-local timezone D10)**.
   All green on `tsc --noEmit` and `eslint`; the full `npm run test:all` gate
-  (22 suites, 283 tests) passes against `erp_retail_test`.
+  (23 test files, 283 tests) passes against `erp_retail_test`.
 - **Test data:** Rice stock 13, Oil 10, Biscuits 30; Kathmandu Wholesale balance
   0; customers Ramesh −5, Sita −100 (prepaid); wallet −4235; credit payments 405.
 - **Postman:** `postman/Retail-ERP.postman_collection.json` — 58 requests,

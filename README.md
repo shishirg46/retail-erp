@@ -121,8 +121,8 @@ npm run dev
 ## Verification workflow
 
 - `npx tsc --noEmit` and `npm run lint` must stay green.
-- `npm run test:all` runs the full D1–D11 + F-10 regression gate — 22 suites /
-  283 tests (Vitest) — exclusively against the dedicated `erp_retail_test`
+- `npm run test:all` runs the full D1–D11 + F-10 regression gate — 23 test
+  files / 283 tests (Vitest) — exclusively against the dedicated `erp_retail_test`
   database (`TEST_DATABASE_URL` in `.env`); every suite refuses to run against
   any other database. It covers unit (product validation, error mapping,
   pricing, D1–D7 validators, input bounds, auth config, user management, money,

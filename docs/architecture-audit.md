@@ -404,7 +404,7 @@ surface (single- or multi-request) except the stock-availability race.
 | **D4** overpayment → prepaid credit (signed balance) | **Yes** | `updateBalance(±amount)` signed increments; CREDIT sale adds to existing (possibly negative) balance | None |
 | **D5** optional `saleId` on payments: exists (404) / belongs (400) / CREDIT-only (400) | **Yes** | customer-payment.service enforces all three | None |
 | **D6** stock adjustment semantics + baseline + no-negative | **Yes** | DAMAGE `−qty`, CORRECTION `target − current`, pre-write rejection | **Concurrency race** (F-02) can still go negative; CORRECTION negative target yields 400 (validation) not 409 — already documented in project-progress |
-| **D7** reporting read-only, derived, no stored totals, no COGS/profit | **Yes** | reports module has zero create/update/delete; values re-derivable from transactional tables; date ranges inclusive & echoed | D1 drift surfaces in product-level `amount`; timezone is server-local (§13) |
+| **D7** reporting read-only, derived, no stored totals, no COGS/profit | **Yes** | reports module has zero create/update/delete; values re-derivable from transactional tables; date ranges inclusive & echoed | D1 drift surfaces in product-level `amount`; timezone risk fixed by M15 / D10 |
 
 No new business decisions are required by this audit. The D6 “400 vs 409” nuance and D1 drift
 are already recorded decisions/deviation notes, not new findings.
@@ -427,10 +427,11 @@ are already recorded decisions/deviation notes, not new findings.
 - **Date handling:** `from ≤ date ≤ to` inclusive; bare `yyyy-mm-dd` coerced to local midnight
   (`from` `00:00:00.000`, `to` `23:59:59.999`); full ISO timestamps pass through; inverted
   ranges → 400; invalid → 400.
-- **Timezone (INFO/F-09):** Postgres stores naive `TIMESTAMP(3)` (no tz) and coercion is
-  *server*-local. Report day-boundaries therefore depend on the server timezone, not
-  necessarily the shop’s. Not a defect at single-machine/single-tz deployments, but a
-  documented decision is advisable before multi-region or shared hosting.
+- **Timezone (INFO/F-09):** Original audit finding: Postgres stores naive `TIMESTAMP(3)`
+  (no tz), and date coercion was server-local. **FIXED by Milestone 15 / D10:**
+  report bounds now interpret naive `YYYY-MM-DD` values as shop-local wall clock via
+  `ERP_TIMEZONE` (default `Asia/Kathmandu`), explicit-zone timestamps parse as-is, and
+  report range echoes use shop-local offset strings. No schema migration was introduced.
 - **D1 drift:** `productQuantities.amount = Σ (qty × pricePerUnit)` carries the documented
   ≤3-paisa drift (e.g. 340.06 vs 340). It is informational — report totals always derive from
   `sales.total`. Confirmed in `report.types.ts`/compare with SQL findings.
@@ -440,9 +441,14 @@ are already recorded decisions/deviation notes, not new findings.
 
 ## 14. Testing
 
-Current state (honest): **no test framework, no automated suite, no `test` script in
-`package.json`**. Verification is manual — Postman collection (58 requests) + live SQL
-reconciliation against a local Postgres, per implementation-log.
+Historical audit state: at the original audit point there was **no test framework, no
+automated suite, and no `test` script in `package.json`**. Verification was manual —
+Postman collection (58 requests) + live SQL reconciliation against a local Postgres, per
+implementation-log.
+
+Current state after Milestones 11-15: the project uses Vitest as the automated gate.
+`npm run test:all` runs 23 test files / 283 tests against the dedicated
+`erp_retail_test` database only, with `fileParallelism: false` for DB-touching suites.
 
 | Consideration | Assessment |
 | ------------- | ---------- |
@@ -451,12 +457,11 @@ reconciliation against a local Postgres, per implementation-log.
 | Integration-test opportunities | Route → service → repository with a real Postgres (or driver-adapter in-memory) per flow, asserting wallet/customer/supplier/stock side effects atomically |
 | Transaction tests | Assert rollback on mid-flow failure (e.g. second sale item out of stock ⇒ no sale, no movement, no wallet row) |
 | Concurrency tests | **Highest value** — two simultaneous sales on the last unit, DAMAGE + sale, two payments. Provable assertion: stock never < 0 (currently fails ⇒ proves F-02) |
-| Regression coverage | Postman covers happy+error paths; no automated regression gate |
+| Regression coverage | Original audit: Postman covered happy+error paths only. Current state: Vitest gate covers unit, integration, concurrency, and HTTP regression paths |
 
-This is the **largest operational risk** in the project: D1–D7 correctness currently rests on
-one person’s manual Postman passes. Automated coverage is a strong **P1** recommendation
-(framework note: project uses Prisma 7 + `@prisma/adapter-pg`; a JS test runner and a test
-Postgres or `pg-mem`-style adapter would fit).
+This was the **largest operational risk** in the original audit. **FIXED by Milestones
+11-12 / F-15:** automated unit, integration, concurrency, and HTTP suites now cover the
+core D1-D7 flows and later F-05/F-10/F-06/F-09 work.
 
 ---
 
@@ -502,13 +507,13 @@ No hygiene action required (beyond the audit commit itself).
 | **F-02** | **HIGH** | Concurrency | Stock availability check is read→check→write with no lock/no conditional update/no serializable isolation | `sale.service.ts:46-49,97`; `stock.service.ts:21-46`; no `isolationLevel`/`FOR UPDATE` in repo | Concurrent sales/adjustments can oversell last stock → negative stock, violating D6 | **FIXED (Milestone 7):** atomic conditional decrement via `ProductRepository.reserveStock` (`updateMany … stockQty.gte`) used for SALE + DAMAGE; `tests/concurrency/stock.ts` proves stock never goes negative; D6 reconciliation re-verified | NO | YES | FIXED |
 | **F-01** | **HIGH** | Architecture/Validation | Products endpoint has no validation, bypasses service, casts `body as CreateProductInput` | `app/api/products/route.ts:18-19`; no `product.validation.ts` | Master data other modules price off can be invalid (negative prices, bad tiers) and errors become raw 500s | **FIXED (Milestone 8):** added `product.validation.ts` (price polarity, tier shape, duplicate-`minQty`, string caps, unknown-fields-ignored) and wired the route to validate before persist; `tests/unit/product.validation.ts` (30/30) + 13 HTTP checks green | NO | YES | FIXED |
 | **F-03** | **HIGH** | Error handling/Security | 500 responses return raw `error.message`, contradicting the method’s own “never leaked” comment | `lib/response.ts:16-19` | Driver/DB internals leak to clients | **FIXED (Milestone 9):** generic 500 `{ "message": "Internal Server Error" }` for any non-`AppError`, details logged server-side; `tests/unit/error-response.ts` (11/11) + `tests/http/error-handling.ts` (12/12) incl. unreachable-DB leak-canary checks | NO | YES | FIXED |
-| **F-10** | **HIGH** | Security | No authentication/authorization/roles anywhere | No middleware; no user model; all routes unguarded | Backend cannot be exposed beyond trusted network; blocks production | Design auth/roles decision; implement as a gated milestone | NO | YES | PLANNED (preexisting) |
+| **F-10** | **HIGH** | Security | No authentication/authorization/roles anywhere | No middleware; no user model; all routes unguarded | Backend cannot be exposed beyond trusted network; blocks production | **IMPLEMENTED (Milestone 14 / D9):** Better Auth, OWNER/CASHIER role matrix, guarded ERP routes, OWNER user management; evidence on ERP-007 for PM review | YES | YES | IMPLEMENTED |
 | **F-04** | **MEDIUM** | Security/DoS | Unbounded sale quantity → `new Array(qty + 1)` allocation server-side | `product.service.ts:16`; `sale.validation.ts` has no upper bound | Unauthenticated large `quantity` → memory exhaustion | **FIXED (Milestone 10):** shared caps in `lib/bounds.ts` (`MAX_ITEM_QUANTITY=100000`, `MAX_ITEMS_PER_DOCUMENT=100`, `MAX_AMOUNT=10000000`) wired into all six validators; over-limit → 400 before allocation. `tests/unit/input-bounds.ts` (28/28) + `tests/http/input-bounds.ts` (11/11) incl. the documented `quantity: 1e8` payload rejected < 15 s | NO | YES | FIXED |
 | **F-05** | **MEDIUM** | Database | No CHECK constraints (notably `stock_qty >= 0`) and no secondary indexes on report/FK columns | `schema.prisma`; `prisma/migrations/*` | Negative stock physically storable; report joins scan as tables grow | **FIXED (Milestone 13):** migration `20260814034336_db_hardening_f05` adds 17 CHECK constraints (restating service rules at the DB layer; signed semantics preserved — no constraint on customer/supplier balances or CORRECTION) and 9 report indexes. Pre-migration validator `scripts/validate-f05-preconditions.mjs` green on both DBs. `tests/integration/db-hardening.test.ts` (24/24) proves constraints/indexes exist in the catalog, raw SQL cannot write invalid rows, and legitimate signed/special values still work | YES | YES | FIXED |
-| **F-06** | **MEDIUM** | Money | Float money arithmetic in services (running `grandTotal`, `qty × costPerUnit`) with rounding only for `pricePerUnit` | purchase.sale/purchase/service grand-total sums; no paisa-wide rounding helper | Float noise can enter stored Decimals beyond the documented D1 drift | Centralize paisa rounding on computed totals (int-paisa or round at boundary) | NO | YES | OPEN |
+| **F-06** | **MEDIUM** | Money | Float money arithmetic in services (running `grandTotal`, `qty × costPerUnit`) with rounding only for `pricePerUnit` | purchase.sale/purchase/service grand-total sums; no paisa-wide rounding helper | Float noise can enter stored Decimals beyond the documented D1 drift | **FIXED (Milestone 15 / D11):** integer-paisa domain money via `lib/money.ts`; validators convert rupees→paisa once, services/reports do whole-paisa math, repositories read/write rupee `DECIMAL`, API remains rupee-based | NO | YES | FIXED |
 | **F-07** | **MEDIUM** | API | No pagination / search / filtering on any list endpoint; no update/void capability | `app/api/*` GET handlers return full tables; no PATCH/PUT/DELETE | Unbounded responses + no correction path for entry mistakes | Add pagination + search after P0/P1 fixes (roadmap already lists this) | NO | YES | OPEN |
 | **F-08** | LOW | Validation | No upper bounds / max lengths on string fields; no explicit ID validation | validators check type/non-empty only | Trivially: oversized strings; low real-world impact | Add sane length caps when touching validation | NO | YES | OPEN |
-| **F-09** | LOW | Reporting/Timezone | Date coercion is server-local; Postgres timestamps are naive `TIMESTAMP(3)` | `report.validation.ts:47-71`; migration DDL | Day boundaries shift with server TZ; fine single-host, needs a decision for shared hosting/multi-region | Record a timezone decision (store shop-local or TZ-aware) | MAYBE | NO | OPEN |
+| **F-09** | LOW | Reporting/Timezone | Date coercion is server-local; Postgres timestamps are naive `TIMESTAMP(3)` | `report.validation.ts:47-71`; migration DDL | Day boundaries shift with server TZ; fine single-host, needs a decision for shared hosting/multi-region | **FIXED (Milestone 15 / D10):** `ERP_TIMEZONE` default `Asia/Kathmandu`; naive report params interpreted as shop-local wall clock; range echo uses shop-local offset strings; no schema migration | NO | YES | FIXED |
 | **F-11** | LOW | Security | No CORS config, security headers, or rate limiting | `next.config.ts` empty; no middleware | Hardens against casual abuse once exposed; low urgency pre-auth | Add headers/limits as part of production hardening | NO | YES | OPEN |
 | **F-12** | INFO | Type safety | Enum/Decimal `as` casts rely on DB guarantees | `wallet.repository`, `report.repository` enum casts | Acceptable; no invalid value reachable via DB enums | None (or tighten via `satisfies`) | NO | NO | ACCEPTED |
 | **F-13** | INFO | Transactions | All 5 multi-step ops transactional & correct; balances atomic; no partial-state | §3 table | Foundation is sound | No action | NO | NO | OK |
@@ -535,9 +540,8 @@ corrupt *data* (and only under concurrent requests).
 
 Rationale: F-02 (stock integrity), F-01 (master data validation), F-03
 (error privacy), F-04 (DoS input bounds), F-15 (automated regression gate),
-and F-05 (DB hardening) are done — every actionable HIGH plus the first three
-P1 findings are closed.
-Remaining P1 finding: F-10 (auth).
+F-05 (DB hardening), and F-10 (auth/roles) have implementation evidence in the
+milestone log. ERP-007 remains a separate PM-review item.
 
 ### P1 — Should Fix Before Production
 3. **F-03 — FIXED (Milestone 9).** Generic 500 (no message/path/DB/host/port
@@ -549,7 +553,8 @@ Remaining P1 finding: F-10 (auth).
    reached (the documented `quantity: 1e8` DoS payload returns 400 < 15 s).
    Unit (28/28) + HTTP (11/11) suites, incl. boundary-MAX success paths and a
    post-attempt liveness check.
- 5. **F-10** — authentication/authorization decision + implementation (production blocker).
+ 5. **F-10 — IMPLEMENTED (Milestone 14 / D9).** Authentication/authorization
+    decision + implementation; ERP-007 remains pending PM review.
 6. **F-15 — FIXED (Milestone 11, standardized on Vitest Milestone 12).**
      Full D1–D7 automated regression gate (`npm run test:all`, 17 suites /
      197 tests, 0 failures) against `erp_retail_test` only. Vitest is the
@@ -571,9 +576,11 @@ Remaining P1 finding: F-10 (auth).
     Tracking: GitHub issue ERP-006.
 
 ### P2 — Important Quality Improvements
-8. **F-06** — paisa-wide money rounding at computed-total boundaries.
+8. **F-06 — FIXED (Milestone 15 / D11).** Integer-paisa domain money; rupee API and
+   Postgres `DECIMAL` storage preserved.
 9. **F-07** — pagination/search on list endpoints; error-correction (void) capability design.
-10. **F-09** — record a timezone decision for report day-boundaries.
+10. **F-09 — FIXED (Milestone 15 / D10).** Shop-local report day-boundaries via
+    `ERP_TIMEZONE`, default `Asia/Kathmandu`.
 
 ### P3 — Future Improvements
 11. **F-08** — string length caps / ID format validation when validation is revisited.
