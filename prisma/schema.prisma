@@ -13,20 +13,20 @@ datasource db {
 }
 
 model Product {
-  id            String   @id @default(uuid())
-  name          String
-  category      String?
-  unit          String   // e.g. "pcs", "kg", "liter"
-  costPrice     Decimal  @map("cost_price")
-  currentPrice  Decimal  @map("current_price")
-  stockQty      Int      @default(0) @map("stock_qty")
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+  id           String   @id @default(uuid())
+  name         String
+  category     String?
+  unit         String // e.g. "pcs", "kg", "liter"
+  costPrice    Decimal  @map("cost_price")
+  currentPrice Decimal  @map("current_price")
+  stockQty     Int      @default(0) @map("stock_qty")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
-  priceTiers      PriceTier[]
-  purchaseItems   PurchaseItem[]
-  saleItems       SaleItem[]
-  stockMovements  StockMovement[]
+  priceTiers     PriceTier[]
+  purchaseItems  PurchaseItem[]
+  saleItems      SaleItem[]
+  stockMovements StockMovement[]
 
   @@map("products")
 }
@@ -34,6 +34,7 @@ model Product {
 // Tiered / bundle pricing, e.g. "1 for 10, 3 for 20"
 // Applied greedily at sale time: largest min_qty tier first, then smaller tiers,
 // remainder not converted to product (matches real shop behavior — no change given).
+
 model PriceTier {
   id        String  @id @default(uuid())
   productId String  @map("product_id")
@@ -64,11 +65,12 @@ model Supplier {
 }
 
 // One purchase = one trip to wholesale, can contain multiple products
+
 model Purchase {
-  id          String               @id @default(uuid())
-  supplierId  String               @map("supplier_id")
-  date        DateTime             @default(now())
-  paymentType PurchasePaymentType  @map("payment_type")
+  id          String              @id @default(uuid())
+  supplierId  String              @map("supplier_id")
+  date        DateTime            @default(now())
+  paymentType PurchasePaymentType @map("payment_type")
   total       Decimal
 
   supplier Supplier       @relation(fields: [supplierId], references: [id])
@@ -93,6 +95,7 @@ model PurchaseItem {
 }
 
 // Payments made to a supplier against what the shop owes them
+
 model SupplierPayment {
   id         String   @id @default(uuid())
   supplierId String   @map("supplier_id")
@@ -124,17 +127,19 @@ model Customer {
 
 enum PaymentType {
   CASH
-  ECASH  // digital payment (mobile wallet / QR)
+  ECASH // digital payment (mobile wallet / QR)
   CREDIT // loan — buy today, pay later
 }
 
 // How a purchase was paid for.
+
 enum PurchasePaymentType {
-  CASH   // paid in full at purchase time -> wallet withdrawal immediately
+  CASH // paid in full at purchase time -> wallet withdrawal immediately
   CREDIT // supplier carries the balance -> Supplier.balanceOwed increases
 }
 
 // One sale = one transaction at the counter, can contain multiple products
+
 model Sale {
   id          String      @id @default(uuid())
   customerId  String?     @map("customer_id") // null for anonymous cash sales
@@ -152,11 +157,11 @@ model Sale {
 }
 
 model SaleItem {
-  id            String  @id @default(uuid())
-  saleId        String  @map("sale_id")
-  productId     String  @map("product_id")
-  qty           Int
-  pricePerUnit  Decimal @map("price_per_unit") // frozen price charged at time of sale
+  id           String  @id @default(uuid())
+  saleId       String  @map("sale_id")
+  productId    String  @map("product_id")
+  qty          Int
+  pricePerUnit Decimal @map("price_per_unit") // frozen price charged at time of sale
 
   sale    Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
   product Product @relation(fields: [productId], references: [id])
@@ -168,6 +173,7 @@ model SaleItem {
 // Payments a customer makes toward what they owe.
 // saleId is optional — supports paying off one specific sale, or a lump-sum
 // payment against the customer's overall balance (saleId left null).
+
 model CreditPayment {
   id         String   @id @default(uuid())
   customerId String   @map("customer_id")
@@ -189,23 +195,24 @@ model CreditPayment {
 // ────────────────────────────────
 
 enum WalletTxnType {
-  DEPOSIT     // money coming in
-  WITHDRAWAL  // money taken out
+  DEPOSIT // money coming in
+  WITHDRAWAL // money taken out
 }
 
 enum WalletTxnSource {
-  SALE               // auto-created from a cash/e-cash sale
-  CREDIT_PAYMENT     // auto-created when a customer pays off owed credit
-  SUPPLIER_PAYMENT   // auto-created when a CASH purchase or supplier payment takes money out
-  OWNER_WITHDRAWAL   // owner takes cash out for personal use
-  EXPENSE            // cash paid out for a shop expense
-  BANK_DEPOSIT       // cash moved out of the box into a bank account
+  SALE // auto-created from a cash/e-cash sale
+  CREDIT_PAYMENT // auto-created when a customer pays off owed credit
+  SUPPLIER_PAYMENT // auto-created when a CASH purchase or supplier payment takes money out
+  OWNER_WITHDRAWAL // owner takes cash out for personal use
+  EXPENSE // cash paid out for a shop expense
+  BANK_DEPOSIT // cash moved out of the box into a bank account
   OTHER
 }
 
 // Running cash-box balance = sum of all wallet transactions.
 // Cash/e-cash sales and credit payoffs create a DEPOSIT automatically;
 // everything else is logged manually by whoever's managing the till.
+
 model WalletTransaction {
   id              String          @id @default(uuid())
   type            WalletTxnType
@@ -213,7 +220,7 @@ model WalletTransaction {
   amount          Decimal
   date            DateTime        @default(now())
   note            String?
-  saleId          String?         @map("sale_id")           // set when source = SALE
+  saleId          String?         @map("sale_id") // set when source = SALE
   creditPaymentId String?         @map("credit_payment_id") // set when source = CREDIT_PAYMENT
 
   sale          Sale?          @relation(fields: [saleId], references: [id])
@@ -236,6 +243,7 @@ enum StockReason {
 
 // Every stock change logged with a reason — audit trail instead of a silently
 // updated Product.stockQty number.
+
 model StockMovement {
   id        String      @id @default(uuid())
   productId String      @map("product_id")
@@ -249,4 +257,75 @@ model StockMovement {
   @@index([productId, date], map: "stock_movements_product_id_date_idx")
   @@index([date], map: "stock_movements_date_idx")
   @@map("stock_movements")
+}
+
+model User {
+  id              String    @id
+  name            String
+  email           String
+  emailVerified   Boolean   @default(false)
+  image           String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  username        String?
+  displayUsername String?
+  role            String?
+  banned          Boolean?  @default(false)
+  banReason       String?
+  banExpires      DateTime?
+  sessions        Session[]
+  accounts        Account[]
+
+  @@unique([email])
+  @@unique([username])
+  @@map("user")
+}
+
+model Session {
+  id             String   @id
+  expiresAt      DateTime
+  token          String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  ipAddress      String?
+  userAgent      String?
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  impersonatedBy String?
+
+  @@unique([token])
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
 }
