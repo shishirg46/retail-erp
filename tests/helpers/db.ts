@@ -62,6 +62,10 @@ export const ALL_TABLES = [
 export async function truncateAll(prisma: PrismaClient): Promise<void> {
   await prisma.$executeRawUnsafe(`
     TRUNCATE TABLE
+      "user",
+      "session",
+      "account",
+      "verification",
       wallet_transactions,
       credit_payments,
       sale_items,

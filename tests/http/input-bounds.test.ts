@@ -10,6 +10,9 @@
 // `new Array(qty + 1)` ~800 MB allocation) must now return 400 immediately,
 // proving validation rejects it before calculatePrice is ever reached.
 //
+// F-10: the routes are guarded, so the suite signs in as a seeded OWNER and
+// threads the session cookie through every request.
+//
 // The suite refuses to start unless TEST_DATABASE_URL points at
 // `erp_retail_test`, so the development database can never be connected to by
 // the test server (guard lives in helpers/db.ts + helpers/http.ts).
@@ -20,16 +23,21 @@ import {
   errorBody,
   httpGet,
   httpPost,
+  signIn,
   startServer,
   stopServer,
   waitReady,
   type Server,
 } from "../helpers/http";
 import { createServerPrisma } from "../helpers/http";
+import { truncateAll } from "../helpers/db";
+import { createUserRecord } from "../helpers/auth";
 import { MAX_AMOUNT, MAX_ITEM_QUANTITY, MAX_ITEMS_PER_DOCUMENT } from "../../lib/bounds";
 
 const PORT = 4600 + (process.pid % 400);
 const prisma = createServerPrisma();
+
+const OWNER = { username: "bounds-owner", password: "boundsownerpass", role: "OWNER" } as const;
 
 const itemsOfLength = (n: number) =>
   Array.from({ length: n }, () => ({ productId: "p-seed", quantity: 1 }));
@@ -37,49 +45,22 @@ const itemsOfLength = (n: number) =>
 describe("HTTP input upper bounds (F-04)", () => {
   let server: Server;
   let port = 0;
+  let cookie = "";
   let seededProductId = "";
 
   beforeAll(async () => {
     await ensureNoForeignDevServer();
-    await prisma.$executeRawUnsafe(`
-      TRUNCATE TABLE
-        wallet_transactions,
-        credit_payments,
-        sale_items,
-        sales,
-        stock_movements,
-        purchase_items,
-        purchases,
-        price_tiers,
-        products,
-        supplier_payments,
-        suppliers,
-        customers
-      CASCADE
-    `);
+    await truncateAll(prisma);
+    await createUserRecord(prisma, OWNER);
     server = startServer(PORT);
     port = server.port;
     await waitReady(server);
+    cookie = await signIn(port, `${OWNER.username}@erp.local`, OWNER.password);
   }, 300000);
 
   afterAll(async () => {
     await stopServer(server);
-    await prisma.$executeRawUnsafe(`
-      TRUNCATE TABLE
-        wallet_transactions,
-        credit_payments,
-        sale_items,
-        sales,
-        stock_movements,
-        purchase_items,
-        purchases,
-        price_tiers,
-        products,
-        supplier_payments,
-        suppliers,
-        customers
-      CASCADE
-    `);
+    await truncateAll(prisma);
     await prisma.$disconnect();
   }, 300000);
 
@@ -89,7 +70,7 @@ describe("HTTP input upper bounds (F-04)", () => {
     const res = await httpPost(port, "/api/sales", {
       paymentType: "CASH",
       items: [{ productId: "p-seed", quantity: 100000000 }],
-    });
+    }, cookie);
     expect(res.status).toBe(400);
     const body = await errorBody(res);
     expect(body.message).toMatch(/quantity must be at most 100000/);
@@ -100,7 +81,7 @@ describe("HTTP input upper bounds (F-04)", () => {
     const res = await httpPost(port, "/api/sales", {
       paymentType: "CASH",
       items: [{ productId: "p-seed", quantity: MAX_ITEM_QUANTITY + 1 }],
-    });
+    }, cookie);
     expect(res.status).toBe(400);
     const body = await errorBody(res);
     expect(body.message).toMatch(/at most 100000/);
@@ -110,7 +91,7 @@ describe("HTTP input upper bounds (F-04)", () => {
     const res = await httpPost(port, "/api/sales", {
       paymentType: "CASH",
       items: itemsOfLength(MAX_ITEMS_PER_DOCUMENT + 1),
-    });
+    }, cookie);
     expect(res.status).toBe(400);
     const body = await errorBody(res);
     expect(body.message).toMatch(/at most 100 entries/);
@@ -121,7 +102,7 @@ describe("HTTP input upper bounds (F-04)", () => {
       supplierId: "s-seed",
       paymentType: "CASH",
       items: [{ productId: "p-seed", quantity: 1, costPerUnit: MAX_AMOUNT + 1 }],
-    });
+    }, cookie);
     expect(res.status).toBe(400);
     const body = await errorBody(res);
     expect(body.message).toMatch(/costPerUnit must be at most 10000000/);
@@ -131,7 +112,7 @@ describe("HTTP input upper bounds (F-04)", () => {
     const res = await httpPost(port, "/api/customer-payments", {
       customerId: "c-seed",
       amount: MAX_AMOUNT + 1,
-    });
+    }, cookie);
     expect(res.status).toBe(400);
     const body = await errorBody(res);
     expect(body.message).toMatch(/amount must be at most 10000000/);
@@ -141,7 +122,7 @@ describe("HTTP input upper bounds (F-04)", () => {
     const res = await httpPost(port, "/api/supplier-payments", {
       supplierId: "s-seed",
       amount: MAX_AMOUNT + 1,
-    });
+    }, cookie);
     expect(res.status).toBe(400);
     const body = await errorBody(res);
     expect(body.message).toMatch(/amount must be at most 10000000/);
@@ -152,7 +133,7 @@ describe("HTTP input upper bounds (F-04)", () => {
       productId: "p-seed",
       reason: "DAMAGE",
       quantity: MAX_ITEM_QUANTITY + 1,
-    });
+    }, cookie);
     expect(res.status).toBe(400);
     const body = await errorBody(res);
     expect(body.message).toMatch(/quantity must be at most 100000/);
@@ -164,7 +145,7 @@ describe("HTTP input upper bounds (F-04)", () => {
       unit: "pcs",
       costPrice: 1,
       currentPrice: MAX_AMOUNT + 1,
-    });
+    }, cookie);
     expect(res.status).toBe(400);
     const body = await errorBody(res);
     expect(body.message).toMatch(/currentPrice must be at most 10000000/);
@@ -177,7 +158,7 @@ describe("HTTP input upper bounds (F-04)", () => {
       unit: "kg",
       costPrice: 100,
       currentPrice: 120,
-    });
+    }, cookie);
     expect(product.status).toBe(201);
     seededProductId = ((await product.json()) as { id: string }).id;
 
@@ -186,7 +167,7 @@ describe("HTTP input upper bounds (F-04)", () => {
       reason: "CORRECTION",
       quantity: MAX_ITEM_QUANTITY,
       note: "test seed to boundary",
-    });
+    }, cookie);
     expect(correction.status).toBe(201);
   });
 
@@ -194,13 +175,13 @@ describe("HTTP input upper bounds (F-04)", () => {
     const res = await httpPost(port, "/api/sales", {
       paymentType: "CASH",
       items: [{ productId: seededProductId, quantity: MAX_ITEM_QUANTITY }],
-    });
+    }, cookie);
     expect(res.status).toBe(201);
   });
 
   // ── Liveness: the app never crashed under hostile input ────────────────────
   it("liveness: GET /api/products → 200 after all hostile requests", async () => {
-    const res = await httpGet(port, "/api/products");
+    const res = await httpGet(port, "/api/products", cookie);
     expect(res.status).toBe(200);
     const data = (await res.json()) as unknown[];
     expect(Array.isArray(data)).toBe(true);

@@ -6,6 +6,10 @@
 // payments, sales (CASH/ECASH/CREDIT), report reads, and 404/400 failure
 // paths. Proves the routes stay wired and the D1–D7 responses well-formed
 // end to end, on top of the service-level integration suites.
+//
+// F-10: all routes are guarded, so the suite seeds an OWNER user in the test
+// database and signs in over the real Better Auth endpoint; the session
+// cookies are threaded through every request.
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -13,15 +17,19 @@ import {
   errorBody,
   httpGet,
   httpPost,
+  signIn,
   startServer,
   stopServer,
   waitReady,
   type Server,
 } from "../helpers/http";
 import { createTestPrisma, truncateAll } from "../helpers/db";
+import { createUserRecord } from "../helpers/auth";
 
 const port = 4700 + (process.pid % 400);
 const prisma = createTestPrisma();
+
+const OWNER = { username: "smoke-owner", password: "smokeownerpass", role: "OWNER" } as const;
 
 interface Identified {
   id: string;
@@ -30,6 +38,7 @@ interface Identified {
 describe("D1–D7 HTTP smoke", () => {
   let server: Server;
   let p = 0;
+  let cookie = "";
   let productId = "";
   let customerId = "";
   let supplierId = "";
@@ -38,9 +47,11 @@ describe("D1–D7 HTTP smoke", () => {
   beforeAll(async () => {
     await ensureNoForeignDevServer();
     await truncateAll(prisma);
+    await createUserRecord(prisma, OWNER);
     server = startServer(port);
     p = server.port;
     await waitReady(server);
+    cookie = await signIn(p, `${OWNER.username}@erp.local`, OWNER.password);
   }, 300000);
 
   afterAll(async () => {
@@ -55,10 +66,10 @@ describe("D1–D7 HTTP smoke", () => {
       unit: "kg",
       costPrice: 5,
       currentPrice: 10,
-    });
+    }, cookie);
     expect(res.status).toBe(201);
     productId = ((await res.json()) as Identified).id;
-    const list = await httpGet(p, "/api/products");
+    const list = await httpGet(p, "/api/products", cookie);
     expect(list.status).toBe(200);
   });
 
@@ -68,7 +79,7 @@ describe("D1–D7 HTTP smoke", () => {
       reason: "CORRECTION",
       quantity: 5,
       note: "opening stock",
-    });
+    }, cookie);
     expect(res.status).toBe(201);
     const body = (await res.json()) as { product: { stockQty: number } };
     expect(body.product.stockQty).toBe(5);
@@ -77,13 +88,13 @@ describe("D1–D7 HTTP smoke", () => {
       productId,
       reason: "DAMAGE",
       quantity: 99,
-    });
+    }, cookie);
     expect(damage.status).toBe(409);
     await errorBody(damage);
   });
 
   it("suppliers: create → 201", async () => {
-    const res = await httpPost(p, "/api/suppliers", { name: "Smoke Wholesale" });
+    const res = await httpPost(p, "/api/suppliers", { name: "Smoke Wholesale" }, cookie);
     expect(res.status).toBe(201);
     supplierId = ((await res.json()) as Identified).id;
   });
@@ -93,7 +104,7 @@ describe("D1–D7 HTTP smoke", () => {
       supplierId,
       paymentType: "CASH",
       items: [{ productId, quantity: 10, costPerUnit: 5 }],
-    });
+    }, cookie);
     expect(res.status).toBe(201);
     const body = (await res.json()) as { total: number; items: unknown[] };
     expect(body.total).toBe(50);
@@ -105,7 +116,7 @@ describe("D1–D7 HTTP smoke", () => {
       supplierId,
       paymentType: "CREDIT",
       items: [{ productId, quantity: 1, costPerUnit: 5 }],
-    });
+    }, cookie);
     expect(res.status).toBe(201);
   });
 
@@ -113,12 +124,12 @@ describe("D1–D7 HTTP smoke", () => {
     const res = await httpPost(p, "/api/supplier-payments", {
       supplierId,
       amount: 2,
-    });
+    }, cookie);
     expect(res.status).toBe(201);
   });
 
   it("customers: create → 201", async () => {
-    const res = await httpPost(p, "/api/customers", { name: "Smoke Buyer" });
+    const res = await httpPost(p, "/api/customers", { name: "Smoke Buyer" }, cookie);
     expect(res.status).toBe(201);
     customerId = ((await res.json()) as Identified).id;
   });
@@ -127,7 +138,7 @@ describe("D1–D7 HTTP smoke", () => {
     const res = await httpPost(p, "/api/sales", {
       paymentType: "CASH",
       items: [{ productId, quantity: 2 }],
-    });
+    }, cookie);
     expect(res.status).toBe(201);
     const body = (await res.json()) as { total: number; items: unknown[] };
     expect(body.total).toBe(20);
@@ -138,7 +149,7 @@ describe("D1–D7 HTTP smoke", () => {
     const res = await httpPost(p, "/api/sales", {
       paymentType: "ECASH",
       items: [{ productId, quantity: 1 }],
-    });
+    }, cookie);
     expect(res.status).toBe(201);
   });
 
@@ -147,11 +158,11 @@ describe("D1–D7 HTTP smoke", () => {
       paymentType: "CREDIT",
       customerId,
       items: [{ productId, quantity: 1 }],
-    });
+    }, cookie);
     expect(res.status).toBe(201);
     creditSaleId = ((await res.json()) as Identified).id;
 
-    const one = await httpGet(p, `/api/sales/${creditSaleId}`);
+    const one = await httpGet(p, `/api/sales/${creditSaleId}`, cookie);
     expect(one.status).toBe(200);
   });
 
@@ -159,7 +170,7 @@ describe("D1–D7 HTTP smoke", () => {
     const res = await httpPost(p, "/api/sales", {
       paymentType: "CREDIT",
       items: [{ productId, quantity: 1 }],
-    });
+    }, cookie);
     expect(res.status).toBe(400);
     await errorBody(res);
   });
@@ -168,26 +179,26 @@ describe("D1–D7 HTTP smoke", () => {
     const res = await httpPost(p, "/api/customer-payments", {
       customerId,
       amount: 3,
-    });
+    }, cookie);
     expect(res.status).toBe(201);
   });
 
   it("reports: sales/customers/suppliers/wallet match the ledger", async () => {
-    const sales = await httpGet(p, "/api/reports/sales");
+    const sales = await httpGet(p, "/api/reports/sales", cookie);
     expect(sales.status).toBe(200);
     const salesBody = (await sales.json()) as { totalSales: number; numberOfSales: number };
     expect(salesBody.totalSales).toBe(40);
     expect(salesBody.numberOfSales).toBe(3);
 
-    const customersReport = await httpGet(p, "/api/reports/customers");
+    const customersReport = await httpGet(p, "/api/reports/customers", cookie);
     const customersBody = (await customersReport.json()) as { outstandingCredit: number };
     expect(customersBody.outstandingCredit).toBe(7);
 
-    const suppliersReport = await httpGet(p, "/api/reports/suppliers");
+    const suppliersReport = await httpGet(p, "/api/reports/suppliers", cookie);
     const suppliersBody = (await suppliersReport.json()) as { outstandingBalance: number };
     expect(suppliersBody.outstandingBalance).toBe(3);
 
-    const walletReport = await httpGet(p, "/api/reports/wallet");
+    const walletReport = await httpGet(p, "/api/reports/wallet", cookie);
     const walletBody = (await walletReport.json()) as {
       deposits: number;
       withdrawals: number;
@@ -199,18 +210,18 @@ describe("D1–D7 HTTP smoke", () => {
   });
 
   it("stock movements list → 200; unknown product GET → 404", async () => {
-    const movements = await httpGet(p, "/api/stock/movements");
+    const movements = await httpGet(p, "/api/stock/movements", cookie);
     expect(movements.status).toBe(200);
     const rows = (await movements.json()) as unknown[];
     expect(rows.length).toBeGreaterThanOrEqual(4);
 
-    const missing = await httpGet(p, "/api/products/00000000-0000-0000-0000-000000000000");
+    const missing = await httpGet(p, "/api/products/00000000-0000-0000-0000-000000000000", cookie);
     expect(missing.status).toBe(404);
     await errorBody(missing);
   });
 
   it("liveness: GET /api/products → 200 after the full walk", async () => {
-    const res = await httpGet(p, "/api/products");
+    const res = await httpGet(p, "/api/products", cookie);
     expect(res.status).toBe(200);
   });
 });

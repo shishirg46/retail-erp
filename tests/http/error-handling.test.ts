@@ -10,6 +10,11 @@
 //             driver text, filesystem paths, DB names, hosts, ports, Prisma
 //             invocation details, or connection details.
 //
+// F-10: the proxy gate + route guards mean every /api/* call needs a session
+// cookie. Phase 1 signs in as a seeded OWNER. Phase 2 uses a fabricated cookie
+// so the request passes the coarse proxy gate and the route's DB-backed
+// session lookup actually reaches the dead database.
+//
 // The suite refuses to start unless TEST_DATABASE_URL points at
 // `erp_retail_test`, so the development database can never be connected to by
 // the test server (guard lives in helpers/db.ts + helpers/http.ts).
@@ -21,17 +26,24 @@ import {
   httpGet,
   httpPost,
   httpPostRaw,
+  signIn,
   startServer,
   stopServer,
   waitReady,
   type Server,
 } from "../helpers/http";
 import { createServerPrisma } from "../helpers/http";
+import { truncateAll } from "../helpers/db";
+import { createUserRecord } from "../helpers/auth";
 
 const BASE_PORT = 4500 + (process.pid % 400);
 const BAD_DATABASE_URL = "postgresql://bad:secret@127.0.0.1:1/erp_retail_test";
+// Passes the coarse proxy gate; the dead DB fails the authoritative check.
+const FAKE_COOKIE = "erp.session_token=fake-token";
 
 const prisma = createServerPrisma();
+
+const OWNER = { username: "err-owner", password: "errownerpass", role: "OWNER" } as const;
 
 const LEAK_CANARIES = [
   "Can't reach database",
@@ -65,46 +77,30 @@ function assertNoLeak(bodyText: string): void {
   }
 }
 
-async function resetDatabase(): Promise<void> {
-  await prisma.$executeRawUnsafe(`
-    TRUNCATE TABLE
-      wallet_transactions,
-      credit_payments,
-      sale_items,
-      sales,
-      stock_movements,
-      purchase_items,
-      purchases,
-      price_tiers,
-      products,
-      supplier_payments,
-      suppliers,
-      customers
-    CASCADE
-  `);
-}
-
 describe("F-03 Phase 1: expected application errors keep status + message", () => {
   let server: Server;
   let port = 0;
+  let cookie = "";
   let productId = "";
 
   beforeAll(async () => {
     await ensureNoForeignDevServer();
-    await resetDatabase();
+    await truncateAll(prisma);
+    await createUserRecord(prisma, OWNER);
     server = startServer(BASE_PORT);
     port = server.port;
     await waitReady(server);
+    cookie = await signIn(port, `${OWNER.username}@erp.local`, OWNER.password);
   }, 300000);
 
   afterAll(async () => {
     await stopServer(server);
-    await resetDatabase();
+    await truncateAll(prisma);
     await prisma.$disconnect();
   }, 300000);
 
   it("P1 malformed JSON body → 400", async () => {
-    const res = await httpPostRaw(port, "/api/products", "not-json");
+    const res = await httpPostRaw(port, "/api/products", "not-json", cookie);
     expect(res.status).toBe(400);
     const body = await errorBody(res);
     expect(body.message).toBe("Invalid JSON body");
@@ -116,7 +112,7 @@ describe("F-03 Phase 1: expected application errors keep status + message", () =
       unit: "kg",
       costPrice: 100,
       currentPrice: -5,
-    });
+    }, cookie);
     expect(res.status).toBe(400);
     const body = await errorBody(res);
     expect(body.message).toMatch(/currentPrice/i);
@@ -126,7 +122,7 @@ describe("F-03 Phase 1: expected application errors keep status + message", () =
     const res = await httpPost(port, "/api/sales", {
       paymentType: "CREDIT",
       items: [],
-    });
+    }, cookie);
     expect(res.status).toBe(400);
     const body = await errorBody(res);
     expect(body.message.length).toBeGreaterThan(0);
@@ -138,7 +134,7 @@ describe("F-03 Phase 1: expected application errors keep status + message", () =
       unit: "kg",
       costPrice: 100,
       currentPrice: 120,
-    });
+    }, cookie);
     expect(res.status).toBe(201);
     const body = (await res.json()) as { id: string; stockQty: number };
     productId = body.id;
@@ -148,7 +144,8 @@ describe("F-03 Phase 1: expected application errors keep status + message", () =
   it("P1 GET unknown product id → 404", async () => {
     const res = await httpGet(
       port,
-      "/api/products/00000000-0000-0000-0000-000000000000"
+      "/api/products/00000000-0000-0000-0000-000000000000",
+      cookie
     );
     expect(res.status).toBe(404);
     const body = await errorBody(res);
@@ -158,7 +155,8 @@ describe("F-03 Phase 1: expected application errors keep status + message", () =
   it("P1 GET unknown sale id → 404", async () => {
     const res = await httpGet(
       port,
-      "/api/sales/00000000-0000-0000-0000-000000000000"
+      "/api/sales/00000000-0000-0000-0000-000000000000",
+      cookie
     );
     expect(res.status).toBe(404);
     const body = await errorBody(res);
@@ -171,7 +169,7 @@ describe("F-03 Phase 1: expected application errors keep status + message", () =
       reason: "CORRECTION",
       quantity: 3,
       note: "seed",
-    });
+    }, cookie);
     expect(seed.status).toBe(201);
 
     const res = await httpPost(port, "/api/stock/adjustments", {
@@ -179,14 +177,14 @@ describe("F-03 Phase 1: expected application errors keep status + message", () =
       reason: "DAMAGE",
       quantity: 5,
       note: "above stock",
-    });
+    }, cookie);
     expect(res.status).toBe(409);
     const body = await errorBody(res);
     expect(body.message).toMatch(/stock/i);
   });
 
   it("P1 valid GET /api/products → 200 (sanity)", async () => {
-    const res = await httpGet(port, "/api/products");
+    const res = await httpGet(port, "/api/products", cookie);
     expect(res.status).toBe(200);
     const data = (await res.json()) as unknown[];
     expect(Array.isArray(data)).toBe(true);
@@ -208,7 +206,7 @@ describe("F-03 Phase 2: unreachable DB → sanitized 500 over real HTTP", () => 
   }, 300000);
 
   it('P2 GET /api/products → 500 exactly {message:"Internal Server Error"}', async () => {
-    const res = await httpGet(port, "/api/products");
+    const res = await httpGet(port, "/api/products", FAKE_COOKIE);
     expect(res.status).toBe(500);
     const body = await errorBody(res);
     expect(body).toEqual({ message: "Internal Server Error" });
@@ -221,7 +219,7 @@ describe("F-03 Phase 2: unreachable DB → sanitized 500 over real HTTP", () => 
       unit: "pcs",
       costPrice: 1,
       currentPrice: 2,
-    });
+    }, FAKE_COOKIE);
     expect(res.status).toBe(500);
     const body = await errorBody(res);
     expect(body).toEqual({ message: "Internal Server Error" });
@@ -229,7 +227,7 @@ describe("F-03 Phase 2: unreachable DB → sanitized 500 over real HTTP", () => 
   });
 
   it("P2 GET /api/sales → 500 sanitized on another route", async () => {
-    const res = await httpGet(port, "/api/sales");
+    const res = await httpGet(port, "/api/sales", FAKE_COOKIE);
     expect(res.status).toBe(500);
     const body = await errorBody(res);
     expect(body).toEqual({ message: "Internal Server Error" });
@@ -237,7 +235,7 @@ describe("F-03 Phase 2: unreachable DB → sanitized 500 over real HTTP", () => 
   });
 
   it("P2 report route → 500 sanitized", async () => {
-    const res = await httpGet(port, "/api/reports/sales");
+    const res = await httpGet(port, "/api/reports/sales", FAKE_COOKIE);
     expect(res.status).toBe(500);
     const body = await errorBody(res);
     expect(body).toEqual({ message: "Internal Server Error" });

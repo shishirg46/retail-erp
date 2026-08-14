@@ -195,9 +195,40 @@ export async function waitReady(
   throw new Error(`Next dev server on port ${port} did not become ready in ${timeoutMs}ms`);
 }
 
-export async function httpGet(port: number, urlPath: string): Promise<Response> {
+// Sign in through the real Better Auth route and return the session cookies
+// (erp.session_token + signature cookie) as one `cookie` header value.
+export async function signIn(
+  port: number,
+  email: string,
+  password: string
+): Promise<string> {
+  const res = await fetch(`http://127.0.0.1:${port}/api/auth/sign-in/email`, {
+    method: "POST",
+    signal: AbortSignal.timeout(60000),
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  if (res.status !== 200) {
+    throw new Error(`sign-in failed (${res.status}): ${await res.text()}`);
+  }
+  const cookies = res.headers
+    .getSetCookie()
+    .map((c) => c.split(";")[0].trim())
+    .filter((c) => c.length > 0);
+  if (cookies.length === 0) {
+    throw new Error("sign-in returned no session cookies");
+  }
+  return cookies.join("; ");
+}
+
+export async function httpGet(
+  port: number,
+  urlPath: string,
+  cookie?: string
+): Promise<Response> {
   return fetch(`http://127.0.0.1:${port}${urlPath}`, {
     signal: AbortSignal.timeout(60000),
+    ...(cookie ? { headers: { cookie } } : {}),
   });
 }
 
@@ -205,12 +236,16 @@ export async function httpPost(
   port: number,
   urlPath: string,
   body: unknown,
+  cookie?: string,
   contentType = "application/json"
 ): Promise<Response> {
   return fetch(`http://127.0.0.1:${port}${urlPath}`, {
     method: "POST",
     signal: AbortSignal.timeout(60000),
-    headers: { "content-type": contentType },
+    headers: {
+      "content-type": contentType,
+      ...(cookie ? { cookie } : {}),
+    },
     body: contentType === "application/json" ? JSON.stringify(body) : String(body),
   });
 }
@@ -220,13 +255,40 @@ export async function httpPost(
 export async function httpPostRaw(
   port: number,
   urlPath: string,
-  rawText: string
+  rawText: string,
+  cookie?: string
 ): Promise<Response> {
   return fetch(`http://127.0.0.1:${port}${urlPath}`, {
     method: "POST",
     signal: AbortSignal.timeout(60000),
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...(cookie ? { cookie } : {}) },
     body: rawText,
+  });
+}
+
+export async function httpPatch(
+  port: number,
+  urlPath: string,
+  body: unknown,
+  cookie?: string
+): Promise<Response> {
+  return fetch(`http://127.0.0.1:${port}${urlPath}`, {
+    method: "PATCH",
+    signal: AbortSignal.timeout(60000),
+    headers: { "content-type": "application/json", ...(cookie ? { cookie } : {}) },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function httpDelete(
+  port: number,
+  urlPath: string,
+  cookie?: string
+): Promise<Response> {
+  return fetch(`http://127.0.0.1:${port}${urlPath}`, {
+    method: "DELETE",
+    signal: AbortSignal.timeout(60000),
+    headers: { ...(cookie ? { cookie } : {}) },
   });
 }
 
