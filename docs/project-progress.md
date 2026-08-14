@@ -44,7 +44,8 @@ read-only reporting layer.
 | Audit fix — F-03 error privacy | COMPLETE (Milestone 9) — generic 500 `{ "message": "Internal Server Error" }`, no raw message/path/DB/host leakage; server-side logging; unit + HTTP suites |
 | Audit fix — F-04 input upper bounds | COMPLETE (Milestone 10) — `lib/bounds.ts` caps (`MAX_ITEM_QUANTITY`, `MAX_ITEMS_PER_DOCUMENT`, `MAX_AMOUNT`) enforced in all six validators; over-limit → 400 before allocation; unit + HTTP suites |
 | Audit fix — F-15 regression suite | COMPLETE (Milestone 11) — full D1–D7 automated gate (`npm run test:all`, 17 suites / 197 assertions) against `erp_retail_test` only; dev DB proven byte-identical before/after. **Standardized on Vitest (Milestone 12)** — single runner, same 197 tests, exit 0. **CLOSED (PM-approved) — ERP-005** |
-| Production readiness | NOT YET COMPLETE — requires remaining fixes from the audit (F-10, F-05…) |
+| Audit fix — F-05 DB hardening | COMPLETE (Milestone 13) — 17 CHECK constraints + 9 report indexes (migration `20260814034336_db_hardening_f05`); pre-migration validator green on both DBs; `tests/integration/db-hardening.test.ts` 24/24 (constraints/indexes exist, raw-SQL rejections, signed semantics preserved). Gate now 18 suites / 221 tests. Evidence on ERP-006, left open for PM review |
+| Production readiness | NOT YET COMPLETE — requires the remaining audit fix (F-10 auth, needs a D9 business decision) |
 
 Evidence:
 
@@ -196,6 +197,12 @@ SQL.
   before vs after report queries (including date-filtered variants).
 - **Atomicity verification:** failed stock adjustments / invalid payments left
   all table counts unchanged.
+- **DB hardening (F-05, Milestone 13):** all 17 CHECK constraints present in
+  `pg_constraint` and all 9 report indexes in `pg_indexes` on both
+  `erp_retail` and `erp_retail_test`; `tests/integration/db-hardening.test.ts`
+  24/24 — raw-SQL invalid rows rejected at the DB layer while signed customer
+  (D4) / supplier (D3) balances, CORRECTION `qty_change 0`, and valid
+  PURCHASE/SALE signs keep working; D3/D4/D6 + wallet reconciliation holds.
 - **Postman collection status:** `postman/Retail-ERP.postman_collection.json`
   — 58 requests, 9 folders, valid JSON.
 
@@ -236,9 +243,20 @@ SQL.
   D1–D7 API surface, plus the existing concurrency/bounds/error suites. Dev
   database (`erp_retail`) proven byte-identical before/after. Tracking:
   [GitHub issue ERP-005](https://github.com/shishirg46/retail-erp/issues/5).
+  Closed (PM-approved). Standardized on Vitest (Milestone 12).
+- **F-05 DB hardening is COMPLETE (Milestone 13)** — migration
+  `20260814034336_db_hardening_f05` adds 17 CHECK constraints (restating the
+  service-enforced rules at the DB layer, signed semantics preserved — no
+  constraint on customer/supplier balances or CORRECTION) and 9 report
+  indexes. Pre-migration validator (`scripts/validate-f05-preconditions.mjs`)
+  green on both DBs; `tests/integration/db-hardening.test.ts` 24/24 proves the
+  constraints/indexes exist in the catalog, raw SQL cannot write invalid rows,
+  and legitimate signed/special values still work. Full gate now 18 suites /
+  221 tests, exit 0; dev DB byte-identical before/after. Tracking:
+  [GitHub issue ERP-006](https://github.com/shishirg46/retail-erp/issues/6).
   Evidence commented; left open for PM review.
-- Next audit fix pending PM decision: P1 findings (F-10 auth, F-05 DB
-  constraints/indexes).
+- Next audit fix pending PM decision: P1 finding F-10 (auth) — requires a D9
+  business decision (roles/permissions) before code.
 
 **WHAT HAS NOT BEEN STARTED**
 - Remaining fixes from the audit (see [`docs/architecture-audit.md`](architecture-audit.md)
@@ -272,7 +290,7 @@ route; invalid payloads → 400; `tests/unit/product.validation.ts` 30/30).
 
 ### Step 2 — Fix Remaining HIGH/Selected Findings
 P1 (per audit): auth/roles decision (F-10), automated test framework
-(F-15), DB CHECK + indexes (F-05).
+(F-15) — DONE, DB CHECK + indexes (F-05) — DONE.
 
 ### Step 3 — Regression Testing
 Run the complete existing feature suite after fixes (Postman folders + SQL
@@ -289,7 +307,7 @@ Required to make the backend robust, per
 **atomic stock / concurrency hardening (F-02) — DONE**; **products validation
 (F-01) — DONE**; **error privacy (F-03) — DONE**; **input upper bounds
 (F-04) — DONE**; automated tests for the existing flows (F-15), DB CHECK +
-indexes (F-05),
+indexes (F-05) — DONE,
 `.env.example`, pagination / search / filtering on list endpoints, concurrency
 verification by load test.
 
@@ -312,7 +330,7 @@ Derived from actual repository inspection. Issues are honest and verifiable.
 
 | Issue | Severity | Evidence | Recommended Next Action | Status |
 | ----- | -------- | -------- | ----------------------- | ------ |
-| No automated tests (unit/integration) | High | `tests/unit/` was empty; verification is manual/live + Postman | **RESOLVED (Milestone 11)** — full D1–D7 gate `npm run test:all`: 17 suites / 197 assertions (unit, integration, HTTP, concurrency, bounds, rollback, ledger, reports) against `erp_retail_test` only | VERIFIED |
+| No automated tests (unit/integration) | High | `tests/unit/` was empty; verification is manual/live + Postman | **RESOLVED (Milestone 11)** — full D1–D7 gate `npm run test:all` against `erp_retail_test` only; now 18 suites / 221 tests incl. F-05 db-hardening (Milestone 13) | VERIFIED |
 | No `.env.example` | Medium | `README.md` instructs `cp .env.example .env` but the file does not exist | Create `.env.example` from `.env` shape | OPEN |
 | Raw error messages leaked on 500 | High | `lib/response.ts` returned `error.message` for non-`AppError` (F-03) | **RESOLVED (Milestone 9)** — generic 500 body; details logged server-side; `test:error` 11/11 + `test:http` 12/12 (incl. unreachable-DB leak-canary proof) | VERIFIED |
 | Concurrency not formally verified | Medium | Concurrent stock/sales ops never load-tested; `stockQty` updates rely on `increment` within transactions | **RESOLVED (Milestone 7)** — SALE + DAMAGE use atomic conditional decrement (`reserveStock`); `tests/concurrency/stock.ts` proves no oversell and D6 holds | VERIFIED |
@@ -380,7 +398,8 @@ reconciliation commit that follows it was pushed.
 ## 15. Final Status Snapshot
 
 ```
-PROJECT STATUS:   BACKEND COMPLETE; AUDIT COMPLETE; P0 F-02/F-01 + P1 F-03 FIXED
+PROJECT STATUS:   BACKEND COMPLETE; AUDIT COMPLETE; P0 F-02/F-01 + P1 F-03,
+                  F-04, F-15, F-05 FIXED
 CORE BACKEND:     COMPLETE — products, sales, purchases, suppliers, customers,
                   customer credit, stock adjustments, wallet ledger
 FINANCIAL FLOWS:  COMPLETE — wallet balance, supplier balance, signed customer
@@ -398,23 +417,28 @@ REPORTING:        COMPLETE — 6 read-only reports, SQL-verified, no stored tota
 DOCUMENTATION:    COMPLETE — README, AGENTS.md, business-decisions (D1–D8),
                   implementation-log, project-progress, architecture-audit,
                   postman suite
-TESTING:          COMPLETE — full D1–D7 gate (`npm run test:all`, 17 suites,
-                  197 tests, 0 failures, Vitest) against erp_retail_test only:
+TESTING:          COMPLETE — full D1–D7 gate (`npm run test:all`, 18 suites,
+                  221 tests, 0 failures, Vitest) against erp_retail_test only:
                   unit 105/105 (validation 30, error 11, pricing 6, validators
-                  30, bounds 28), integration 49/49 (sales 10, purchases 6,
+                  30, bounds 28), integration 73/73 (sales 10, purchases 6,
                   customer-payments 8, supplier-payments 5, stock 8, rollback
-                  8, ledger 2, reports 2), concurrency 5/5, HTTP error 12/12,
-                  HTTP bounds 11/11, HTTP D1–D7 smoke 15/15 (F-15, M11+M12)
+                  8, ledger 2, reports 2, db-hardening 24), concurrency 5/5,
+                  HTTP error 12/12, HTTP bounds 11/11, HTTP D1–D7 smoke 15/15
+                  (F-15, M11+M12)
+DB HARDENING:     COMPLETE — 17 CHECK constraints + 9 report indexes (F-05,
+                  M13): constraints/indexes proven in pg_catalog, raw SQL
+                  cannot write invalid rows (signed semantics preserved: no
+                  constraint on customer/supplier balances or CORRECTION)
 INPUT SAFETY:     COMPLETE — quantity/amount/items upper bounds (F-04 fixed):
                   MAX_ITEM_QUANTITY 100000, MAX_ITEMS_PER_DOCUMENT 100,
                   MAX_AMOUNT 10000000 enforced in all six validators; over-limit
                   → 400 before any allocation (DoS payload 1e8 rejected < 15 s)
-CURRENT TASK:     P0+P1 audit fixes through F-04 + F-15 — F-02 (M7, closed),
-                  F-01 (M8, closed), F-03 (M9, closed), F-04 (M10, ERP-004,
-                  closed), F-15 (M11 tsx → M12 Vitest, ERP-005, closed
-                  PM-approved)
-NEXT TASK:        F-05 (DB CHECK constraint + targeted indexes + migration) per
-                  PM decision — then F-10 (requires D9 business decision first)
-PRODUCTION READY: NO — P1 audit findings (F-10, F-05), auth/deployment
+CURRENT TASK:     P0+P1 audit fixes through F-04 + F-15 + F-05 — F-02 (M7,
+                  closed), F-01 (M8, closed), F-03 (M9, closed), F-04 (M10,
+                  ERP-004, closed), F-15 (M11 tsx → M12 Vitest, ERP-005, closed
+                  PM-approved), F-05 (M13, ERP-006, evidence commented, left
+                  open for PM review)
+NEXT TASK:        F-10 (auth — requires D9 business decision first)
+PRODUCTION READY: NO — remaining P1 finding (F-10 auth), auth/deployment
                   decisions, and load testing remain
 ```

@@ -74,6 +74,7 @@ model Purchase {
   supplier Supplier       @relation(fields: [supplierId], references: [id])
   items    PurchaseItem[]
 
+  @@index([date], map: "purchases_date_idx")
   @@map("purchases")
 }
 
@@ -87,6 +88,7 @@ model PurchaseItem {
   purchase Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
   product  Product  @relation(fields: [productId], references: [id])
 
+  @@index([purchaseId], map: "purchase_items_purchase_id_idx")
   @@map("purchase_items")
 }
 
@@ -99,6 +101,7 @@ model SupplierPayment {
 
   supplier Supplier @relation(fields: [supplierId], references: [id])
 
+  @@index([supplierId, date], map: "supplier_payments_supplier_id_date_idx")
   @@map("supplier_payments")
 }
 
@@ -144,6 +147,7 @@ model Sale {
   creditPayments     CreditPayment[]
   walletTransactions WalletTransaction[]
 
+  @@index([date], map: "sales_date_idx")
   @@map("sales")
 }
 
@@ -157,6 +161,7 @@ model SaleItem {
   sale    Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
   product Product @relation(fields: [productId], references: [id])
 
+  @@index([saleId], map: "sale_items_sale_id_idx")
   @@map("sale_items")
 }
 
@@ -175,6 +180,7 @@ model CreditPayment {
 
   walletTransactions WalletTransaction[]
 
+  @@index([customerId, date], map: "credit_payments_customer_id_date_idx")
   @@map("credit_payments")
 }
 
@@ -213,6 +219,7 @@ model WalletTransaction {
   sale          Sale?          @relation(fields: [saleId], references: [id])
   creditPayment CreditPayment? @relation(fields: [creditPaymentId], references: [id])
 
+  @@index([date], map: "wallet_transactions_date_idx")
   @@map("wallet_transactions")
 }
 
@@ -239,5 +246,7 @@ model StockMovement {
 
   product Product @relation(fields: [productId], references: [id])
 
+  @@index([productId, date], map: "stock_movements_product_id_date_idx")
+  @@index([date], map: "stock_movements_date_idx")
   @@map("stock_movements")
 }

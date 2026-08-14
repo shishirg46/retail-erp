@@ -448,20 +448,89 @@ seeded entirely through the HTTP API.
 
 ---
 
-## Current state (13 Aug 2026)
+## Milestone 13 — DB hardening: CHECK constraints + report indexes (F-05, ERP-006) (14 Aug 2026)
+
+**Scope (per ERP-006 — schema + migration + tests only; no application-service
+or repository changes):**
+
+- `prisma/schema.prisma` — 9 targeted `@@index` declarations (explicit `map`
+  names) on report/FK hot paths:
+  - `credit_payments(customerId, date)`, `purchase_items(purchaseId)`,
+    `purchases(date)`, `sale_items(saleId)`, `sales(date)`,
+    `stock_movements(productId, date)`, `stock_movements(date)`,
+    `supplier_payments(supplierId, date)`, `wallet_transactions(date)`.
+- Migration `20260814034336_db_hardening_f05` — the 9 `CREATE INDEX`
+  statements plus **17 `CHECK` constraints** appended as DB-layer backstops
+  that restate rules already enforced by the services/validators:
+  - Non-negativity/positivity: `products_stock_qty_nonnegative` (`stock_qty >= 0`),
+    `products_cost_price_nonnegative`, `products_current_price_positive`,
+    `price_tiers_min_qty_positive` (`>= 1`), `price_tiers_price_positive`,
+    `sale_items_qty_positive` (`>= 1`),
+    `sale_items_price_per_unit_nonnegative`, `purchase_items_qty_positive`
+    (`>= 1`), `purchase_items_cost_per_unit_nonnegative`, `sales_total_positive`
+    (`> 0`), `purchases_total_nonnegative`, `credit_payments_amount_positive`,
+    `supplier_payments_amount_positive`, `wallet_transactions_amount_nonnegative`.
+  - Signed stock-movement semantics per reason: `stock_movements_purchase_qty_positive`
+    (`reason <> 'PURCHASE' OR qty_change > 0`),
+    `stock_movements_sale_qty_negative` (`reason <> 'SALE' OR qty_change < 0`),
+    `stock_movements_damage_qty_negative` (`reason <> 'DAMAGE' OR qty_change < 0`).
+  - Signed ledger semantics deliberately preserved: `customers.balance_owed`
+    and `suppliers.balance_owed` are **not** constrained (prepaid D4 /
+    overpayment D3 stay legal); CORRECTION is deliberately unconstrained
+    (a no-op CORRECTION legitimately writes `qty_change = 0`).
+- `scripts/validate-f05-preconditions.mjs` — pre-migration validator proving
+  every existing row in both `erp_retail` and `erp_retail_test` already
+  satisfies each proposed constraint plus the D6 invariant, before the
+  migration runs.
+- `tests/integration/db-hardening.test.ts` — **24/24**:
+  - 17 CHECK constraints exist in `pg_constraint`; 9 indexes exist in
+    `pg_indexes` (not just in the migration file).
+  - 17 raw-SQL invalid-row rejections, each inside a transaction that rolls
+    back (negative stock/price, zero/negative quantities, `total <= 0`,
+    `amount <= 0`, wrong movement signs).
+  - Positive controls: prepaid customer balance stays negative (D4), overpaid
+    supplier balance stays negative (D3), CORRECTION `qty_change 0` accepted,
+    valid PURCHASE(+) / SALE(−) signs work end-to-end, and the D3/D4/D6 +
+    wallet reconciliation invariants hold after signed ledgers.
+- Applied to both databases: dev via `npx prisma migrate dev`, test via
+  `npx prisma migrate deploy`.
+
+**Verified**
+
+- Preconditions: `node scripts/validate-f05-preconditions.mjs all` — all 17
+  constraint checks + D6 pass on both `erp_retail` and `erp_retail_test`
+  (0 violations, dev rows: 3 products / 5 sales / 13 stock movements /
+  10 wallet transactions / 2 prepaid customers / 1 supplier).
+- `npx prisma migrate status` — "Database schema is up to date!" on both DBs;
+  all 17 constraints present in `pg_constraint` and all 9 indexes in
+  `pg_indexes` on both databases.
+- Gate: `npx tsc --noEmit` green; `npm run lint` green (0 warnings);
+  `npx prisma validate` green; `npm run test:all` — **18 suites, 221 tests,
+  0 failures, exit 0** (unit 105/105, integration 73/73 incl. the new
+  db-hardening 24/24, concurrency 5/5, http error 12/12, http bounds 11/11,
+  http smoke 15/15).
+- Dev database (`erp_retail`) byte-identical to baseline after the full gate
+  (`node scripts/verify-dev-db.mjs`).
+- Tracking: GitHub issue **ERP-006** (F-05) — evidence commented, left open
+  for PM review per the approved plan.
+
+---
+
+## Current state (14 Aug 2026)
 
 - **Done:** Products/Pricing, Sales, Purchasing, Suppliers + Supplier Payments,
   Customers + Credit Payments, Stock Adjustments, Reporting, plus audit fixes
   F-02 (concurrency), F-01 (product validation), F-03 (error privacy),
   F-04 (input upper bounds), F-15 (automated regression suite as the gate,
-  now standardized on Vitest).
+  now standardized on Vitest), F-05 (DB hardening: 17 CHECK constraints +
+  9 report indexes).
   All green on `tsc --noEmit` and `eslint`; the full `npm run test:all` gate
-  (17 suites, 197 tests) passes against `erp_retail_test`.
+  (18 suites, 221 tests) passes against `erp_retail_test`.
 - **Test data:** Rice stock 13, Oil 10, Biscuits 30; Kathmandu Wholesale balance
   0; customers Ramesh −5, Sita −100 (prepaid); wallet −4235; credit payments 405.
 - **Postman:** `postman/Retail-ERP.postman_collection.json` — 58 requests,
   9 folders (Products, Suppliers, Purchases, Supplier Payments, Stock
   Adjustments, Customers, Customer Payments & Credit Lifecycle, Sales — Tier
   Pricing & Payment Types, Reports).
-- **Next:** remaining P1 audit fixes (F-10 auth, F-05 DB constraints/indexes) —
-  each a separate planned milestone.
+- **Next:** remaining P1 audit fix F-10 (auth) — requires a D9 business
+  decision (roles/permissions) before code; separate planned milestone.

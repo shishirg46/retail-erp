@@ -504,7 +504,7 @@ No hygiene action required (beyond the audit commit itself).
 | **F-03** | **HIGH** | Error handling/Security | 500 responses return raw `error.message`, contradicting the method’s own “never leaked” comment | `lib/response.ts:16-19` | Driver/DB internals leak to clients | **FIXED (Milestone 9):** generic 500 `{ "message": "Internal Server Error" }` for any non-`AppError`, details logged server-side; `tests/unit/error-response.ts` (11/11) + `tests/http/error-handling.ts` (12/12) incl. unreachable-DB leak-canary checks | NO | YES | FIXED |
 | **F-10** | **HIGH** | Security | No authentication/authorization/roles anywhere | No middleware; no user model; all routes unguarded | Backend cannot be exposed beyond trusted network; blocks production | Design auth/roles decision; implement as a gated milestone | NO | YES | PLANNED (preexisting) |
 | **F-04** | **MEDIUM** | Security/DoS | Unbounded sale quantity → `new Array(qty + 1)` allocation server-side | `product.service.ts:16`; `sale.validation.ts` has no upper bound | Unauthenticated large `quantity` → memory exhaustion | **FIXED (Milestone 10):** shared caps in `lib/bounds.ts` (`MAX_ITEM_QUANTITY=100000`, `MAX_ITEMS_PER_DOCUMENT=100`, `MAX_AMOUNT=10000000`) wired into all six validators; over-limit → 400 before allocation. `tests/unit/input-bounds.ts` (28/28) + `tests/http/input-bounds.ts` (11/11) incl. the documented `quantity: 1e8` payload rejected < 15 s | NO | YES | FIXED |
-| **F-05** | **MEDIUM** | Database | No CHECK constraints (notably `stock_qty >= 0`) and no secondary indexes on report/FK columns | `schema.prisma`; `prisma/migrations/*` | Negative stock physically storable; report joins scan as tables grow | Add constraint via migration (or DB-level guard) + indexes on `(product_id, date)`, `date`/`source`, `customer_id`, `supplier_id` | YES | YES | OPEN |
+| **F-05** | **MEDIUM** | Database | No CHECK constraints (notably `stock_qty >= 0`) and no secondary indexes on report/FK columns | `schema.prisma`; `prisma/migrations/*` | Negative stock physically storable; report joins scan as tables grow | **FIXED (Milestone 13):** migration `20260814034336_db_hardening_f05` adds 17 CHECK constraints (restating service rules at the DB layer; signed semantics preserved — no constraint on customer/supplier balances or CORRECTION) and 9 report indexes. Pre-migration validator `scripts/validate-f05-preconditions.mjs` green on both DBs. `tests/integration/db-hardening.test.ts` (24/24) proves constraints/indexes exist in the catalog, raw SQL cannot write invalid rows, and legitimate signed/special values still work | YES | YES | FIXED |
 | **F-06** | **MEDIUM** | Money | Float money arithmetic in services (running `grandTotal`, `qty × costPerUnit`) with rounding only for `pricePerUnit` | purchase.sale/purchase/service grand-total sums; no paisa-wide rounding helper | Float noise can enter stored Decimals beyond the documented D1 drift | Centralize paisa rounding on computed totals (int-paisa or round at boundary) | NO | YES | OPEN |
 | **F-07** | **MEDIUM** | API | No pagination / search / filtering on any list endpoint; no update/void capability | `app/api/*` GET handlers return full tables; no PATCH/PUT/DELETE | Unbounded responses + no correction path for entry mistakes | Add pagination + search after P0/P1 fixes (roadmap already lists this) | NO | YES | OPEN |
 | **F-08** | LOW | Validation | No upper bounds / max lengths on string fields; no explicit ID validation | validators check type/non-empty only | Trivially: oversized strings; low real-world impact | Add sane length caps when touching validation | NO | YES | OPEN |
@@ -534,9 +534,10 @@ corrupt *data* (and only under concurrent requests).
    return 400. Unit tests (30/30) + 13 HTTP checks green.
 
 Rationale: F-02 (stock integrity), F-01 (master data validation), F-03
-(error privacy), F-04 (DoS input bounds), and F-15 (automated regression gate)
-are done — every actionable HIGH plus the first two P1 findings are closed.
-Remaining P1 findings (F-10, F-05) are next.
+(error privacy), F-04 (DoS input bounds), F-15 (automated regression gate),
+and F-05 (DB hardening) are done — every actionable HIGH plus the first three
+P1 findings are closed.
+Remaining P1 finding: F-10 (auth).
 
 ### P1 — Should Fix Before Production
 3. **F-03 — FIXED (Milestone 9).** Generic 500 (no message/path/DB/host/port
@@ -560,7 +561,14 @@ Remaining P1 findings (F-10, F-05) are next.
      concurrency 5/5, http error 12/12, http bounds 11/11, http smoke 15/15.
      Dev DB proven byte-identical before/after via
      `scripts/verify-dev-db.mjs`.
- 7. **F-05** — DB CHECK constraint (`stock_qty >= 0`) + secondary indexes for report/FK joins.
+ 7. **F-05 — FIXED (Milestone 13).** Migration `20260814034336_db_hardening_f05`:
+    17 CHECK constraints (stock/money/quantity positivity, per-reason stock
+    sign semantics) + 9 report indexes on report/FK columns. Signed semantics
+    preserved — `customers.balance_owed`/`suppliers.balance_owed` and
+    CORRECTION `qty_change` are deliberately unconstrained. Pre-migration
+    validator green on both DBs; `tests/integration/db-hardening.test.ts`
+    (24/24) proves the objects exist and raw SQL cannot write invalid rows.
+    Tracking: GitHub issue ERP-006.
 
 ### P2 — Important Quality Improvements
 8. **F-06** — paisa-wide money rounding at computed-total boundaries.
@@ -609,7 +617,11 @@ Remaining P1 findings (F-10, F-05) are next.
    `beforeAll`/`afterAll`. `scripts/verify-dev-db.mjs` codifies the dev-DB
    read-only check. `npm run test:all` (17 suites, 197 tests) exit 0.
    Tracking: GitHub issue ERP-005.
-7. **Milestone 13 — DB hardening** (F-05): CHECK constraint + targeted indexes + migration.
+7. **Milestone 13 — DB hardening (F-05) — DONE.** 17 CHECK constraints +
+   9 report indexes via migration `20260814034336_db_hardening_f05`;
+   `scripts/validate-f05-preconditions.mjs` green on both DBs;
+   `tests/integration/db-hardening.test.ts` (24/24). Full gate now 18 suites /
+   221 tests. Tracking: GitHub issue ERP-006 (left open for PM review).
 8. **Milestone 14 — Auth design + implementation** (F-10) — requires a business decision
    (roles/permissions) before code.
 9. Continue with previously planned roadmap (pagination/search, dashboard, advanced

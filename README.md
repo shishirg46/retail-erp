@@ -53,6 +53,14 @@ Shared input upper bounds live in `lib/bounds.ts`
 quantities/amounts/line-counts return 400 before any service allocation runs,
 removing the unbounded-input DoS surface (F-04).
 
+The database is hardened with a defense-in-depth layer (F-05): 17 `CHECK`
+constraints restate the service rules at the DB level (stock/money/quantity
+positivity, per-reason stock-movement signs) plus 9 report indexes on
+report/FK hot paths. Signed semantics are preserved — customer/supplier
+balances and CORRECTION movements are deliberately unconstrained. Migration
+`20260814034336_db_hardening_f05`; `scripts/validate-f05-preconditions.mjs`
+proves existing data satisfies every rule before migrating.
+
 Money is `Decimal` in Postgres, `number` in the application (converted at
 repository boundaries). All business rules are enforced in services, never in
 repositories. Historical prices are frozen (`SaleItem.pricePerUnit`,
@@ -89,13 +97,13 @@ npm run dev
 ## Verification workflow
 
 - `npx tsc --noEmit` and `npm run lint` must stay green.
-- `npm run test:all` runs the full D1–D7 regression gate — 17 suites / 197
+- `npm run test:all` runs the full D1–D7 regression gate — 18 suites / 221
   tests (Vitest) — exclusively against the dedicated `erp_retail_test` database
   (`TEST_DATABASE_URL` in `.env`); every suite refuses to run against any other
   database. It covers unit (product validation, error mapping, pricing, D1–D7
   validators, input bounds), integration (sales, purchases, customer-payments,
-  supplier-payments, stock adjustments, rollback, ledger, reports), HTTP
-  (error contract, input bounds, full D1–D7 API smoke), and concurrency
+  supplier-payments, stock adjustments, rollback, ledger, reports, db-hardening),
+  HTTP (error contract, input bounds, full D1–D7 API smoke), and concurrency
   (stock never goes negative).
 - `node scripts/verify-dev-db.mjs` proves the gate could not have touched the
   development database: it snapshots every `erp_retail` table row count plus a
@@ -112,7 +120,9 @@ npm run dev
   - `npm run test:bounds` — input-upper-bound unit tests (F-04).
   - `npm run test:integration` — all transactional flows (sales, purchases,
     customer-payments, supplier-payments, stock, rollback, ledger, reports)
-    against `erp_retail_test`, serialized via `fileParallelism: false`.
+    plus the F-05 db-hardening suite (constraints/indexes exist, raw SQL
+    cannot write invalid rows, signed semantics preserved) against
+    `erp_retail_test`, serialized via `fileParallelism: false`.
   - `npm run test:http` — error-contract tests over real HTTP (F-03),
     including a phase where the database is unreachable — proving no driver
     text, paths, DB names, hosts, or ports leak on 500.
