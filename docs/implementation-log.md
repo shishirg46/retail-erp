@@ -443,8 +443,8 @@ seeded entirely through the HTTP API.
   product digest unchanged; tests touched only `erp_retail_test`.
 - No stray `next dev`/`tsx`/`vitest` processes after the gate; `.next/dev/lock`
   cleaned up.
-- Tracking: GitHub issue **ERP-005** (F-15) — left open, Vitest evidence
-  commented for PM review.
+- Tracking: GitHub issue **ERP-005** (F-15) — **closed PM-approved** after
+  evidence review; no further F-15 changes.
 
 ---
 

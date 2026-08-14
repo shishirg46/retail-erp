@@ -43,7 +43,7 @@ read-only reporting layer.
 | Audit fix — F-01 product validation | COMPLETE (Milestone 8) — `product.validation.ts` wired into `POST /api/products`; invalid payloads → 400 |
 | Audit fix — F-03 error privacy | COMPLETE (Milestone 9) — generic 500 `{ "message": "Internal Server Error" }`, no raw message/path/DB/host leakage; server-side logging; unit + HTTP suites |
 | Audit fix — F-04 input upper bounds | COMPLETE (Milestone 10) — `lib/bounds.ts` caps (`MAX_ITEM_QUANTITY`, `MAX_ITEMS_PER_DOCUMENT`, `MAX_AMOUNT`) enforced in all six validators; over-limit → 400 before allocation; unit + HTTP suites |
-| Audit fix — F-15 regression suite | COMPLETE (Milestone 11) — full D1–D7 automated gate (`npm run test:all`, 17 suites / 197 assertions) against `erp_retail_test` only; dev DB proven byte-identical before/after. **Standardized on Vitest (Milestone 12)** — single runner, same 197 tests, exit 0 |
+| Audit fix — F-15 regression suite | COMPLETE (Milestone 11) — full D1–D7 automated gate (`npm run test:all`, 17 suites / 197 assertions) against `erp_retail_test` only; dev DB proven byte-identical before/after. **Standardized on Vitest (Milestone 12)** — single runner, same 197 tests, exit 0. **CLOSED (PM-approved) — ERP-005** |
 | Production readiness | NOT YET COMPLETE — requires remaining fixes from the audit (F-10, F-05…) |
 
 Evidence:
@@ -411,10 +411,10 @@ INPUT SAFETY:     COMPLETE — quantity/amount/items upper bounds (F-04 fixed):
                   → 400 before any allocation (DoS payload 1e8 rejected < 15 s)
 CURRENT TASK:     P0+P1 audit fixes through F-04 + F-15 — F-02 (M7, closed),
                   F-01 (M8, closed), F-03 (M9, closed), F-04 (M10, ERP-004,
-                  closed), F-15 (M11 tsx → M12 Vitest, ERP-005, evidence
-                  commented, open for PM)
-NEXT TASK:        Decide next audit fix (P1: F-10, F-05) per
-                  docs/architecture-audit.md — requires a separate PM decision
+                  closed), F-15 (M11 tsx → M12 Vitest, ERP-005, closed
+                  PM-approved)
+NEXT TASK:        F-05 (DB CHECK constraint + targeted indexes + migration) per
+                  PM decision — then F-10 (requires D9 business decision first)
 PRODUCTION READY: NO — P1 audit findings (F-10, F-05), auth/deployment
                   decisions, and load testing remain
 ```
