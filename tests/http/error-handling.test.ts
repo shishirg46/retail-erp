@@ -30,6 +30,7 @@ import {
   startServer,
   stopServer,
   waitReady,
+  warmRoutes,
   type Server,
 } from "../helpers/http";
 import { createServerPrisma } from "../helpers/http";
@@ -90,6 +91,12 @@ describe("F-03 Phase 1: expected application errors keep status + message", () =
     server = startServer(BASE_PORT);
     port = server.port;
     await waitReady(server);
+    await warmRoutes(port, [
+      "/api/products",
+      "/api/sales",
+      "/api/reports/sales",
+      "/api/stock/adjustments",
+    ]);
     cookie = await signIn(port, `${OWNER.username}@erp.local`, OWNER.password);
   }, 300000);
 
@@ -199,6 +206,7 @@ describe("F-03 Phase 2: unreachable DB → sanitized 500 over real HTTP", () => 
     server = startServer(BASE_PORT + 1, BAD_DATABASE_URL);
     port = server.port;
     await waitReady(server);
+    await warmRoutes(port, ["/api/products", "/api/sales", "/api/reports/sales"]);
   }, 300000);
 
   afterAll(async () => {

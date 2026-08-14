@@ -195,6 +195,34 @@ export async function waitReady(
   throw new Error(`Next dev server on port ${port} did not become ready in ${timeoutMs}ms`);
 }
 
+// Next dev discovers routes asynchronously on startup; a request that lands
+// before discovery finishes gets a 404 even for valid routes. `waitReady` only
+// proves `/api/products` responds, so suites that exercise other routes first
+// can race discovery. Warm the paths a suite will hit until each stops
+// returning 404 (the proxy answers 401 for unauthenticated calls, so any
+// non-404 status means the route is registered).
+export async function warmRoutes(port: number, paths: string[]): Promise<void> {
+  const deadline = Date.now() + 60000;
+  for (const path of paths) {
+    let lastStatus = 0;
+    while (Date.now() < deadline) {
+      try {
+        const res = await fetch(`http://127.0.0.1:${port}${path}`, {
+          signal: AbortSignal.timeout(20000),
+        });
+        lastStatus = res.status;
+        if (res.status !== 404) break;
+      } catch {
+        // not compiled yet — retry
+      }
+      await new Promise((resolve) => setTimeout(resolve, 750));
+    }
+    if (lastStatus === 404) {
+      throw new Error(`route ${path} never became available on port ${port}`);
+    }
+  }
+}
+
 // Sign in through the real Better Auth route and return the session cookies
 // (erp.session_token + signature cookie) as one `cookie` header value.
 export async function signIn(
