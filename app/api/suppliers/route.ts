@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { requireRole, CASHIER, OWNER } from "@/lib/auth/authorize";
 import { prisma } from "@/lib/prisma";
 import { toHttpResponse } from "@/lib/response";
 import { PrismaSupplierRepository } from "@/modules/suppliers/supplier.repository";
@@ -8,6 +9,7 @@ import { validateCreateSupplierInput } from "@/modules/suppliers/supplier.valida
 
 export async function POST(req: NextRequest) {
   try {
+    await requireRole(req, [OWNER]);
     let body: unknown;
 
     try {
@@ -28,8 +30,9 @@ export async function POST(req: NextRequest) {
   }
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    await requireRole(req, [OWNER, CASHIER]);
     const suppliers = await new SupplierService(
       new PrismaSupplierRepository(prisma)
     ).listSuppliers();

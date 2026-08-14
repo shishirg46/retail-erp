@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { requireRole, CASHIER, OWNER } from "@/lib/auth/authorize";
 import { prisma } from "@/lib/prisma";
 import { toHttpResponse } from "@/lib/response";
 import { StockService } from "@/modules/stock/stock.service";
@@ -7,6 +8,7 @@ import { validateAdjustStockInput } from "@/modules/stock/stock.validation";
 
 export async function POST(req: NextRequest) {
   try {
+    await requireRole(req, [OWNER, CASHIER]);
     let body: unknown;
 
     try {

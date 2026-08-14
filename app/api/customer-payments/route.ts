@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { requireRole, CASHIER, OWNER } from "@/lib/auth/authorize";
 import { prisma } from "@/lib/prisma";
 import { toHttpResponse } from "@/lib/response";
 import { CustomerPaymentService } from "@/modules/customer-payments/customer-payment.service";
@@ -7,6 +8,7 @@ import { validateCreateCustomerPaymentInput } from "@/modules/customer-payments/
 
 export async function POST(req: NextRequest) {
   try {
+    await requireRole(req, [OWNER, CASHIER]);
     let body: unknown;
 
     try {
@@ -27,8 +29,9 @@ export async function POST(req: NextRequest) {
   }
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    await requireRole(req, [OWNER, CASHIER]);
     const payments = await new CustomerPaymentService(prisma).listCustomerPayments();
 
     return NextResponse.json(payments);

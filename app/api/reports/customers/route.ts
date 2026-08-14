@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { requireRole, OWNER } from "@/lib/auth/authorize";
 import { prisma } from "@/lib/prisma";
 import { toHttpResponse } from "@/lib/response";
 import { PrismaReportRepository } from "@/modules/reports/report.repository";
@@ -11,6 +12,7 @@ import {
 
 export async function GET(req: NextRequest) {
   try {
+    await requireRole(req, [OWNER]);
     const range = parseReportDateRange(
       coerceRangeQuery(req.nextUrl.searchParams)
     );

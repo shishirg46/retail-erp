@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { requireRole, CASHIER, OWNER } from "@/lib/auth/authorize";
 import { prisma } from "@/lib/prisma";
 import { toHttpResponse } from "@/lib/response";
 import { PrismaCustomerRepository } from "@/modules/customers/customer.repository";
@@ -9,6 +10,7 @@ type Context = { params: Promise<{ id: string }> };
 
 export async function GET(req: NextRequest, context: Context) {
   try {
+    await requireRole(req, [OWNER, CASHIER]);
     const { id } = await context.params;
 
     const customer = await new CustomerService(
