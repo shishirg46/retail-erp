@@ -6,6 +6,7 @@ import type { NextRequest } from "next/server";
 
 import { auth } from "../auth";
 import { ForbiddenError, UnauthorizedError } from "../errors";
+import { prisma } from "../prisma";
 
 export const OWNER = "OWNER" as const;
 export const CASHIER = "CASHIER" as const;
@@ -35,8 +36,15 @@ export function assertSameOrigin(req: NextRequest): void {
 // coarse cookie-presence check; a forged/random cookie must fail here.
 export async function requireUser(req: NextRequest): Promise<SessionContext> {
   const session = await auth.api.getSession({ headers: req.headers });
-  if (!session) throw new UnauthorizedError();
-  return session;
+  if (session) return session;
+
+  // Better Auth swallows session-lookup errors into `null`, so a dead database
+  // is indistinguishable from an invalid/expired token here. Probe the DB so an
+  // unreachable database surfaces as a sanitized 500 (server fault) instead of
+  // a misleading 401; only a genuinely invalid session becomes 401.
+  await prisma.$queryRaw`SELECT 1`;
+
+  throw new UnauthorizedError();
 }
 
 // Role authorization for the OWNER/CASHIER matrix (D9.3).
