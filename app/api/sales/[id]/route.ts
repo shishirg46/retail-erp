@@ -4,6 +4,7 @@ import { requireRole, CASHIER, OWNER } from "@/lib/auth/authorize";
 import { prisma } from "@/lib/prisma";
 import { toHttpResponse } from "@/lib/response";
 import { SaleService } from "@/modules/sales/sale.service";
+import { toSaleApi } from "@/modules/sales/sale.mapper";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -18,7 +19,7 @@ export async function GET(req: NextRequest, context: Context) {
       return NextResponse.json({ message: "Sale not found" }, { status: 404 });
     }
 
-    return NextResponse.json(sale);
+    return NextResponse.json(toSaleApi(sale));
   } catch (error) {
     return toHttpResponse(error);
   }

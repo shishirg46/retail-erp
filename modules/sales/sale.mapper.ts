@@ -1,4 +1,5 @@
 import type { Prisma } from "../../generated/prisma/client";
+import { paisaFromDecimal, paisaToRupees } from "../../lib/money";
 
 import type { Sale, SaleItem } from "./sale.types";
 
@@ -14,7 +15,7 @@ export function toSaleItem(
     saleId: raw.saleId,
     productId: raw.productId,
     qty: raw.qty,
-    pricePerUnit: raw.pricePerUnit.toNumber(),
+    pricePerUnit: paisaFromDecimal(raw.pricePerUnit),
   };
 }
 
@@ -23,8 +24,20 @@ export function toSale(raw: SaleWithItems): Sale {
     id: raw.id,
     customerId: raw.customerId,
     paymentType: raw.paymentType,
-    total: raw.total.toNumber(),
+    total: paisaFromDecimal(raw.total),
     date: raw.date,
     items: raw.items.map(toSaleItem),
+  };
+}
+
+// API output view: whole-paisa domain -> rupee wire representation (D11).
+export function toSaleApi(sale: Sale): Sale {
+  return {
+    ...sale,
+    total: paisaToRupees(sale.total),
+    items: sale.items.map((item) => ({
+      ...item,
+      pricePerUnit: paisaToRupees(item.pricePerUnit),
+    })),
   };
 }

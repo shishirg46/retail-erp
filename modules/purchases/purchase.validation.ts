@@ -4,6 +4,7 @@ import {
   MAX_ITEMS_PER_DOCUMENT,
 } from "../../lib/bounds";
 import { ValidationError } from "../../lib/errors";
+import { rupeesToPaisa } from "../../lib/money";
 
 import type {
   CreatePurchaseInput,
@@ -62,7 +63,7 @@ function validatePurchaseItem(value: unknown, index: number): PurchaseItemInput 
   return {
     productId: item.productId,
     quantity: item.quantity,
-    costPerUnit: item.costPerUnit,
+    costPerUnit: rupeesToPaisa(item.costPerUnit),
   };
 }
 

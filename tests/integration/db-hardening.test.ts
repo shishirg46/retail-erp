@@ -12,6 +12,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
+import { paisaFromDecimal } from "../../lib/money";
 import { CustomerPaymentService } from "../../modules/customer-payments/customer-payment.service";
 import { SupplierPaymentService } from "../../modules/supplier-payments/supplier-payment.service";
 import { PurchaseService } from "../../modules/purchases/purchase.service";
@@ -381,7 +382,7 @@ describe("legitimate signed and special values stay valid", () => {
     await service.createCustomerPayment({ customerId, amount: 500 });
 
     const customer = await prisma.customer.findUnique({ where: { id: customerId } });
-    expect(Number(customer!.balanceOwed)).toBe(-1500);
+    expect(paisaFromDecimal(customer!.balanceOwed)).toBe(-1500);
   });
 
   it("overpaid supplier balance stays negative (D3)", async () => {
@@ -391,7 +392,7 @@ describe("legitimate signed and special values stay valid", () => {
     await service.createSupplierPayment({ supplierId, amount: 200 });
 
     const supplier = await prisma.supplier.findUnique({ where: { id: supplierId } });
-    expect(Number(supplier!.balanceOwed)).toBe(-200);
+    expect(paisaFromDecimal(supplier!.balanceOwed)).toBe(-200);
   });
 
   it("CORRECTION qty_change 0 is a valid no-op", async () => {

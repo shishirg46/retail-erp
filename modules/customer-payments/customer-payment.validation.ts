@@ -1,5 +1,6 @@
 import { MAX_AMOUNT } from "../../lib/bounds";
 import { ValidationError } from "../../lib/errors";
+import { rupeesToPaisa } from "../../lib/money";
 
 import type { CreateCustomerPaymentInput } from "./customer-payment.types";
 
@@ -34,7 +35,7 @@ export function validateCreateCustomerPaymentInput(
 
   return {
     customerId: input.customerId,
-    amount: input.amount,
+    amount: rupeesToPaisa(input.amount),
     ...(typeof input.saleId === "string" && input.saleId.length > 0
       ? { saleId: input.saleId }
       : {}),

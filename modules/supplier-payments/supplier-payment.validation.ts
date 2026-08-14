@@ -1,5 +1,6 @@
 import { MAX_AMOUNT } from "../../lib/bounds";
 import { ValidationError } from "../../lib/errors";
+import { rupeesToPaisa } from "../../lib/money";
 
 import type { CreateSupplierPaymentInput } from "./supplier-payment.types";
 
@@ -30,6 +31,6 @@ export function validateCreateSupplierPaymentInput(
 
   return {
     supplierId: input.supplierId,
-    amount: input.amount,
+    amount: rupeesToPaisa(input.amount),
   };
 }

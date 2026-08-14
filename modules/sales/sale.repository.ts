@@ -1,4 +1,5 @@
 import { prisma } from "../../lib/prisma";
+import { paisaToRupees } from "../../lib/money";
 
 import { toSale } from "./sale.mapper";
 import type {
@@ -19,12 +20,12 @@ export class PrismaSaleRepository implements SaleRepository {
       data: {
         paymentType: input.paymentType,
         customerId: input.customerId,
-        total: input.total,
+        total: paisaToRupees(input.total),
         items: {
           create: input.items.map((item) => ({
             productId: item.productId,
             qty: item.qty,
-            pricePerUnit: item.pricePerUnit,
+            pricePerUnit: paisaToRupees(item.pricePerUnit),
           })),
         },
       },

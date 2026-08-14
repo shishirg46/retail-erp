@@ -27,6 +27,7 @@ import {
   startServer,
   stopServer,
   waitReady,
+  warmRoutes,
   type Server,
 } from "../helpers/http";
 import { createServerPrisma } from "../helpers/http";
@@ -55,6 +56,14 @@ describe("HTTP input upper bounds (F-04)", () => {
     server = startServer(PORT);
     port = server.port;
     await waitReady(server);
+    await warmRoutes(port, [
+      "/api/products",
+      "/api/sales",
+      "/api/purchases",
+      "/api/customer-payments",
+      "/api/supplier-payments",
+      "/api/stock/adjustments",
+    ]);
     cookie = await signIn(port, `${OWNER.username}@erp.local`, OWNER.password);
   }, 300000);
 

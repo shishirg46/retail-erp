@@ -7,6 +7,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NotFoundError } from "../../lib/errors";
+import { paisaFromDecimal } from "../../lib/money";
 import { PrismaSupplierRepository } from "../../modules/suppliers/supplier.repository";
 import { PurchaseService } from "../../modules/purchases/purchase.service";
 import { SupplierPaymentService } from "../../modules/supplier-payments/supplier-payment.service";
@@ -49,55 +50,55 @@ describe("supplier payments (D3)", () => {
   });
 
   it("SP1 credit purchase then partial payment: balance drops, wallet debited once", async () => {
-    const product = await createProduct(prisma, { name: "SP1 Rice", unit: "kg", costPrice: 10, currentPrice: 14 });
+    const product = await createProduct(prisma, { name: "SP1 Rice", unit: "kg", costPrice: 1000, currentPrice: 1400 });
     const supplierId = await createSupplier(prisma, "SP1 Wholesale");
 
     await purchaseService.createPurchase({
       supplierId,
       paymentType: "CREDIT",
-      items: [{ productId: product.id, quantity: 10, costPerUnit: 10 }], // owes 100
+      items: [{ productId: product.id, quantity: 10, costPerUnit: 1000 }], // owes 10000
     });
-    expect(await supplierBalance(supplierId)).toBe(100);
+    expect(await supplierBalance(supplierId)).toBe(10000);
     expect(await prisma.walletTransaction.count()).toBe(0);
 
-    await supplierPaymentService.createSupplierPayment({ supplierId, amount: 40 });
-    expect(await supplierBalance(supplierId)).toBe(60);
+    await supplierPaymentService.createSupplierPayment({ supplierId, amount: 4000 });
+    expect(await supplierBalance(supplierId)).toBe(6000);
     const rows = await prisma.walletTransaction.findMany({ where: { type: "WITHDRAWAL", source: "SUPPLIER_PAYMENT" } });
     expect(rows.length).toBe(1);
-    expect(rows[0].amount.toNumber()).toBe(40);
+    expect(paisaFromDecimal(rows[0].amount)).toBe(4000);
   });
 
   it("SP2 over-payment: balance goes signed-negative, wallet debits the full amount", async () => {
-    const product = await createProduct(prisma, { name: "SP2 Overpay", unit: "pcs", costPrice: 2, currentPrice: 4 });
+    const product = await createProduct(prisma, { name: "SP2 Overpay", unit: "pcs", costPrice: 200, currentPrice: 400 });
     const supplierId = await createSupplier(prisma, "SP2 Overpayer");
 
     await purchaseService.createPurchase({
       supplierId,
       paymentType: "CREDIT",
-      items: [{ productId: product.id, quantity: 5, costPerUnit: 2 }], // owes 10
+      items: [{ productId: product.id, quantity: 5, costPerUnit: 200 }], // owes 1000
     });
 
-    await supplierPaymentService.createSupplierPayment({ supplierId, amount: 15 });
-    expect(await supplierBalance(supplierId)).toBe(-5);
+    await supplierPaymentService.createSupplierPayment({ supplierId, amount: 1500 });
+    expect(await supplierBalance(supplierId)).toBe(-500);
     const rows = await prisma.walletTransaction.findMany({ where: { type: "WITHDRAWAL", source: "SUPPLIER_PAYMENT" } });
-    expect(rows.reduce((s, r) => s + r.amount.toNumber(), 0)).toBe(15);
+    expect(rows.reduce((s, r) => s + paisaFromDecimal(r.amount), 0)).toBe(1500);
   });
 
   it("SP3 CASH purchase + no separate payment: wallet debited exactly once", async () => {
-    const product = await createProduct(prisma, { name: "SP3 CashBuy", unit: "pcs", costPrice: 3, currentPrice: 5 });
+    const product = await createProduct(prisma, { name: "SP3 CashBuy", unit: "pcs", costPrice: 300, currentPrice: 500 });
     const supplierId = await createSupplier(prisma, "SP3 Cash");
 
     await purchaseService.createPurchase({
       supplierId,
       paymentType: "CASH",
-      items: [{ productId: product.id, quantity: 4, costPerUnit: 3 }], // wallet -12
+      items: [{ productId: product.id, quantity: 4, costPerUnit: 300 }], // wallet -1200
     });
 
     expect(await supplierBalance(supplierId)).toBe(0);
     expect(await prisma.walletTransaction.count()).toBe(1);
 
     const rows = await prisma.walletTransaction.findMany({ where: { type: "WITHDRAWAL", source: "SUPPLIER_PAYMENT" } });
-    expect(rows[0].amount.toNumber()).toBe(12);
+    expect(paisaFromDecimal(rows[0].amount)).toBe(1200);
   });
 
   it("SP4 failure: unknown supplier -> 404, zero rows", async () => {
@@ -109,7 +110,7 @@ describe("supplier payments (D3)", () => {
       () =>
         supplierPaymentService.createSupplierPayment({
           supplierId: "00000000-0000-0000-0000-000000000000",
-          amount: 50,
+          amount: 5000,
         }),
       NotFoundError,
       /Supplier/
@@ -120,31 +121,31 @@ describe("supplier payments (D3)", () => {
   });
 
   it("SP5 supplier ledger stays reconciled after a mixed cash/credit history", async () => {
-    const product = await createProduct(prisma, { name: "SP5 Mixed", unit: "pcs", costPrice: 2, currentPrice: 4 });
+    const product = await createProduct(prisma, { name: "SP5 Mixed", unit: "pcs", costPrice: 200, currentPrice: 400 });
     const supplierId = await createSupplier(prisma, "SP5 Mixed History");
 
-    await purchaseService.createPurchase({ // CASH — wallet -20, balance 0
+    await purchaseService.createPurchase({ // CASH — wallet -2000, balance 0
       supplierId,
       paymentType: "CASH",
-      items: [{ productId: product.id, quantity: 5, costPerUnit: 4 }],
+      items: [{ productId: product.id, quantity: 5, costPerUnit: 400 }],
     });
-    await purchaseService.createPurchase({ // CREDIT — balance 60
+    await purchaseService.createPurchase({ // CREDIT — balance 6000
       supplierId,
       paymentType: "CREDIT",
-      items: [{ productId: product.id, quantity: 10, costPerUnit: 6 }],
+      items: [{ productId: product.id, quantity: 10, costPerUnit: 600 }],
     });
-    await supplierPaymentService.createSupplierPayment({ supplierId, amount: 70 }); // balance -10
+    await supplierPaymentService.createSupplierPayment({ supplierId, amount: 7000 }); // balance -1000
 
-    expect(await supplierBalance(supplierId)).toBe(-10);
+    expect(await supplierBalance(supplierId)).toBe(-1000);
 
     const creditPurchases = await prisma.purchase.findMany({ where: { paymentType: "CREDIT", supplierId } });
     const payments = await prisma.supplierPayment.findMany({ where: { supplierId } });
-    const expected = creditPurchases.reduce((s, x) => s + x.total.toNumber(), 0) -
-      payments.reduce((s, x) => s + x.amount.toNumber(), 0);
+    const expected = creditPurchases.reduce((s, x) => s + paisaFromDecimal(x.total), 0) -
+      payments.reduce((s, x) => s + paisaFromDecimal(x.amount), 0);
     expect(await supplierBalance(supplierId)).toBe(expected);
 
     const withdrawals = await prisma.walletTransaction.findMany({ where: { type: "WITHDRAWAL", source: "SUPPLIER_PAYMENT" } });
-    const totalOut = withdrawals.reduce((s, x) => s + x.amount.toNumber(), 0);
-    expect(totalOut).toBe(20 + 70);
+    const totalOut = withdrawals.reduce((s, x) => s + paisaFromDecimal(x.amount), 0);
+    expect(totalOut).toBe(2000 + 7000);
   });
 });

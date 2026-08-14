@@ -44,20 +44,18 @@ read-only reporting layer.
 | Audit fix — F-03 error privacy | COMPLETE (Milestone 9) — generic 500 `{ "message": "Internal Server Error" }`, no raw message/path/DB/host leakage; server-side logging; unit + HTTP suites |
 | Audit fix — F-04 input upper bounds | COMPLETE (Milestone 10) — `lib/bounds.ts` caps (`MAX_ITEM_QUANTITY`, `MAX_ITEMS_PER_DOCUMENT`, `MAX_AMOUNT`) enforced in all six validators; over-limit → 400 before allocation; unit + HTTP suites |
 | Audit fix — F-15 regression suite | COMPLETE (Milestone 11) — full D1–D7 automated gate (`npm run test:all`, 17 suites / 197 assertions) against `erp_retail_test` only; dev DB proven byte-identical before/after. **Standardized on Vitest (Milestone 12)** — single runner, same 197 tests, exit 0. **CLOSED (PM-approved) — ERP-005** |
-| Audit fix — F-05 DB hardening | COMPLETE (Milestone 13) — 17 CHECK constraints + 9 report indexes (migration `20260814034336_db_hardening_f05`); pre-migration validator green on both DBs; `tests/integration/db-hardening.test.ts` 24/24 (constraints/indexes exist, raw-SQL rejections, signed semantics preserved). Gate now 18 suites / 221 tests. Evidence on ERP-006, left open for PM review |
+| Audit fix — F-05 DB hardening | COMPLETE (Milestone 13) — 17 CHECK constraints + 9 report indexes (migration `20260814034336_db_hardening_f05`); pre-migration validator green on both DBs; `tests/integration/db-hardening.test.ts` 24/24 (constraints/indexes exist, raw-SQL rejections, signed semantics preserved). Gate now 18 suites / 221 tests. **CLOSED (PM-approved) — ERP-006** |
 | Audit fix — F-10 auth & roles | COMPLETE (Milestone 14) — Better Auth (local username+password, no sign-up), OWNER/CASHIER role matrix (D9.3), every ERP route guarded, OWNER user management; `app/api/users`, `modules/users/`, seed script. Gate now 21 suites / 259 tests. Evidence on ERP-007, left open for PM review |
-| Production readiness | NOT YET COMPLETE — F-10 auth implemented (ERP-007 pending PM review); remaining audit fixes F-06/07/08/09/11, deployment, and load testing still open |
+| Audit fix — F-06/F-09 money & timezone | COMPLETE (Milestone 15) — D11 integer-paisa domain money (`lib/money.ts`; validators/ services/repositories/routes converted, rupees in/out at the API unchanged, Postgres DECIMAL rupees unchanged — no migration) + D10 shop-local timezone (`lib/timezone.ts`, `ERP_TIMEZONE`, default `Asia/Kathmandu`; shop-local naive report params, offset-string range echo). Robustness ride-along: `lib/auth/session-cookie.ts` shared cookie gate + `requireUser` cookie short-circuit. Gate now 22 suites / 283 tests. Evidence on ERP-008, left open for PM review |
+| Production readiness | NOT YET COMPLETE — F-10 auth implemented (ERP-007 pending PM review) and F-06/F-09 done (ERP-008 pending PM review); remaining audit fixes F-07/08/11, deployment, and load testing still open |
 
 Evidence:
 
 - **Branch:** `main`
-- **Latest commit:** `8a28c10 docs: project progress tracker` (before this
-  reconciliation commit)
-- **Milestone/feature commits:** 10 commits after the initial scaffold (11 total
-  on `main`) — verifiable via `git rev-list --count 9065199..HEAD`.
-- **Working tree:** clean (`git status -s` empty). At the time of writing `main`
-  was 1 commit ahead of `origin/main`; the documentation reconciliation commit
-  below is pushed to sync them.
+- **Base commit:** `b62eff9` (F-10 evidence) — Milestone 15 commits on top.
+- **Milestone/feature commits:** verifiable via `git rev-list --count 9065199..HEAD`.
+- **Working tree:** clean after the Milestone 15 commit (`git status -s` empty),
+  pushed to sync with `origin/main`.
 - **Typecheck / lint:** currently pass — `npx tsc --noEmit` OK, `npm run lint`
   OK.
 
@@ -99,6 +97,8 @@ recorded, not reinterpreted.
 | D6 | Stock adjustment semantics: DAMAGE quantity = amount ruined (−delta); CORRECTION quantity = desired final level; results < 0 rejected (409); baseline invariant `Product.stockQty == Σ movements` (products start at 0, opening stock via CORRECTION) | Locked — implemented |
 | D7 | Reporting is a read-only derivation layer over transactional tables; never store report totals; no COGS / valuation / profit until a costing method is decided; inclusive `from ≤ date ≤ to` filtering | Locked — implemented |
 | D9 | Authentication & roles (F-10): Better Auth (local username+password, no OAuth/MFA/sign-up); exactly two roles OWNER/CASHIER; permission matrix D9.3 (CASHIER = sales, customers view/create, customer payments, stock adjustments, stock movements, sales+stock reports); coarse proxy gate + authoritative DB-backed check (D9.8); same-origin enforcement on state-changing requests (D9.9); derived internal email `<username>@erp.local` never exposed (D9.10); reset-password revokes sessions (D9.5) | Locked — implemented |
+| D10 | Shop-local timezone (F-09): `ERP_TIMEZONE` env (default `Asia/Kathmandu`, read at runtime — no schema change); naive `YYYY-MM-DD` report params interpreted as shop-local wall clock via Intl-offset technique; explicit-zone ISO strings parse as-is; report `range` echo is a shop-local offset string, never `.toISOString()`; impossible dates rejected 400 | Locked — implemented |
+| D11 | Integer-paisa domain money (F-06): all app-domain money arithmetic in whole paisa; validators convert rupees→paisa once (round-half-up, exactly once); repositories read/write rupees `DECIMAL` via `paisaFromDecimal`/`paisaToRupees` (no migration); routes return rupees via `to*Api` mappers; API/report JSON shape and denomination unchanged; caps `MAX_AMOUNT`/`MAX_ITEM_QUANTITY`/`MAX_ITEMS_PER_DOCUMENT` preserved + new `MAX_AMOUNT_PAISA` | Locked — implemented |
 
 ## 5. Architecture Currently Implemented
 
@@ -205,6 +205,12 @@ SQL.
   24/24 — raw-SQL invalid rows rejected at the DB layer while signed customer
   (D4) / supplier (D3) balances, CORRECTION `qty_change 0`, and valid
   PURCHASE/SALE signs keep working; D3/D4/D6 + wallet reconciliation holds.
+- **Money + timezone (F-06/F-09, Milestone 15):** `tests/unit/money.test.ts`
+  12/12 (rupeesToPaisa / paisaToRupees / round-half-up / paisaFromDecimal /
+  MAX_AMOUNT_PAISA round-trips) and `tests/unit/timezone.test.ts` (naive
+  shop-local parsing, explicit-zone passthrough, impossible-date rejection);
+  full gate re-run green with paisa domain values (150 unit + 73 integration
+  + 5 concurrency + 12 error + 11 bounds + 15 smoke + 17 auth = 283).
 - **Postman collection status:** `postman/Retail-ERP.postman_collection.json`
   — 58 requests, 9 folders, valid JSON.
 
@@ -254,18 +260,35 @@ SQL.
   green on both DBs; `tests/integration/db-hardening.test.ts` 24/24 proves the
   constraints/indexes exist in the catalog, raw SQL cannot write invalid rows,
   and legitimate signed/special values still work. Full gate now 18 suites /
-  221 tests, exit 0; dev DB byte-identical before/after. Tracking:
-  [GitHub issue ERP-006](https://github.com/shishirg46/retail-erp/issues/6).
+  221 tests, exit 0; dev DB byte-identical before/after. **CLOSED
+  (PM-approved) — ERP-006.**
+- **F-06/F-09 money & timezone is COMPLETE (Milestone 15)** — D11 integer-paisa
+  domain money: `lib/money.ts` (`rupeesToPaisa`/`paisaToRupees`/`roundHalfUp`/
+  `paisaFromDecimal`/`MAX_AMOUNT_PAISA`), validators convert rupees→paisa once,
+  services/repositories/reports do whole-paisa math, repositories read/write
+  rupees `DECIMAL` (no migration), routes return rupees via `to*Api` mappers —
+  API/report JSON shape and values unchanged. D10 shop-local timezone:
+  `lib/timezone.ts` (`ERP_TIMEZONE` default `Asia/Kathmandu`, runtime env),
+  naive report params parsed as shop-local wall clock, explicit-zone ISO
+  strings as-is, `range` echo as shop-local offset strings. Robustness
+  ride-along: shared `lib/auth/session-cookie.ts` + `requireUser` cookie
+  short-circuit. New unit suites `money` (12) + `timezone`; all suites
+  converted to paisa domain expectations (HTTP/report rupee values unchanged);
+  all four HTTP suites now warm their routes. Full gate now 22 suites / 283
+  tests, exit 0; dev DB byte-identical before/after. Tracking:
+  [GitHub issue ERP-008](https://github.com/shishirg46/retail-erp/issues/8).
   Evidence commented; left open for PM review.
-- Next audit fix pending PM decision: P1 finding F-10 (auth) — **DONE (Milestone
-  14, ERP-007)**, evidence commented, left open for PM review; then remaining
-  P2/P3 findings F-06/07/08/09/11 need their own decisions before code.
+- Next audit fix pending PM decision: F-10 (ERP-007) and F-06/F-09 (ERP-008)
+  evidence reviewed by PM — **implemented (M14/M15)**, left open for review;
+  then remaining P2/P3 findings F-07/08/11 need their own decisions before
+  code.
 
 **WHAT HAS NOT BEEN STARTED**
 - Remaining fixes from the audit (see [`docs/architecture-audit.md`](architecture-audit.md)
-  "Recommended Fix Order" — P1: F-10, F-05; P2/P3: F-06, F-07, F-09, F-08, F-11).
-  F-10 and F-05 are **implemented (M13/M14)** and awaiting PM review on
-  ERP-006/ERP-007.
+  "Recommended Fix Order"): P2/P3 findings F-07, F-08, F-11 still need their own
+  business decisions before code. F-05 (M13), F-10 (M14), and F-06/F-09 (M15)
+  are **implemented**; ERP-006 is closed PM-approved, ERP-007/ERP-008 await PM
+  review.
 - Frontend UI; dashboards; advanced reporting; exports; pagination/search.
 - Deployment, backups, observability.
 
@@ -403,7 +426,7 @@ reconciliation commit that follows it was pushed.
 
 ```
 PROJECT STATUS:   BACKEND COMPLETE; AUDIT COMPLETE; P0 F-02/F-01 + P1 F-03,
-                  F-04, F-15, F-05 FIXED
+                  F-04, F-15, F-05, F-10, F-06/F-09 FIXED
 CORE BACKEND:     COMPLETE — products, sales, purchases, suppliers, customers,
                   customer credit, stock adjustments, wallet ledger
 FINANCIAL FLOWS:  COMPLETE — wallet balance, supplier balance, signed customer
@@ -418,18 +441,19 @@ ERROR HANDLING:   COMPLETE — sanitized 500s (F-03 fixed): unexpected errors re
                   host leak; details logged server-side; 400/404/409 unchanged
 REPORTING:        COMPLETE — 6 read-only reports, SQL-verified, no stored totals
                   (D7)
-DOCUMENTATION:    COMPLETE — README, AGENTS.md, business-decisions (D1–D8),
+DOCUMENTATION:    COMPLETE — README, AGENTS.md, business-decisions (D1–D11),
                   implementation-log, project-progress, architecture-audit,
                   postman suite
-TESTING:          COMPLETE — full D1–D7 + F-10 gate (`npm run test:all`, 21
-                  suites, 259 tests, 0 failures, Vitest) against erp_retail_test
-                  only: unit 126/126 (validation 30, error 11, pricing 6,
-                  validators 30, bounds 28, auth-config 10, user-management 11),
-                  integration 73/73 (sales 10, purchases 6, customer-payments 8,
-                  supplier-payments 5, stock 8, rollback 8, ledger 2, reports 2,
-                  db-hardening 24), concurrency 5/5, HTTP error 12/12, HTTP
-                  bounds 11/11, HTTP D1–D7 smoke 15/15, F-10 auth-flow 17/17
-                  (F-15, M11+M12 / F-10, M14)
+TESTING:          COMPLETE — full D1–D7 + F-10 + money/timezone gate
+                  (`npm run test:all`, 22 suites, 283 tests, 0 failures,
+                  Vitest) against erp_retail_test only: unit 150/150
+                  (validation 30, error 11, pricing 6, validators 30, bounds
+                  28, auth-config 10, user-management 11, money 12, timezone
+                  new), integration 73/73 (sales 10, purchases 6,
+                  customer-payments 8, supplier-payments 5, stock 8, rollback
+                  8, ledger 2, reports 2, db-hardening 24), concurrency 5/5,
+                  HTTP error 12/12, HTTP bounds 11/11, HTTP D1–D7 smoke 15/15,
+                  F-10 auth-flow 17/17 (F-15 M11+M12 / F-10 M14 / F-06+F-09 M15)
 DB HARDENING:     COMPLETE — 17 CHECK constraints + 9 report indexes (F-05,
                   M13): constraints/indexes proven in pg_catalog, raw SQL
                   cannot write invalid rows (signed semantics preserved: no
@@ -445,15 +469,23 @@ AUTH (F-10, M14): COMPLETE — Better Auth (local username+password, sign-up
                   delete, last-OWNER invariant), D9.10 derived email never
                   exposed, /api/auth/admin/* blocked, same-origin enforcement,
                   reset revokes sessions. D9 recorded. ERP-007 left open
-CURRENT TASK:     P0+P1 audit fixes through F-05 + F-10 — F-02 (M7, closed),
-                  F-01 (M8, closed), F-03 (M9, closed), F-04 (M10, ERP-004,
-                  closed), F-15 (M11 tsx → M12 Vitest, ERP-005, closed
-                  PM-approved), F-05 (M13, ERP-006, evidence commented, left
-                  open for PM review), F-10 (M14, ERP-007, evidence commented,
-                  left open for PM review)
-NEXT TASK:        PM review of ERP-006 (F-05) + ERP-007 (F-10); then P2/P3
-                  findings F-06/07/08/09/11 each need their own business
-                  decisions
-PRODUCTION READY: NO — P2/P3 audit findings (F-06/07/08/09/11), deployment
+MONEY (F-06, M15): COMPLETE — integer-paisa domain money (D11): whole-paisa
+                  math from validation to report sums; rupees in/out at the
+                  API and DECIMAL rupees in Postgres unchanged (no migration);
+                  round-half-up exactly once at the input boundary;
+                  MAX_AMOUNT_PAISA guard; D1 pricePerUnit drift ≤ 1 paisa/sale
+TIMEZONE (F-09, M15): COMPLETE — shop-local timezone (D10): ERP_TIMEZONE env
+                  (default Asia/Kathmandu), naive report params parsed as
+                  shop-local wall clock (Intl-offset), explicit-zone ISO as-is,
+                  range echo as shop-local offset strings, no schema change
+CURRENT TASK:     P0+P1 audit fixes through F-10 + F-06/F-09 — F-02 (M7,
+                  closed), F-01 (M8, closed), F-03 (M9, closed), F-04 (M10,
+                  closed), F-15 (M11 tsx → M12 Vitest, closed PM-approved),
+                  F-05 (M13, ERP-006, closed PM-approved), F-10 (M14, ERP-007,
+                  evidence commented, left open for PM review), F-06/F-09
+                  (M15, ERP-008, evidence commented, left open for PM review)
+NEXT TASK:        PM review of ERP-007 (F-10) + ERP-008 (F-06/F-09); then P2/P3
+                  findings F-07/08/11 each need their own business decisions
+PRODUCTION READY: NO — P2/P3 audit findings (F-07/08/11), deployment
                   decisions, and load testing remain
 ```

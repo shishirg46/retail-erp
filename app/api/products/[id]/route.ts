@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole, CASHIER, OWNER } from "@/lib/auth/authorize";
 import { prisma } from "@/lib/prisma";
 import { toHttpResponse } from "@/lib/response";
-import { PrismaProductRepository } from "@/modules/products/product.repository";
+import { PrismaProductRepository, toProductApi } from "@/modules/products/product.repository";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -18,7 +18,7 @@ export async function GET(req: NextRequest, context: Context) {
       return NextResponse.json({ message: "Product not found" }, { status: 404 });
     }
 
-    return NextResponse.json(product);
+    return NextResponse.json(toProductApi(product));
   } catch (error) {
     return toHttpResponse(error);
   }

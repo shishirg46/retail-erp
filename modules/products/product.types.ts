@@ -1,9 +1,11 @@
 
+// Money is whole paisa in the domain (D11). Rupee values convert at the
+// API boundary (validators in, routes out).
 
 // A price tier — one row of "buy at least this many, pay this price"
 export interface PriceTier {
   minQty: number;
-  price: number;
+  price: number; // paisa
 }
 
 // A Product, as your app's business logic sees it —
@@ -12,8 +14,8 @@ export interface Product {
   name: string;
   category: string | null;
   unit: string;
-  costPrice: number;
-  currentPrice: number;
+  costPrice: number; // paisa
+  currentPrice: number; // paisa
   stockQty: number;
   priceTiers: PriceTier[];
 }

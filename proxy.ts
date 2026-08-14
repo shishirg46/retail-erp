@@ -6,16 +6,14 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 
-const SESSION_COOKIES = ["erp.session_token", "__Secure-erp.session_token"];
+import { hasSessionCookie } from "./lib/auth/session-cookie";
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (pathname.startsWith("/api/auth/")) return NextResponse.next();
 
-  const hasSessionCookie = SESSION_COOKIES.some((name) => request.cookies.has(name));
-
-  if (!hasSessionCookie) {
+  if (!hasSessionCookie(request)) {
     return NextResponse.json({ message: "Authentication required" }, { status: 401 });
   }
 

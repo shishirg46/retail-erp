@@ -42,36 +42,38 @@ describe("cross-module ledger", () => {
   });
 
   it("L1 full lifecycle: all ledgers agree with raw-SQL re-derivations", async () => {
-    const a = await createProduct(prisma, { name: "L1 Rice", unit: "kg", costPrice: 20, currentPrice: 20 });
-    const b = await createProduct(prisma, { name: "L1 Oil", unit: "liter", costPrice: 30, currentPrice: 30 });
+    // Domain seeds are paisa; the DB stores rupees. All raw-SQL assertions
+    // below are therefore in rupees (2000 paisa = Rs. 20.00).
+    const a = await createProduct(prisma, { name: "L1 Rice", unit: "kg", costPrice: 2000, currentPrice: 2000 });
+    const b = await createProduct(prisma, { name: "L1 Oil", unit: "liter", costPrice: 3000, currentPrice: 3000 });
     const supplierId = await createSupplier(prisma, "L1 Wholesale");
     const customerId = await createCustomer(prisma, "L1 Customer");
 
-    // 1. CASH purchase A 10 @ 20  -> wallet -200
+    // 1. CASH purchase A 10 @ 2000  -> wallet -200.00
     await purchaseService.createPurchase({
       supplierId,
       paymentType: "CASH",
-      items: [{ productId: a.id, quantity: 10, costPerUnit: 20 }],
+      items: [{ productId: a.id, quantity: 10, costPerUnit: 2000 }],
     });
-    // 2. CREDIT purchase B 5 @ 30  -> supplier owes 150
+    // 2. CREDIT purchase B 5 @ 3000  -> supplier owes 150.00
     await purchaseService.createPurchase({
       supplierId,
       paymentType: "CREDIT",
-      items: [{ productId: b.id, quantity: 5, costPerUnit: 30 }],
+      items: [{ productId: b.id, quantity: 5, costPerUnit: 3000 }],
     });
-    // 3. CASH sale A 3 (20 each)   -> wallet +60, stock A = 7
+    // 3. CASH sale A 3 (2000 each)   -> wallet +60.00, stock A = 7
     await saleService.createSale({ paymentType: "CASH", items: [{ productId: a.id, quantity: 3 }] });
-    // 4. ECASH sale B 2 (30 each)  -> wallet +60, stock B = 3
+    // 4. ECASH sale B 2 (3000 each)  -> wallet +60.00, stock B = 3
     await saleService.createSale({ paymentType: "ECASH", items: [{ productId: b.id, quantity: 2 }] });
-    // 5. CREDIT sale B 1 (30)      -> customer owes 30, stock B = 2
+    // 5. CREDIT sale B 1 (3000)      -> customer owes 30.00, stock B = 2
     await saleService.createSale({ paymentType: "CREDIT", customerId, items: [{ productId: b.id, quantity: 1 }] });
-    // 6. supplier payment 50       -> owes 100, wallet -50
-    await supplierPaymentService.createSupplierPayment({ supplierId, amount: 50 });
-    // 7. customer payment 10       -> owes 20, wallet +10
-    await customerPaymentService.createCustomerPayment({ customerId, amount: 10 });
-    // 8. DAMAGE A 2                -> stock A = 5
+    // 6. supplier payment 5000       -> owes 100.00, wallet -50.00
+    await supplierPaymentService.createSupplierPayment({ supplierId, amount: 5000 });
+    // 7. customer payment 1000       -> owes 20.00, wallet +10.00
+    await customerPaymentService.createCustomerPayment({ customerId, amount: 1000 });
+    // 8. DAMAGE A 2                  -> stock A = 5
     await stockService.adjustStock({ productId: a.id, reason: "DAMAGE", quantity: 2 });
-    // 9. CORRECTION B target 4      -> +2, stock B = 4
+    // 9. CORRECTION B target 4        -> +2, stock B = 4
     await stockService.adjustStock({ productId: b.id, reason: "CORRECTION", quantity: 4 });
 
     // ── wallet (D3/D1) ──────────────────────────────────────────────────────
@@ -129,25 +131,26 @@ describe("cross-module ledger", () => {
 
     // ── D2 latest cost ──────────────────────────────────────────────────────
     const freshB = await productRepository.findById(b.id);
-    expect(freshB!.costPrice).toBe(30);
+    expect(freshB!.costPrice).toBe(3000);
   });
 
   it("L2 prepaid credit consumed by later sales keeps every ledger consistent", async () => {
-    const product = await createProduct(prisma, { name: "L2 Prepaid Cycle", unit: "pcs", costPrice: 4, currentPrice: 10 });
+    // Domain seeds are paisa; SQL assertions below are rupees.
+    const product = await createProduct(prisma, { name: "L2 Prepaid Cycle", unit: "pcs", costPrice: 400, currentPrice: 1000 });
     const customerId = await createCustomer(prisma, "L2 Advance Buyer");
 
-    // Prepay Rs. 1000 with zero debt -> -1000 (D4 prepaid).
-    await customerPaymentService.createCustomerPayment({ customerId, amount: 1000 });
+    // Prepay Rs. 1000 (100000 paisa) with zero debt -> -1000.00 (D4 prepaid).
+    await customerPaymentService.createCustomerPayment({ customerId, amount: 100000 });
     // Stock arrives via CASH purchase so the credit sales can consume it.
     const supplierId = await createSupplier(prisma, "L2 Stock Source");
     await purchaseService.createPurchase({
       supplierId,
       paymentType: "CASH",
-      items: [{ productId: product.id, quantity: 100, costPerUnit: 4 }], // wallet -400
+      items: [{ productId: product.id, quantity: 100, costPerUnit: 400 }], // wallet -400.00
     });
     // CREDIT sales consume the prepaid credit (signed add).
-    await saleService.createSale({ paymentType: "CREDIT", customerId, items: [{ productId: product.id, quantity: 50 }] }); // +500
-    await saleService.createSale({ paymentType: "CREDIT", customerId, items: [{ productId: product.id, quantity: 25 }] }); // +250
+    await saleService.createSale({ paymentType: "CREDIT", customerId, items: [{ productId: product.id, quantity: 50 }] }); // +500.00
+    await saleService.createSale({ paymentType: "CREDIT", customerId, items: [{ productId: product.id, quantity: 25 }] }); // +250.00
 
     const balance = await sqlScalar(`SELECT balance_owed::text AS v FROM customers WHERE id='${customerId}'`);
     expect(balance).toBe(-250);

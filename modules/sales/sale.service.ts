@@ -15,10 +15,10 @@ import type { CreateSaleInput, Sale, SaleItemDraft } from "./sale.types";
 
 // Effective per-unit price charged at the time of sale.
 // For tiered products the bundles don't map to a clean unit price, so the
-// effective price is total / quantity, rounded to paisa (2 decimals).
+// effective price is total / quantity, rounded half-up to whole paisa (D11).
 // This is frozen into SaleItem.pricePerUnit for historical accuracy.
-function effectiveUnitPrice(total: number, quantity: number): number {
-  return Math.round((total / quantity) * 100) / 100;
+function effectiveUnitPrice(totalPaisa: number, quantity: number): number {
+  return Math.round(totalPaisa / quantity);
 }
 
 export class SaleService {

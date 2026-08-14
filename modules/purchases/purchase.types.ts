@@ -1,9 +1,11 @@
+// Money is whole paisa in the domain (D11). Rupee values convert at the
+// API boundary (validators in, routes out).
 export type PurchasePaymentType = "CASH" | "CREDIT";
 
 export interface PurchaseItemInput {
   productId: string;
   quantity: number;
-  costPerUnit: number;
+  costPerUnit: number; // paisa
 }
 
 export interface CreatePurchaseInput {
@@ -17,14 +19,14 @@ export interface PurchaseItem {
   purchaseId: string;
   productId: string;
   qty: number;
-  costPerUnit: number;
+  costPerUnit: number; // paisa
 }
 
 export interface Purchase {
   id: string;
   supplierId: string;
   paymentType: PurchasePaymentType;
-  total: number;
+  total: number; // paisa
   date: Date;
   items: PurchaseItem[];
 }

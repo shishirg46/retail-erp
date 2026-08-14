@@ -4,6 +4,7 @@ import { requireRole, CASHIER, OWNER } from "@/lib/auth/authorize";
 import { prisma } from "@/lib/prisma";
 import { toHttpResponse } from "@/lib/response";
 import { CustomerPaymentService } from "@/modules/customer-payments/customer-payment.service";
+import { toCreditPaymentApi } from "@/modules/customer-payments/customer-payment.repository";
 import { validateCreateCustomerPaymentInput } from "@/modules/customer-payments/customer-payment.validation";
 
 export async function POST(req: NextRequest) {
@@ -23,7 +24,7 @@ export async function POST(req: NextRequest) {
       input
     );
 
-    return NextResponse.json(payment, { status: 201 });
+    return NextResponse.json(toCreditPaymentApi(payment), { status: 201 });
   } catch (error) {
     return toHttpResponse(error);
   }
@@ -34,7 +35,7 @@ export async function GET(req: NextRequest) {
     await requireRole(req, [OWNER, CASHIER]);
     const payments = await new CustomerPaymentService(prisma).listCustomerPayments();
 
-    return NextResponse.json(payments);
+    return NextResponse.json(payments.map(toCreditPaymentApi));
   } catch (error) {
     return toHttpResponse(error);
   }

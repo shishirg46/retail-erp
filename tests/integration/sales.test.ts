@@ -19,6 +19,7 @@ import {
   NotFoundError,
   ValidationError,
 } from "../../lib/errors";
+import { paisaFromDecimal } from "../../lib/money";
 import { PrismaProductRepository } from "../../modules/products/product.repository";
 import { SaleService } from "../../modules/sales/sale.service";
 import { createTestPrisma, truncateAll, reconcile } from "../helpers/db";
@@ -43,11 +44,13 @@ async function expectError(
   if (pattern) expect((threw as Error).message).toMatch(pattern);
 }
 
+// Wallet rows store rupee Decimals; sum as whole paisa so assertions compare
+// like-for-like with the paisa domain values (D11).
 async function walletDeposits(saleId: string): Promise<number> {
   const rows = await prisma.walletTransaction.findMany({
     where: { type: "DEPOSIT", source: "SALE", saleId },
   });
-  return rows.reduce((sum, row) => sum + row.amount.toNumber(), 0);
+  return rows.reduce((sum, row) => sum + paisaFromDecimal(row.amount), 0);
 }
 
 async function rowCounts(): Promise<Record<string, number>> {
@@ -71,7 +74,7 @@ describe("sales (D1)", () => {
 
   // ── CASH / ECASH / CREDIT happy paths (D1) ────────────────────────────────
   it("S1 CASH sale: wallet DEPOSIT, stock -qty, invariant holds", async () => {
-    const product = await createProduct(prisma, { name: "S1 Rice", unit: "kg", costPrice: 10, currentPrice: 20 });
+    const product = await createProduct(prisma, { name: "S1 Rice", unit: "kg", costPrice: 1000, currentPrice: 2000 });
     await seedStock(prisma, product.id, 10);
 
     const sale = await saleService.createSale({
@@ -79,9 +82,9 @@ describe("sales (D1)", () => {
       items: [{ productId: product.id, quantity: 2 }],
     });
 
-    expect(sale.total).toBe(40);
+    expect(sale.total).toBe(4000);
     expect(sale.items.length).toBe(1);
-    expect(sale.items[0].pricePerUnit).toBe(20);
+    expect(sale.items[0].pricePerUnit).toBe(2000);
     expect(sale.customerId).toBeNull();
 
     const fresh = await productRepository.findById(product.id);
@@ -92,11 +95,11 @@ describe("sales (D1)", () => {
     });
     expect(deposits.length).toBe(1);
     expect(deposits[0].type).toBe("DEPOSIT");
-    expect(deposits[0].amount.toNumber()).toBe(40);
+    expect(paisaFromDecimal(deposits[0].amount)).toBe(4000);
   });
 
   it("S2 ECASH sale: wallet DEPOSIT, no customer row", async () => {
-    const product = await createProduct(prisma, { name: "S2 Coffee", unit: "pcs", costPrice: 5, currentPrice: 10 });
+    const product = await createProduct(prisma, { name: "S2 Coffee", unit: "pcs", costPrice: 500, currentPrice: 1000 });
     await seedStock(prisma, product.id, 5);
 
     const sale = await saleService.createSale({
@@ -104,13 +107,13 @@ describe("sales (D1)", () => {
       items: [{ productId: product.id, quantity: 1 }],
     });
 
-    expect(sale.total).toBe(10);
-    expect(await walletDeposits(sale.id)).toBe(10);
+    expect(sale.total).toBe(1000);
+    expect(await walletDeposits(sale.id)).toBe(1000);
     expect(await prisma.customer.count()).toBe(0);
   });
 
   it("S3 CREDIT sale: customer balance += total, NO wallet entry", async () => {
-    const product = await createProduct(prisma, { name: "S3 Tea", unit: "pcs", costPrice: 8, currentPrice: 15 });
+    const product = await createProduct(prisma, { name: "S3 Tea", unit: "pcs", costPrice: 800, currentPrice: 1500 });
     const customerId = await createCustomer(prisma, "S3 Credit Customer");
     await seedStock(prisma, product.id, 5);
 
@@ -120,10 +123,10 @@ describe("sales (D1)", () => {
       items: [{ productId: product.id, quantity: 2 }],
     });
 
-    expect(sale.total).toBe(30);
+    expect(sale.total).toBe(3000);
     expect(sale.customerId).toBe(customerId);
     const customer = await prisma.customer.findUnique({ where: { id: customerId } });
-    expect(customer!.balanceOwed.toNumber()).toBe(30);
+    expect(paisaFromDecimal(customer!.balanceOwed)).toBe(3000);
     expect(await prisma.walletTransaction.count()).toBe(0);
   });
 
@@ -132,9 +135,9 @@ describe("sales (D1)", () => {
     const product = await createProduct(prisma, {
       name: "S4 Bundle Oil",
       unit: "liter",
-      costPrice: 90,
-      currentPrice: 30,
-      priceTiers: [{ minQty: 3, price: 80 }],
+      costPrice: 9000,
+      currentPrice: 3000,
+      priceTiers: [{ minQty: 3, price: 8000 }],
     });
     await seedStock(prisma, product.id, 10);
 
@@ -143,32 +146,32 @@ describe("sales (D1)", () => {
       items: [{ productId: product.id, quantity: 7 }],
     });
 
-    // 7 liters: two 3-liter bundles (80+80) + one unit (30) = 190.
-    expect(sale.total).toBe(190);
-    expect(sale.items[0].pricePerUnit).toBe(Math.round((190 / 7) * 100) / 100);
-    expect(await walletDeposits(sale.id)).toBe(190);
+    // 7 liters: two 3-liter bundles (8000+8000) + one unit (3000) = 19000.
+    expect(sale.total).toBe(19000);
+    expect(sale.items[0].pricePerUnit).toBe(Math.round(19000 / 7));
+    expect(await walletDeposits(sale.id)).toBe(19000);
 
     const fresh = await productRepository.findById(product.id);
     expect(fresh!.stockQty).toBe(3);
   });
 
   it("S5 multi-item sale: one movement each, wallet sums all lines", async () => {
-    const a = await createProduct(prisma, { name: "S5 A", unit: "kg", costPrice: 10, currentPrice: 20 });
-    const b = await createProduct(prisma, { name: "S5 B", unit: "kg", costPrice: 5, currentPrice: 12 });
+    const a = await createProduct(prisma, { name: "S5 A", unit: "kg", costPrice: 1000, currentPrice: 2000 });
+    const b = await createProduct(prisma, { name: "S5 B", unit: "kg", costPrice: 500, currentPrice: 1200 });
     await seedStock(prisma, a.id, 10);
     await seedStock(prisma, b.id, 10);
 
     const sale = await saleService.createSale({
       paymentType: "CASH",
       items: [
-        { productId: a.id, quantity: 3 }, // 60
-        { productId: b.id, quantity: 2 }, // 24
+        { productId: a.id, quantity: 3 }, // 6000
+        { productId: b.id, quantity: 2 }, // 2400
       ],
     });
 
-    expect(sale.total).toBe(84);
+    expect(sale.total).toBe(8400);
     expect(sale.items.length).toBe(2);
-    expect(await walletDeposits(sale.id)).toBe(84);
+    expect(await walletDeposits(sale.id)).toBe(8400);
 
     const stockA = await productRepository.findById(a.id);
     const stockB = await productRepository.findById(b.id);
@@ -252,14 +255,14 @@ describe("sales (D1)", () => {
   });
 
   it("S10 invariant: CASH sale for a credit customer leaves balanceOwed untouched", async () => {
-    const product = await createProduct(prisma, { name: "S10 Mix", unit: "pcs", costPrice: 2, currentPrice: 5 });
+    const product = await createProduct(prisma, { name: "S10 Mix", unit: "pcs", costPrice: 200, currentPrice: 500 });
     const customerId = await createCustomer(prisma, "S10 Cash-on-credit-acct");
     await seedStock(prisma, product.id, 6);
 
     await saleService.createSale({
       paymentType: "CREDIT",
       customerId,
-      items: [{ productId: product.id, quantity: 2 }], // balance += 10
+      items: [{ productId: product.id, quantity: 2 }], // balance += 1000
     });
 
     const cashSale = await saleService.createSale({
@@ -268,12 +271,12 @@ describe("sales (D1)", () => {
       items: [{ productId: product.id, quantity: 1 }], // should NOT touch the balance
     });
 
-    expect(cashSale.total).toBe(5);
+    expect(cashSale.total).toBe(500);
     const customer = await prisma.customer.findUnique({ where: { id: customerId } });
-    expect(customer!.balanceOwed.toNumber()).toBe(10);
+    expect(paisaFromDecimal(customer!.balanceOwed)).toBe(1000);
 
     const creditSales = await prisma.sale.findMany({ where: { paymentType: "CREDIT", customerId } });
-    const creditTotal = creditSales.reduce((sum, s) => sum + s.total.toNumber(), 0);
-    expect(creditTotal).toBe(10);
+    const creditTotal = creditSales.reduce((sum, s) => sum + paisaFromDecimal(s.total), 0);
+    expect(creditTotal).toBe(1000);
   });
 });

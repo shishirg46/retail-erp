@@ -4,6 +4,7 @@ import { requireRole, CASHIER, OWNER } from "@/lib/auth/authorize";
 import { prisma } from "@/lib/prisma";
 import { toHttpResponse } from "@/lib/response";
 import { SaleService } from "@/modules/sales/sale.service";
+import { toSaleApi } from "@/modules/sales/sale.mapper";
 import { validateCreateSaleInput } from "@/modules/sales/sale.validation";
 
 export async function POST(req: NextRequest) {
@@ -21,7 +22,7 @@ export async function POST(req: NextRequest) {
 
     const sale = await new SaleService(prisma).createSale(input);
 
-    return NextResponse.json(sale, { status: 201 });
+    return NextResponse.json(toSaleApi(sale), { status: 201 });
   } catch (error) {
     return toHttpResponse(error);
   }
@@ -32,7 +33,7 @@ export async function GET(req: NextRequest) {
     await requireRole(req, [OWNER, CASHIER]);
     const sales = await new SaleService(prisma).listSales();
 
-    return NextResponse.json(sales);
+    return NextResponse.json(sales.map(toSaleApi));
   } catch (error) {
     return toHttpResponse(error);
   }

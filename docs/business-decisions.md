@@ -492,3 +492,97 @@ invariants; transactional behavior is identical once authenticated.
 matrix, forged-cookie bypass, origin rejection, last-owner invariant) on the
 existing Vitest infrastructure; existing HTTP suites log in as a fixture owner
 first.
+
+---
+
+## D10 — Shop-local timezone for dates and reports
+
+**Status:** Accepted — 14 Aug 2026
+
+**Current behavior (before)**
+Date handling ran in the server's UTC/ISO world. Naive `from`/`to` query params
+on reports were coerced as UTC-midnight, so a "today" window expressed by the
+shop (Asia/Kathmandu, UTC+05:45) could cover the wrong 24 hours of shop time.
+
+**Proposed behavior**
+The shop's timezone is configured at runtime via the `ERP_TIMEZONE` environment
+variable (default `Asia/Kathmandu`), read from `process.env` — no
+`next.config.ts` change.
+
+- **Naive date-only query params** (`from`/`to` = `YYYY-MM-DD`) on report
+  routes are interpreted as **shop-local wall clock**. `lib/timezone.ts`
+  implements the Intl-offset technique: compute the shop's UTC offset for the
+  given instant, then anchor to shop-local midnight (`naiveAsShopLocal`,
+  `shopLocalDayStart`, `formatShopLocal` with the shop offset, e.g. `+05:45`).
+- **Full ISO strings carrying an explicit zone** (`Z`, `±hh:mm`, `[IANA]`) parse
+  as-is — explicit beats configuration.
+- The report **`range` echo** shows the applied window as a shop-local offset
+  string (`2026-08-14T00:00:00+05:45`), never `.toISOString()` (which lies in
+  UTC).
+- Component range validation rejects impossible dates (e.g. `2026-99-99` → 400)
+  and inverted ranges (`from > to` → 400).
+
+**Reason**
+Retail day boundaries are defined by the shop's wall clock, not UTC. Without
+this, date-range filtering and the echoed range can silently shift report
+windows, and a naive `from=2026-08-14` would not mean "the 14th, shop time" to
+the staff reading the report.
+
+**Database impact:** none — no schema or migration (explicit D10 scope).
+**API impact:** `GET /api/reports/*?from=YYYY-MM-DD&to=YYYY-MM-DD` interprets the
+params in shop-local time; the `range` echo changes from UTC to shop-local
+offset strings. No payload field changes.
+**Existing feature impact:** none — ISO timestamps with an explicit zone and
+date objects passed programmatically are unchanged.
+**Testing impact:** `tests/unit/timezone.test.ts` — naive-as-shop-local,
+shop-local day start, offset-string formatting, explicit-zone passthrough, and
+impossible-date rejection.
+
+---
+
+## D11 — Integer-paisa domain money
+
+**Status:** Accepted — 14 Aug 2026
+
+**Current behavior (before)**
+Money was `number` (IEEE-754 float) throughout the application layer,
+converted to/from Postgres `DECIMAL` (rupees) at the repository boundary.
+Fractions (tier prices, effective unit prices, report sums, balance
+arithmetic) accumulated floating-point error line after line.
+
+**Proposed behavior**
+All money arithmetic inside the application domain is **integer paisa**.
+
+- `lib/money.ts` — the single conversion point: `rupeesToPaisa`,
+  `paisaToRupees`, `roundHalfUp`, `paisaFromDecimal` (Decimal → whole paisa),
+  and `MAX_AMOUNT_PAISA = MAX_AMOUNT × 100`.
+- **Input boundary:** validators convert rupees → paisa **once**
+  (`rupeesToPaisa`). **Domain:** services, repositories, and reports do all
+  math in whole paisa (a paisa is exact). **Persistence:** repositories write
+  `paisaToRupees` → Postgres `DECIMAL` and read `paisaFromDecimal` (rupees stay
+  in the database — no migration). **Output boundary:** routes convert
+  paisa → rupees through `to*Api` mappers; the API/report JSON shape and rupee
+  denomination are unchanged.
+- Rounding is **round-half-up, applied exactly once** at the rupee→paisa input
+  conversion; downstream math is integer and needs no rounding. The only
+  division is `SaleItem.pricePerUnit = Math.round(totalPaisa / quantity)`,
+  still informational per D1.
+- Caps preserved with identical message wording: `MAX_AMOUNT`,
+  `MAX_ITEM_QUANTITY`, `MAX_ITEMS_PER_DOCUMENT`; the paisa layer is additionally
+  guarded by `MAX_AMOUNT_PAISA`.
+
+**Reason**
+Floating-point money cannot represent paisa exactly (0.29 is not 29/100 in
+binary), so per-line and per-report sums drift. Integer paisa is exact across
+the entire domain and, at 100 paisa/rupee, stays safely below `2^53` even at
+the documented caps — the F-04 bounds remain meaningful.
+
+**Database impact:** none — `DECIMAL` columns keep storing rupees; no migration.
+**API impact:** none to payload shape or denomination (rupees in, rupees out);
+rounding is exact.
+**Existing feature impact:** `SaleItem.pricePerUnit` is now the exact paisa
+quotient (D1 drift ≤ 1 paisa per sale vs ≤ 3 paisa before); report totals are
+whole-paisa sums converted to rupees once at payload construction.
+**Testing impact:** `tests/unit/money.test.ts` (12 tests); integration/unit
+suites assert paisa domain values where they call services/repositories, while
+HTTP and report rupee expectations are unchanged (verified over real HTTP).

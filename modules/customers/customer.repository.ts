@@ -1,4 +1,5 @@
 import { prisma } from "../../lib/prisma";
+import { paisaToRupees } from "../../lib/money";
 
 import { toCustomer } from "./customer.mapper";
 import type { Customer, CustomerRepository, CreateCustomerInput } from "./customer.types";
@@ -36,7 +37,7 @@ export class PrismaCustomerRepository implements CustomerRepository {
   async updateBalance(id: string, amountChange: number): Promise<Customer> {
     const raw = await this.db.customer.update({
       where: { id },
-      data: { balanceOwed: { increment: amountChange } },
+      data: { balanceOwed: { increment: paisaToRupees(amountChange) } },
     });
 
     return toCustomer(raw);

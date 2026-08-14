@@ -21,6 +21,7 @@ import {
   startServer,
   stopServer,
   waitReady,
+  warmRoutes,
   type Server,
 } from "../helpers/http";
 import { createTestPrisma, truncateAll } from "../helpers/db";
@@ -51,6 +52,21 @@ describe("D1–D7 HTTP smoke", () => {
     server = startServer(port);
     p = server.port;
     await waitReady(server);
+    await warmRoutes(p, [
+      "/api/products",
+      "/api/stock/adjustments",
+      "/api/suppliers",
+      "/api/purchases",
+      "/api/supplier-payments",
+      "/api/customers",
+      "/api/sales",
+      "/api/customer-payments",
+      "/api/reports/sales",
+      "/api/reports/customers",
+      "/api/reports/suppliers",
+      "/api/reports/wallet",
+      "/api/stock/movements",
+    ]);
     cookie = await signIn(p, `${OWNER.username}@erp.local`, OWNER.password);
   }, 300000);
 

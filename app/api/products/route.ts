@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole, CASHIER, OWNER } from "@/lib/auth/authorize";
 import { prisma } from "@/lib/prisma";
 import { toHttpResponse } from "@/lib/response";
-import { PrismaProductRepository } from "@/modules/products/product.repository";
+import { PrismaProductRepository, toProductApi } from "@/modules/products/product.repository";
 import { validateCreateProductInput } from "@/modules/products/product.validation";
 
 export async function POST(req: NextRequest) {
@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
 
     const product = await new PrismaProductRepository(prisma).create(input);
 
-    return NextResponse.json(product, { status: 201 });
+    return NextResponse.json(toProductApi(product), { status: 201 });
   } catch (error) {
     return toHttpResponse(error);
   }
@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
     await requireRole(req, [OWNER, CASHIER]);
     const products = await new PrismaProductRepository(prisma).list();
 
-    return NextResponse.json(products);
+    return NextResponse.json(products.map(toProductApi));
   } catch (error) {
     return toHttpResponse(error);
   }

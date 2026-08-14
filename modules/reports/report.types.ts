@@ -1,3 +1,7 @@
+// Money in these report payloads is RUPEES (number): the report payload is the
+// output boundary, so paisa math happens inside the repository and converts to
+// rupees exactly once when the payload is built (D11). Range instants echo in
+// the shop timezone with the shop's offset (D10).
 export type PaymentType = "CASH" | "ECASH" | "CREDIT";
 export type PurchasePaymentType = "CASH" | "CREDIT";
 export type StockReason = "PURCHASE" | "SALE" | "DAMAGE" | "CORRECTION";

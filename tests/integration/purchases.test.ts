@@ -10,6 +10,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NotFoundError } from "../../lib/errors";
+import { paisaFromDecimal } from "../../lib/money";
 import { PrismaProductRepository } from "../../modules/products/product.repository";
 import { PrismaSupplierRepository } from "../../modules/suppliers/supplier.repository";
 import { PurchaseService } from "../../modules/purchases/purchase.service";
@@ -61,26 +62,26 @@ describe("purchases (D2/D3)", () => {
   });
 
   it("P1 CASH purchase: wallet WITHDRAWAL, stock +qty, supplier balance unchanged", async () => {
-    const product = await createProduct(prisma, { name: "P1 Flour", unit: "kg", costPrice: 10, currentPrice: 20 });
+    const product = await createProduct(prisma, { name: "P1 Flour", unit: "kg", costPrice: 1000, currentPrice: 2000 });
     const supplierId = await createSupplier(prisma, "P1 Wholesale");
 
     const purchase = await purchaseService.createPurchase({
       supplierId,
       paymentType: "CASH",
-      items: [{ productId: product.id, quantity: 10, costPerUnit: 20 }],
+      items: [{ productId: product.id, quantity: 10, costPerUnit: 2000 }],
     });
 
-    expect(purchase.total).toBe(200);
+    expect(purchase.total).toBe(20000);
     const fresh = await productRepository.findById(product.id);
     expect(fresh!.stockQty).toBe(10);
-    expect(fresh!.costPrice).toBe(20);
+    expect(fresh!.costPrice).toBe(2000);
 
     const supplier = await supplierRepository.findById(supplierId);
     expect(supplier!.balanceOwed).toBe(0);
 
     const rows = await prisma.walletTransaction.findMany({ where: { type: "WITHDRAWAL", source: "SUPPLIER_PAYMENT" } });
     expect(rows.length).toBe(1);
-    expect(rows[0].amount.toNumber()).toBe(200);
+    expect(paisaFromDecimal(rows[0].amount)).toBe(20000);
 
     const movement = await prisma.stockMovement.findMany({ where: { reason: "PURCHASE", productId: product.id } });
     expect(movement.length).toBe(1);
@@ -88,18 +89,18 @@ describe("purchases (D2/D3)", () => {
   });
 
   it("P2 CREDIT purchase: supplier balance += total, NO wallet entry", async () => {
-    const product = await createProduct(prisma, { name: "P2 Sugar", unit: "kg", costPrice: 30, currentPrice: 40 });
+    const product = await createProduct(prisma, { name: "P2 Sugar", unit: "kg", costPrice: 3000, currentPrice: 4000 });
     const supplierId = await createSupplier(prisma, "P2 Credit Wholesale");
 
     const purchase = await purchaseService.createPurchase({
       supplierId,
       paymentType: "CREDIT",
-      items: [{ productId: product.id, quantity: 5, costPerUnit: 30 }],
+      items: [{ productId: product.id, quantity: 5, costPerUnit: 3000 }],
     });
 
-    expect(purchase.total).toBe(150);
+    expect(purchase.total).toBe(15000);
     const supplier = await supplierRepository.findById(supplierId);
-    expect(supplier!.balanceOwed).toBe(150);
+    expect(supplier!.balanceOwed).toBe(15000);
 
     expect(await prisma.walletTransaction.count()).toBe(0);
     const fresh = await productRepository.findById(product.id);
@@ -107,29 +108,29 @@ describe("purchases (D2/D3)", () => {
   });
 
   it("P3 D2: costPrice tracks the latest purchase; history frozen", async () => {
-    const product = await createProduct(prisma, { name: "P3 Oil", unit: "liter", costPrice: 18, currentPrice: 25 });
+    const product = await createProduct(prisma, { name: "P3 Oil", unit: "liter", costPrice: 1800, currentPrice: 2500 });
     const supplierId = await createSupplier(prisma, "P3 Two-dip Wholesale");
 
     await purchaseService.createPurchase({
       supplierId,
       paymentType: "CASH",
-      items: [{ productId: product.id, quantity: 100, costPerUnit: 20 }],
+      items: [{ productId: product.id, quantity: 100, costPerUnit: 2000 }],
     });
     await purchaseService.createPurchase({
       supplierId,
       paymentType: "CASH",
-      items: [{ productId: product.id, quantity: 50, costPerUnit: 22 }],
+      items: [{ productId: product.id, quantity: 50, costPerUnit: 2200 }],
     });
 
     const fresh = await productRepository.findById(product.id);
-    expect(fresh!.costPrice).toBe(22);
+    expect(fresh!.costPrice).toBe(2200);
     expect(fresh!.stockQty).toBe(150);
 
     const items = await prisma.purchaseItem.findMany({
       where: { productId: product.id },
       orderBy: { costPerUnit: "asc" },
     });
-    expect(items.map((i) => i.costPerUnit.toNumber())).toEqual([20, 22]);
+    expect(items.map((i) => paisaFromDecimal(i.costPerUnit))).toEqual([2000, 2200]);
   });
 
   it("P4 failure: unknown supplier -> 404, zero rows", async () => {
@@ -173,14 +174,14 @@ describe("purchases (D2/D3)", () => {
   });
 
   it("P6 CASH purchase: stock and movement ledger stay consistent", async () => {
-    const a = await createProduct(prisma, { name: "P6 A", unit: "pcs", costPrice: 1, currentPrice: 2 });
+    const a = await createProduct(prisma, { name: "P6 A", unit: "pcs", costPrice: 100, currentPrice: 200 });
     const supplierId = await createSupplier(prisma, "P6 Bulk");
 
     const purchase = await purchaseService.createPurchase({
       supplierId,
       paymentType: "CASH",
       items: [
-        { productId: a.id, quantity: 4, costPerUnit: 1 },
+        { productId: a.id, quantity: 4, costPerUnit: 100 },
       ],
     });
 
@@ -191,6 +192,6 @@ describe("purchases (D2/D3)", () => {
     const fresh = await productRepository.findById(a.id);
     expect(fresh!.stockQty).toBe(4);
     expect(sumMovement).toBe(4);
-    expect(purchase.total).toBe(4);
+    expect(purchase.total).toBe(400);
   });
 });

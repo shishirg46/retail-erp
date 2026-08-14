@@ -1,4 +1,5 @@
 import { prisma } from "../../lib/prisma";
+import { paisaFromDecimal, paisaToRupees } from "../../lib/money";
 
 import type {
   CreditPayment,
@@ -21,8 +22,16 @@ function toCreditPayment(raw: {
     id: raw.id,
     customerId: raw.customerId,
     saleId: raw.saleId,
-    amount: (raw.amount as { toNumber: () => number }).toNumber(),
+    amount: paisaFromDecimal(raw.amount),
     date: raw.date,
+  };
+}
+
+// API output view: whole-paisa domain -> rupee wire representation (D11).
+export function toCreditPaymentApi(payment: CreditPayment): CreditPayment {
+  return {
+    ...payment,
+    amount: paisaToRupees(payment.amount),
   };
 }
 
@@ -34,7 +43,7 @@ export class PrismaCreditPaymentRepository implements CreditPaymentRepository {
       data: {
         customerId: input.customerId,
         saleId: input.saleId,
-        amount: input.amount,
+        amount: paisaToRupees(input.amount),
       },
     });
 

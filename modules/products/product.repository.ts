@@ -1,6 +1,7 @@
 import { prisma } from "../../lib/prisma";
 import { Prisma } from "../../generated/prisma/client";
 import { ValidationError } from "../../lib/errors";
+import { paisaFromDecimal, paisaToRupees } from "../../lib/money";
 
 import type {
   Product,
@@ -19,11 +20,24 @@ type ProductWithTiers = Prisma.ProductGetPayload<{
 function toProduct(raw: ProductWithTiers): Product {
   return {
     ...raw,
-    costPrice: raw.costPrice.toNumber(),
-    currentPrice: raw.currentPrice.toNumber(),
+    costPrice: paisaFromDecimal(raw.costPrice),
+    currentPrice: paisaFromDecimal(raw.currentPrice),
     priceTiers: raw.priceTiers.map((tier) => ({
       ...tier,
-      price: tier.price.toNumber(),
+      price: paisaFromDecimal(tier.price),
+    })),
+  };
+}
+
+// API output view: whole-paisa domain -> rupee wire representation (D11).
+export function toProductApi(product: Product): Product {
+  return {
+    ...product,
+    costPrice: paisaToRupees(product.costPrice),
+    currentPrice: paisaToRupees(product.currentPrice),
+    priceTiers: product.priceTiers.map((tier) => ({
+      ...tier,
+      price: paisaToRupees(tier.price),
     })),
   };
 }
@@ -43,13 +57,13 @@ export class PrismaProductRepository implements ProductRepository {
         name: input.name,
         category: input.category,
         unit: input.unit,
-        costPrice: input.costPrice,
-        currentPrice: input.currentPrice,
+        costPrice: paisaToRupees(input.costPrice),
+        currentPrice: paisaToRupees(input.currentPrice),
         priceTiers: input.priceTiers?.length
           ? {
               create: input.priceTiers.map((tier) => ({
                 minQty: tier.minQty,
-                price: tier.price,
+                price: paisaToRupees(tier.price),
               })),
             }
           : undefined,
@@ -113,7 +127,7 @@ export class PrismaProductRepository implements ProductRepository {
   async updateCostPrice(id: string, costPrice: number): Promise<Product> {
     const raw = await this.db.product.update({
       where: { id },
-      data: { costPrice },
+      data: { costPrice: paisaToRupees(costPrice) },
       ...withPriceTiers,
     });
 

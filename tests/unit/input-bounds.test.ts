@@ -12,6 +12,7 @@ import {
   MAX_ITEM_QUANTITY,
   MAX_ITEMS_PER_DOCUMENT,
 } from "../../lib/bounds";
+import { MAX_AMOUNT_PAISA } from "../../lib/money";
 import { ValidationError } from "../../lib/errors";
 import { validateCreateProductInput } from "../../modules/products/product.validation";
 import { validateCreateSaleInput } from "../../modules/sales/sale.validation";
@@ -86,7 +87,7 @@ describe("shared input upper bounds (F-04)", () => {
       ])
     );
     expect(input.items[0].quantity).toBe(MAX_ITEM_QUANTITY);
-    expect(input.items[0].costPerUnit).toBe(MAX_AMOUNT);
+    expect(input.items[0].costPerUnit).toBe(MAX_AMOUNT_PAISA);
   });
 
   it("purchase: quantity MAX+1 rejected", () => {
@@ -194,7 +195,7 @@ describe("shared input upper bounds (F-04)", () => {
       customerId: "c1",
       amount: MAX_AMOUNT,
     });
-    expect(input.amount).toBe(MAX_AMOUNT);
+    expect(input.amount).toBe(MAX_AMOUNT_PAISA);
   });
 
   it("customer-payment: amount MAX+1 rejected", () => {
@@ -217,7 +218,7 @@ describe("shared input upper bounds (F-04)", () => {
       supplierId: "s1",
       amount: MAX_AMOUNT,
     });
-    expect(input.amount).toBe(MAX_AMOUNT);
+    expect(input.amount).toBe(MAX_AMOUNT_PAISA);
   });
 
   it("supplier-payment: amount MAX+1 rejected", () => {
@@ -240,8 +241,8 @@ describe("shared input upper bounds (F-04)", () => {
     const input = validateCreateProductInput(
       productBody({ costPrice: MAX_AMOUNT, currentPrice: MAX_AMOUNT })
     );
-    expect(input.costPrice).toBe(MAX_AMOUNT);
-    expect(input.currentPrice).toBe(MAX_AMOUNT);
+    expect(input.costPrice).toBe(MAX_AMOUNT_PAISA);
+    expect(input.currentPrice).toBe(MAX_AMOUNT_PAISA);
   });
 
   it("product: costPrice MAX+1 rejected", () => {
@@ -272,7 +273,7 @@ describe("shared input upper bounds (F-04)", () => {
       })
     );
     expect(input.priceTiers?.[0].minQty).toBe(MAX_ITEM_QUANTITY);
-    expect(input.priceTiers?.[0].price).toBe(MAX_AMOUNT);
+    expect(input.priceTiers?.[0].price).toBe(MAX_AMOUNT_PAISA);
   });
 
   it("product: tier price MAX+1 rejected", () => {
@@ -301,5 +302,7 @@ describe("shared input upper bounds (F-04)", () => {
     expect(MAX_AMOUNT).toBeGreaterThan(0);
     expect(MAX_ITEM_QUANTITY).toBeLessThan(Number.MAX_SAFE_INTEGER);
     expect(MAX_AMOUNT).toBeLessThan(Number.MAX_SAFE_INTEGER);
+    expect(MAX_AMOUNT_PAISA).toBe(MAX_AMOUNT * 100);
+    expect(MAX_AMOUNT_PAISA).toBeLessThan(Number.MAX_SAFE_INTEGER);
   });
 });

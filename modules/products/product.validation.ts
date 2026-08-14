@@ -1,5 +1,6 @@
 import { MAX_AMOUNT, MAX_ITEM_QUANTITY } from "../../lib/bounds";
 import { ValidationError } from "../../lib/errors";
+import { rupeesToPaisa } from "../../lib/money";
 
 import type { CreateProductInput, PriceTier } from "./product.types";
 
@@ -51,7 +52,8 @@ function validatePriceTier(value: unknown, index: number): PriceTier {
     );
   }
 
-  return { minQty: tier.minQty, price: tier.price };
+  // Prices arrive in rupees and are converted exactly once to paisa here (D11).
+  return { minQty: tier.minQty, price: rupeesToPaisa(tier.price) };
 }
 
 // Request-level validation: checks the structure of the HTTP payload only.
@@ -143,8 +145,8 @@ export function validateCreateProductInput(body: unknown): CreateProductInput {
         ? input.category
         : undefined,
     unit: input.unit.trim(),
-    costPrice: input.costPrice,
-    currentPrice: input.currentPrice,
+    costPrice: rupeesToPaisa(input.costPrice),
+    currentPrice: rupeesToPaisa(input.currentPrice),
     ...(priceTiers ? { priceTiers } : {}),
   };
 }

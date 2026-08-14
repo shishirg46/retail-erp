@@ -12,6 +12,7 @@ import {
   BusinessRuleError,
   NotFoundError,
 } from "../../lib/errors";
+import { paisaFromDecimal } from "../../lib/money";
 import { PrismaCustomerRepository } from "../../modules/customers/customer.repository";
 import { CustomerPaymentService } from "../../modules/customer-payments/customer-payment.service";
 import { SaleService } from "../../modules/sales/sale.service";
@@ -53,65 +54,65 @@ describe("customer payments (D4/D5)", () => {
     expect(violations.join("; ") || "ok").toBe("ok");
   });
 
-  it("C1 D4 prepaid lifecycle: owe 200, pay 400 -> -200, consume 50 -> -150", async () => {
-    const product = await createProduct(prisma, { name: "C1 Lifecycle", unit: "pcs", costPrice: 4, currentPrice: 10 });
+  it("C1 D4 prepaid lifecycle: owe 20000, pay 40000 -> -20000, consume 5000 -> -15000", async () => {
+    const product = await createProduct(prisma, { name: "C1 Lifecycle", unit: "pcs", costPrice: 400, currentPrice: 1000 });
     const customerId = await createCustomer(prisma, "C1 Prepaid");
     await seedStock(prisma, product.id, 50);
 
     await saleService.createSale({
       paymentType: "CREDIT",
       customerId,
-      items: [{ productId: product.id, quantity: 20 }], // balance += 200
+      items: [{ productId: product.id, quantity: 20 }], // balance += 20000
     });
-    expect(await customerBalance(customerId)).toBe(200);
+    expect(await customerBalance(customerId)).toBe(20000);
 
-    await customerPaymentService.createCustomerPayment({ customerId, amount: 400 });
-    expect(await customerBalance(customerId)).toBe(-200);
+    await customerPaymentService.createCustomerPayment({ customerId, amount: 40000 });
+    expect(await customerBalance(customerId)).toBe(-20000);
 
     await saleService.createSale({
       paymentType: "CREDIT",
       customerId,
-      items: [{ productId: product.id, quantity: 5 }], // balance += 50 -> -150
+      items: [{ productId: product.id, quantity: 5 }], // balance += 5000 -> -15000
     });
-    expect(await customerBalance(customerId)).toBe(-150);
+    expect(await customerBalance(customerId)).toBe(-15000);
 
     const payments = await prisma.creditPayment.findMany({ where: { customerId } });
     expect(payments.length).toBe(1);
   });
 
   it("C2 payment deposits the wallet (source CREDIT_PAYMENT)", async () => {
-    const product = await createProduct(prisma, { name: "C2 Deposit", unit: "pcs", costPrice: 4, currentPrice: 10 });
+    const product = await createProduct(prisma, { name: "C2 Deposit", unit: "pcs", costPrice: 400, currentPrice: 1000 });
     const customerId = await createCustomer(prisma, "C2 Depositor");
     await seedStock(prisma, product.id, 10);
 
-    const payment = await customerPaymentService.createCustomerPayment({ customerId, amount: 250 });
+    const payment = await customerPaymentService.createCustomerPayment({ customerId, amount: 25000 });
 
     const rows = await prisma.walletTransaction.findMany({
       where: { type: "DEPOSIT", source: "CREDIT_PAYMENT", creditPaymentId: payment.id },
     });
     expect(rows.length).toBe(1);
-    expect(rows[0].amount.toNumber()).toBe(250);
-    expect(await customerBalance(customerId)).toBe(-250);
+    expect(paisaFromDecimal(rows[0].amount)).toBe(25000);
+    expect(await customerBalance(customerId)).toBe(-25000);
   });
 
   it("C3 D5: sale-linked payment succeeds and reduces the balance", async () => {
-    const product = await createProduct(prisma, { name: "C3 Linked", unit: "pcs", costPrice: 3, currentPrice: 6 });
+    const product = await createProduct(prisma, { name: "C3 Linked", unit: "pcs", costPrice: 300, currentPrice: 600 });
     const customerId = await createCustomer(prisma, "C3 Sale Linker");
     await seedStock(prisma, product.id, 10);
 
     const sale = await saleService.createSale({
       paymentType: "CREDIT",
       customerId,
-      items: [{ productId: product.id, quantity: 5 }], // balance += 30
+      items: [{ productId: product.id, quantity: 5 }], // balance += 3000
     });
 
     const payment = await customerPaymentService.createCustomerPayment({
       customerId,
-      amount: 20,
+      amount: 2000,
       saleId: sale.id,
     });
     expect(payment.saleId).toBe(sale.id);
-    expect(await customerBalance(customerId)).toBe(10);
+    expect(await customerBalance(customerId)).toBe(1000);
   });
 
   it("C4 failure: unknown customer -> 404", async () => {
@@ -123,7 +124,7 @@ describe("customer payments (D4/D5)", () => {
       () =>
         customerPaymentService.createCustomerPayment({
           customerId: "00000000-0000-0000-0000-000000000000",
-          amount: 50,
+          amount: 5000,
         }),
       NotFoundError,
       /Customer/
@@ -143,7 +144,7 @@ describe("customer payments (D4/D5)", () => {
       () =>
         customerPaymentService.createCustomerPayment({
           customerId,
-          amount: 50,
+          amount: 5000,
           saleId: "00000000-0000-0000-0000-000000000000",
         }),
       NotFoundError,
@@ -155,7 +156,7 @@ describe("customer payments (D4/D5)", () => {
   });
 
   it("C6 failure: sale belongs to another customer -> 400", async () => {
-    const product = await createProduct(prisma, { name: "C6 Wrong Owner", unit: "pcs", costPrice: 4, currentPrice: 8 });
+    const product = await createProduct(prisma, { name: "C6 Wrong Owner", unit: "pcs", costPrice: 400, currentPrice: 800 });
     const owner = await createCustomer(prisma, "C6 Owner");
     const payer = await createCustomer(prisma, "C6 Payer");
     await seedStock(prisma, product.id, 10);
@@ -170,19 +171,19 @@ describe("customer payments (D4/D5)", () => {
       () =>
         customerPaymentService.createCustomerPayment({
           customerId: payer,
-          amount: 10,
+          amount: 1000,
           saleId: sale.id,
         }),
       BusinessRuleError,
       /does not belong/
     );
-    expect(await customerBalance(owner)).toBe(16);
+    expect(await customerBalance(owner)).toBe(1600);
     expect(await customerBalance(payer)).toBe(0);
     expect(await prisma.walletTransaction.count()).toBe(0);
   });
 
   it("C7 failure: saleId of a CASH sale -> 400", async () => {
-    const product = await createProduct(prisma, { name: "C7 Cash Sale Link", unit: "pcs", costPrice: 4, currentPrice: 8 });
+    const product = await createProduct(prisma, { name: "C7 Cash Sale Link", unit: "pcs", costPrice: 400, currentPrice: 800 });
     const customerId = await createCustomer(prisma, "C7 Cash Buyer");
     await seedStock(prisma, product.id, 10);
 
@@ -198,7 +199,7 @@ describe("customer payments (D4/D5)", () => {
       () =>
         customerPaymentService.createCustomerPayment({
           customerId,
-          amount: 10,
+          amount: 1000,
           saleId: sale.id,
         }),
       BusinessRuleError,
@@ -208,21 +209,21 @@ describe("customer payments (D4/D5)", () => {
   });
 
   it("C8 CREDIT lifecycle round trip keeps balance signed and consistent", async () => {
-    const product = await createProduct(prisma, { name: "C8 Round Trip", unit: "pcs", costPrice: 4, currentPrice: 10 });
+    const product = await createProduct(prisma, { name: "C8 Round Trip", unit: "pcs", costPrice: 400, currentPrice: 1000 });
     const customerId = await createCustomer(prisma, "C8 Round Tripper");
     await seedStock(prisma, product.id, 50);
 
-    // CREDIT 100 -> pay 250 (D4 prepaid) -> CREDIT 60 -> pay 40.
+    // CREDIT 10000 -> pay 25000 (D4 prepaid) -> CREDIT 6000 -> pay 4000.
     await saleService.createSale({ paymentType: "CREDIT", customerId, items: [{ productId: product.id, quantity: 10 }] });
-    await customerPaymentService.createCustomerPayment({ customerId, amount: 250 });
+    await customerPaymentService.createCustomerPayment({ customerId, amount: 25000 });
     await saleService.createSale({ paymentType: "CREDIT", customerId, items: [{ productId: product.id, quantity: 6 }] });
-    await customerPaymentService.createCustomerPayment({ customerId, amount: 40 });
+    await customerPaymentService.createCustomerPayment({ customerId, amount: 4000 });
 
-    expect(await customerBalance(customerId)).toBe(-130);
+    expect(await customerBalance(customerId)).toBe(-13000);
     const creditSales = await prisma.sale.findMany({ where: { paymentType: "CREDIT", customerId } });
     const payments = await prisma.creditPayment.findMany({ where: { customerId } });
-    const expected = creditSales.reduce((s, x) => s + x.total.toNumber(), 0) -
-      payments.reduce((s, x) => s + x.amount.toNumber(), 0);
+    const expected = creditSales.reduce((s, x) => s + paisaFromDecimal(x.total), 0) -
+      payments.reduce((s, x) => s + paisaFromDecimal(x.amount), 0);
     expect(await customerBalance(customerId)).toBe(expected);
   });
 });

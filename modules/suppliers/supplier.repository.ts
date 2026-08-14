@@ -1,4 +1,5 @@
 import { prisma } from "../../lib/prisma";
+import { paisaFromDecimal, paisaToRupees } from "../../lib/money";
 
 import type { Supplier, SupplierRepository, CreateSupplierInput } from "./supplier.types";
 
@@ -17,8 +18,16 @@ function toSupplier(raw: {
     id: raw.id,
     name: raw.name,
     contact: raw.contact,
-    balanceOwed: (raw.balanceOwed as { toNumber: () => number }).toNumber(),
+    balanceOwed: paisaFromDecimal(raw.balanceOwed),
     createdAt: raw.createdAt,
+  };
+}
+
+// API output view: whole-paisa domain -> rupee wire representation (D11).
+export function toSupplierApi(supplier: Supplier): Supplier {
+  return {
+    ...supplier,
+    balanceOwed: paisaToRupees(supplier.balanceOwed),
   };
 }
 
@@ -51,7 +60,7 @@ export class PrismaSupplierRepository implements SupplierRepository {
   async updateBalance(id: string, amountChange: number): Promise<Supplier> {
     const raw = await this.db.supplier.update({
       where: { id },
-      data: { balanceOwed: { increment: amountChange } },
+      data: { balanceOwed: { increment: paisaToRupees(amountChange) } },
     });
 
     return toSupplier(raw);

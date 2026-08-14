@@ -4,6 +4,7 @@ import { requireRole, OWNER } from "@/lib/auth/authorize";
 import { prisma } from "@/lib/prisma";
 import { toHttpResponse } from "@/lib/response";
 import { PurchaseService } from "@/modules/purchases/purchase.service";
+import { toPurchaseApi } from "@/modules/purchases/purchase.mapper";
 import { validateCreatePurchaseInput } from "@/modules/purchases/purchase.validation";
 
 export async function POST(req: NextRequest) {
@@ -21,7 +22,7 @@ export async function POST(req: NextRequest) {
 
     const purchase = await new PurchaseService(prisma).createPurchase(input);
 
-    return NextResponse.json(purchase, { status: 201 });
+    return NextResponse.json(toPurchaseApi(purchase), { status: 201 });
   } catch (error) {
     return toHttpResponse(error);
   }
@@ -32,7 +33,7 @@ export async function GET(req: NextRequest) {
     await requireRole(req, [OWNER]);
     const purchases = await new PurchaseService(prisma).listPurchases();
 
-    return NextResponse.json(purchases);
+    return NextResponse.json(purchases.map(toPurchaseApi));
   } catch (error) {
     return toHttpResponse(error);
   }

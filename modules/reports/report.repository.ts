@@ -1,4 +1,6 @@
 import { prisma } from "../../lib/prisma";
+import { paisaFromDecimal, paisaToRupees } from "../../lib/money";
+import { formatShopLocal } from "../../lib/timezone";
 import { toNumber } from "./report.mapper";
 
 import type {
@@ -36,10 +38,12 @@ function dateFilter(range: ReportDateRange): { gte?: Date; lte?: Date } | undefi
   return Object.keys(where).length === 0 ? undefined : where;
 }
 
+// Echo the window in the shop timezone with the shop's offset, so the day the
+// report actually covers is unambiguous (D10). Absent bound = full history.
 function rangeEcho(range: ReportDateRange): ReportRange {
   return {
-    from: range.from === undefined ? null : range.from.toISOString(),
-    to: range.to === undefined ? null : range.to.toISOString(),
+    from: range.from === undefined ? null : formatShopLocal(range.from),
+    to: range.to === undefined ? null : formatShopLocal(range.to),
   };
 }
 
@@ -75,36 +79,42 @@ export class PrismaReportRepository implements ReportRepository {
 
     const productName = new Map(products.map((p) => [p.id, p.name]));
 
-    const perProduct = new Map<string, ProductQuantityRow>();
+    // All money is summed in whole paisa (exact), converted once at payload
+    // construction (D11).
+    const perProduct = new Map<string, { quantity: number; amountPaisa: number }>();
     for (const item of items) {
       const entry =
-        perProduct.get(item.productId) ?? {
-          productId: item.productId,
-          productName: productName.get(item.productId) ?? "unknown",
-          quantity: 0,
-          amount: 0,
-        };
+        perProduct.get(item.productId) ?? { quantity: 0, amountPaisa: 0 };
       entry.quantity += item.qty;
-      entry.amount += toNumber(item.pricePerUnit) * item.qty;
+      entry.amountPaisa += paisaFromDecimal(item.pricePerUnit) * item.qty;
       perProduct.set(item.productId, entry);
     }
 
+    const totalSalesPaisa = paisaFromDecimal(aggregate._sum.total);
+
     return {
       range: rangeEcho(range),
-      totalSales: toNumber(aggregate._sum.total),
+      totalSales: paisaToRupees(totalSalesPaisa),
       numberOfSales: aggregate._count,
       byPaymentType: byPaymentType
         .map(
           (row): SalesByPaymentTypeRow => ({
             paymentType: row.paymentType as PaymentType,
             count: row._count,
-            total: toNumber(row._sum.total),
+            total: paisaToRupees(paisaFromDecimal(row._sum.total)),
           })
         )
         .sort((a, b) => b.total - a.total),
-      productQuantities: [...perProduct.values()].sort((a, b) =>
-        a.productName.localeCompare(b.productName)
-      ),
+      productQuantities: [...perProduct.entries()]
+        .map(
+          ([productId, entry]): ProductQuantityRow => ({
+            productId,
+            productName: productName.get(productId) ?? "unknown",
+            quantity: entry.quantity,
+            amount: paisaToRupees(entry.amountPaisa),
+          })
+        )
+        .sort((a, b) => a.productName.localeCompare(b.productName)),
     };
   }
 
@@ -133,20 +143,20 @@ export class PrismaReportRepository implements ReportRepository {
       .map((row) => ({
         supplierId: row.supplierId,
         supplierName: supplierName.get(row.supplierId) ?? "unknown",
-        total: toNumber(row._sum.total),
+        total: paisaToRupees(paisaFromDecimal(row._sum.total)),
       }))
       .sort((a, b) => b.total - a.total);
 
     return {
       range: rangeEcho(range),
-      totalPurchases: toNumber(aggregate._sum.total),
+      totalPurchases: paisaToRupees(paisaFromDecimal(aggregate._sum.total)),
       numberOfPurchases: aggregate._count,
       byPaymentType: byPaymentType
         .map(
           (row): PurchasesByPaymentTypeRow => ({
             paymentType: row.paymentType as PurchasePaymentType,
             count: row._count,
-            total: toNumber(row._sum.total),
+            total: paisaToRupees(paisaFromDecimal(row._sum.total)),
           })
         )
         .sort((a, b) => b.total - a.total),
@@ -201,15 +211,19 @@ export class PrismaReportRepository implements ReportRepository {
       }),
     ]);
 
-    let outstandingCredit = 0;
-    let prepaidCredit = 0;
+    let outstandingCreditPaisa = 0;
+    let prepaidCreditPaisa = 0;
 
     const balanceRows: CustomerBalanceRow[] = customers
       .map((row) => {
-        const balance = toNumber(row.balanceOwed);
-        if (balance > 0) outstandingCredit += balance;
-        if (balance < 0) prepaidCredit += -balance;
-        return { customerId: row.id, customerName: row.name, balanceOwed: balance };
+        const balancePaisa = paisaFromDecimal(row.balanceOwed);
+        if (balancePaisa > 0) outstandingCreditPaisa += balancePaisa;
+        if (balancePaisa < 0) prepaidCreditPaisa += -balancePaisa;
+        return {
+          customerId: row.id,
+          customerName: row.name,
+          balanceOwed: paisaToRupees(balancePaisa),
+        };
       })
       .sort((a, b) => a.customerName.localeCompare(b.customerName));
 
@@ -219,15 +233,15 @@ export class PrismaReportRepository implements ReportRepository {
       .map((row) => ({
         customerId: row.customerId,
         customerName: customerName.get(row.customerId) ?? "unknown",
-        totalPaid: toNumber(row._sum.amount),
+        totalPaid: paisaToRupees(paisaFromDecimal(row._sum.amount)),
         count: row._count,
       }))
       .sort((a, b) => b.totalPaid - a.totalPaid);
 
     return {
       range: rangeEcho(range),
-      outstandingCredit,
-      prepaidCredit,
+      outstandingCredit: paisaToRupees(outstandingCreditPaisa),
+      prepaidCredit: paisaToRupees(prepaidCreditPaisa),
       customers: balanceRows,
       paymentHistory,
     };
@@ -244,13 +258,17 @@ export class PrismaReportRepository implements ReportRepository {
       }),
     ]);
 
-    let outstandingBalance = 0;
+    let outstandingBalancePaisa = 0;
 
     const balanceRows: SupplierBalanceRow[] = suppliers
       .map((row) => {
-        const balance = toNumber(row.balanceOwed);
-        if (balance > 0) outstandingBalance += balance;
-        return { supplierId: row.id, supplierName: row.name, balanceOwed: balance };
+        const balancePaisa = paisaFromDecimal(row.balanceOwed);
+        if (balancePaisa > 0) outstandingBalancePaisa += balancePaisa;
+        return {
+          supplierId: row.id,
+          supplierName: row.name,
+          balanceOwed: paisaToRupees(balancePaisa),
+        };
       })
       .sort((a, b) => a.supplierName.localeCompare(b.supplierName));
 
@@ -260,14 +278,14 @@ export class PrismaReportRepository implements ReportRepository {
       .map((row) => ({
         supplierId: row.supplierId,
         supplierName: supplierName.get(row.supplierId) ?? "unknown",
-        totalPaid: toNumber(row._sum.amount),
+        totalPaid: paisaToRupees(paisaFromDecimal(row._sum.amount)),
         count: row._count,
       }))
       .sort((a, b) => b.totalPaid - a.totalPaid);
 
     return {
       range: rangeEcho(range),
-      outstandingBalance,
+      outstandingBalance: paisaToRupees(outstandingBalancePaisa),
       suppliers: balanceRows,
       paymentHistory,
     };
@@ -281,30 +299,37 @@ export class PrismaReportRepository implements ReportRepository {
       _count: true,
     });
 
-    let deposits = 0;
-    let withdrawals = 0;
+    let depositsPaisa = 0;
+    let withdrawalsPaisa = 0;
 
     const perSource = new Map<string, WalletSourceRow>();
     for (const row of groups) {
-      const amount = toNumber(row._sum.amount);
-      if (row.type === "DEPOSIT") deposits += amount;
-      else withdrawals += amount;
+      const amountPaisa = paisaFromDecimal(row._sum.amount);
+      if (row.type === "DEPOSIT") depositsPaisa += amountPaisa;
+      else withdrawalsPaisa += amountPaisa;
 
       const key = row.source as WalletTxnSource;
       const entry =
         perSource.get(key) ?? { source: key, deposits: 0, withdrawals: 0, count: 0 };
       entry.count += row._count;
-      if (row.type === "DEPOSIT") entry.deposits += amount;
-      else entry.withdrawals += amount;
+      if (row.type === "DEPOSIT") entry.deposits += amountPaisa;
+      else entry.withdrawals += amountPaisa;
       perSource.set(key, entry);
     }
 
+    const bySource: WalletSourceRow[] = [...perSource.values()].map((row) => ({
+      source: row.source,
+      deposits: paisaToRupees(row.deposits),
+      withdrawals: paisaToRupees(row.withdrawals),
+      count: row.count,
+    }));
+
     return {
       range: rangeEcho(range),
-      deposits,
-      withdrawals,
-      balance: deposits - withdrawals,
-      bySource: [...perSource.values()].sort((a, b) => a.source.localeCompare(b.source)),
+      deposits: paisaToRupees(depositsPaisa),
+      withdrawals: paisaToRupees(withdrawalsPaisa),
+      balance: paisaToRupees(depositsPaisa - withdrawalsPaisa),
+      bySource: bySource.sort((a, b) => a.source.localeCompare(b.source)),
     };
   }
 }

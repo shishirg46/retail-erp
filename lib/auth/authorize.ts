@@ -7,6 +7,7 @@ import type { NextRequest } from "next/server";
 import { auth } from "../auth";
 import { ForbiddenError, UnauthorizedError } from "../errors";
 import { prisma } from "../prisma";
+import { hasSessionCookie } from "./session-cookie";
 
 export const OWNER = "OWNER" as const;
 export const CASHIER = "CASHIER" as const;
@@ -35,6 +36,14 @@ export function assertSameOrigin(req: NextRequest): void {
 // D9.8 — authoritative DB-backed authentication. The proxy gate is only a
 // coarse cookie-presence check; a forged/random cookie must fail here.
 export async function requireUser(req: NextRequest): Promise<SessionContext> {
+  // No session cookie at all -> 401 immediately, without touching the DB.
+  // Only a present (possibly forged) cookie falls through to the DB-backed
+  // session lookup, so a dead database with no cookie is a cheap 401 and with
+  // a cookie surfaces as a sanitized 500 below.
+  if (!hasSessionCookie(req)) {
+    throw new UnauthorizedError();
+  }
+
   const session = await auth.api.getSession({ headers: req.headers });
   if (session) return session;
 

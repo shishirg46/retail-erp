@@ -595,6 +595,74 @@ into the gate).
 
 ---
 
+## Milestone 15 — Shop-local timezone + integer-paisa money (F-06/F-09, ERP-008) (14 Aug 2026)
+
+**Scope (per ERP-008; D10 + D11 — application code only, no schema migration):**
+
+- **D10 (`lib/timezone.ts`)** — shop-local date semantics with no schema
+  change: `ERP_TIMEZONE` (default `Asia/Kathmandu`) read at runtime from
+  `process.env`. Naive `YYYY-MM-DD` report params are interpreted as shop-local
+  wall clock via an Intl-offset technique (`naiveAsShopLocal`,
+  `shopLocalDayStart`, `formatShopLocal`); full ISO strings with an explicit
+  zone (`Z`/`±hh:mm`/`[IANA]`) parse as-is; the report `range` echo is a
+  shop-local offset string, never `.toISOString()`; impossible dates
+  (`2026-99-99`) are rejected 400.
+- **D11 (`lib/money.ts`)** — integer-paisa domain money. Validators convert
+  rupees→paisa once (`rupeesToPaisa`, round-half-up, exactly once); services,
+  repositories, and reports do all math in whole paisa; repositories write
+  `paisaToRupees` → Postgres `DECIMAL` (rupees) and read `paisaFromDecimal`;
+  routes convert paisa→rupees at the response boundary via `to*Api` mappers.
+  `MAX_AMOUNT_PAISA = MAX_AMOUNT × 100`. The 12 audit money fields converted:
+  `products.cost_price/current_price`, `price_tiers.price`,
+  `suppliers.balance_owed`, `customers.balance_owed`, `purchases.total`,
+  `purchase_items.cost_per_unit`, `supplier_payments.amount`, `sales.total`,
+  `sale_items.price_per_unit`, `credit_payments.amount`,
+  `wallet_transactions.amount`.
+- **Converted modules** — `lib/money.ts`, `lib/timezone.ts`;
+  validators (`product`, `purchase`, `customer-payment`, `supplier-payment`);
+  services (`SaleService.effectiveUnitPrice = Math.round(totalPaisa / qty)`,
+  `ProductService.calculatePrice` paisa ints); repositories + `to*Api` mappers
+  (products, sales, purchases, customers, suppliers, customer-payments,
+  supplier-payments, wallet); `report.repository.ts` (whole-paisa sums, one
+  `paisaToRupees` at payload construction, `formatShopLocal` range echo);
+  `report.validation.ts` (shop-local naive parsing); all 13 money route
+  handlers converted at the rupee response boundary (products, sales,
+  purchases, suppliers, customers, customer-payments, supplier-payments).
+  `report.mapper.ts` documents that report money must use `paisaFromDecimal`.
+- **Robustness refactor (ride-along)** — `lib/auth/session-cookie.ts` shared
+  `SESSION_COOKIES` + `hasSessionCookie`; `proxy.ts` uses it; `requireUser`
+  short-circuits 401 when no session cookie is present, else falls through to
+  the DB-backed lookup + `SELECT 1` probe (preserves the F-03 dead-DB →
+  sanitized 500 contract). `getUtcOffsetMs` fixed for sub-second round-trips
+  (`fractionalSecondDigits: 3`, `Number(values.fractionalSecond)`).
+- **Tests** — new `tests/unit/money.test.ts` (12) and
+  `tests/unit/timezone.test.ts`; converted paisa expectations across
+  `pricing`, `validators`, `input-bounds`, `product.validation` unit suites and
+  the sales/purchases/customer-payments/supplier-payments/db-hardening/ledger/
+  reports integration suites (seed helpers take paisa; DB rows are read back
+  via `paisaFromDecimal`); HTTP suites keep rupee expectations (unchanged) and
+  all four HTTP suites now `warmRoutes` every path they exercise (fixes the
+  dev route-discovery race across the full gate).
+
+**Verified**
+
+- `npx tsc --noEmit`, `npm run lint` (0 warnings), `npx prisma validate` all
+  green.
+- `npm run test:all` — **22 suites, 283 tests, 0 failures, exit 0**: unit
+  150/150 (incl. money 12 + timezone new), integration 73/73, concurrency 5/5,
+  HTTP error 12/12 (incl. unreachable-DB leak-canaries), HTTP bounds 11/11,
+  HTTP smoke 15/15, F-10 HTTP auth-flow 17/17. Report/HTTP rupee values proven
+  unchanged end-to-end; paisa domain values exact.
+- Dev database (`erp_retail`) byte-identical to baseline after the full gate
+  (`node scripts/verify-dev-db.mjs`) — D11 changed no persisted values.
+- Note: the suite run required stopping a foreign dev server (`.next/dev/lock`
+  guard) before the HTTP suites could spawn.
+- Tracking: GitHub issue **ERP-008** (F-06/F-09) — created, evidence to
+  comment, **left open for PM review**. D10/D11 recorded in
+  `docs/business-decisions.md`.
+
+---
+
 ## Current state (14 Aug 2026)
 
 - **Done:** Products/Pricing, Sales, Purchasing, Suppliers + Supplier Payments,
@@ -602,10 +670,11 @@ into the gate).
   F-02 (concurrency), F-01 (product validation), F-03 (error privacy),
   F-04 (input upper bounds), F-15 (automated regression suite as the gate,
   now standardized on Vitest), F-05 (DB hardening: 17 CHECK constraints +
-  9 report indexes), and **F-10 (authentication & authorization: Better Auth,
-  OWNER/CASHIER matrix, all routes guarded, OWNER user management)**.
+  9 report indexes), **F-10 (authentication & authorization: Better Auth,
+  OWNER/CASHIER matrix, all routes guarded, OWNER user management)**, and
+  **F-06/F-09 (integer-paisa domain money D11 + shop-local timezone D10)**.
   All green on `tsc --noEmit` and `eslint`; the full `npm run test:all` gate
-  (21 suites, 259 tests) passes against `erp_retail_test`.
+  (22 suites, 283 tests) passes against `erp_retail_test`.
 - **Test data:** Rice stock 13, Oil 10, Biscuits 30; Kathmandu Wholesale balance
   0; customers Ramesh −5, Sita −100 (prepaid); wallet −4235; credit payments 405.
 - **Postman:** `postman/Retail-ERP.postman_collection.json` — 58 requests,
@@ -613,6 +682,6 @@ into the gate).
   Adjustments, Customers, Customer Payments & Credit Lifecycle, Sales — Tier
   Pricing & Payment Types, Reports). Collection calls now need a session cookie
   (sign in first) once F-10 is live.
-- **Next:** PM review of **ERP-007** (F-10 evidence) and **ERP-006** (F-05
-  evidence); remaining audit fixes F-06/07/08/09/11 require their own business
+- **Next:** PM review of **ERP-007** (F-10 evidence) and **ERP-008** (F-06/F-09
+  evidence); remaining audit fixes F-07/08/11 require their own business
   decisions before code.

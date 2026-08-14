@@ -27,6 +27,7 @@ import {
   startServer,
   stopServer,
   waitReady,
+  warmRoutes,
   type Server,
 } from "../helpers/http";
 import { createTestPrisma, truncateAll } from "../helpers/db";
@@ -91,6 +92,19 @@ describe("F-10 HTTP auth flow", () => {
     server = startServer(port);
     p = server.port;
     await waitReady(server);
+    await warmRoutes(p, [
+      "/api/auth/get-session",
+      "/api/products",
+      "/api/customers",
+      "/api/suppliers",
+      "/api/purchases",
+      "/api/supplier-payments",
+      "/api/reports/customers",
+      "/api/reports/purchases",
+      "/api/reports/suppliers",
+      "/api/reports/wallet",
+      "/api/users",
+    ]);
     ownerCookie = await signIn(p, `${OWNER.username}@erp.local`, OWNER.password);
     const session = await httpGet(p, "/api/auth/get-session", ownerCookie);
     ownerId = ((await session.json()) as { user: { id: string } }).user.id;

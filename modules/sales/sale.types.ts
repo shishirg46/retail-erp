@@ -1,3 +1,5 @@
+// Money is whole paisa in the domain (D11). Rupee values convert at the
+// API boundary (validators in, routes out).
 export type PaymentType = "CASH" | "ECASH" | "CREDIT";
 
 export interface SaleItemInput {
@@ -15,10 +17,10 @@ export interface CreateSaleInput {
 export interface SaleItemDraft {
   productId: string;
   quantity: number;
-  // Effective charged price at the time of sale (total / quantity),
-  // frozen for history — never recalculated from current product price.
-  unitPrice: number;
-  total: number;
+  // Effective charged price at the time of sale (total / quantity, whole
+  // paisa), frozen for history — never recalculated from current product price.
+  unitPrice: number; // paisa
+  total: number; // paisa
 }
 
 export interface SaleItem {
@@ -26,14 +28,14 @@ export interface SaleItem {
   saleId: string;
   productId: string;
   qty: number;
-  pricePerUnit: number;
+  pricePerUnit: number; // paisa
 }
 
 export interface Sale {
   id: string;
   customerId: string | null;
   paymentType: PaymentType;
-  total: number;
+  total: number; // paisa
   date: Date;
   items: SaleItem[];
 }

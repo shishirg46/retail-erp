@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole, CASHIER, OWNER } from "@/lib/auth/authorize";
 import { prisma } from "@/lib/prisma";
 import { toHttpResponse } from "@/lib/response";
-import { PrismaSupplierRepository } from "@/modules/suppliers/supplier.repository";
+import { PrismaSupplierRepository, toSupplierApi } from "@/modules/suppliers/supplier.repository";
 import { SupplierService } from "@/modules/suppliers/supplier.service";
 
 type Context = { params: Promise<{ id: string }> };
@@ -24,7 +24,7 @@ export async function GET(req: NextRequest, context: Context) {
       );
     }
 
-    return NextResponse.json(supplier);
+    return NextResponse.json(toSupplierApi(supplier));
   } catch (error) {
     return toHttpResponse(error);
   }

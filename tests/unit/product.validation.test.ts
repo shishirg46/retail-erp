@@ -254,9 +254,9 @@ describe("F-01 validateCreateProductInput", () => {
     expect(input.name).toBe("Biscuit");
     expect(input.unit).toBe("pack");
     expect(input.category).toBe("snacks");
-    expect(input.costPrice).toBe(18);
-    expect(input.currentPrice).toBe(20);
-    expect(input.priceTiers).toEqual([{ minQty: 3, price: 50 }]);
+    expect(input.costPrice).toBe(1800);
+    expect(input.currentPrice).toBe(2000);
+    expect(input.priceTiers).toEqual([{ minQty: 3, price: 5000 }]);
     expect("bogus" in input).toBe(false);
   });
 

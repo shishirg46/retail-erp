@@ -1,3 +1,5 @@
+// Money is whole paisa in the domain (D11). Rupee values convert at the
+// repository boundary (write: paisa -> Decimal rupees; read: the reverse).
 export type WalletTxnType = "DEPOSIT" | "WITHDRAWAL";
 
 export type WalletTxnSource =
@@ -13,7 +15,7 @@ export interface WalletTransaction {
   id: string;
   type: WalletTxnType;
   source: WalletTxnSource;
-  amount: number;
+  amount: number; // paisa
   date: Date;
   note: string | null;
   saleId: string | null;
@@ -23,7 +25,7 @@ export interface WalletTransaction {
 export interface CreateWalletTransactionInput {
   type: WalletTxnType;
   source: WalletTxnSource;
-  amount: number;
+  amount: number; // paisa
   note?: string;
   saleId?: string;
   creditPaymentId?: string;

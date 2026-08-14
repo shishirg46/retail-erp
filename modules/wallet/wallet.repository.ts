@@ -1,4 +1,5 @@
 import { prisma } from "../../lib/prisma";
+import { paisaFromDecimal, paisaToRupees } from "../../lib/money";
 
 import type {
   WalletTransaction,
@@ -26,7 +27,7 @@ function toWalletTransaction(
     id: raw.id,
     type: raw.type as WalletTransaction["type"],
     source: raw.source as WalletTransaction["source"],
-    amount: (raw.amount as { toNumber: () => number }).toNumber(),
+    amount: paisaFromDecimal(raw.amount),
     date: raw.date,
     note: raw.note,
     saleId: raw.saleId,
@@ -42,7 +43,7 @@ export class PrismaWalletRepository implements WalletRepository {
       data: {
         type: input.type,
         source: input.source,
-        amount: input.amount,
+        amount: paisaToRupees(input.amount),
         note: input.note,
         saleId: input.saleId,
         creditPaymentId: input.creditPaymentId,

@@ -1,5 +1,7 @@
 import type { PriceTier } from "./product.types";
 
+// All money is whole paisa (D11), so the DP below accumulates exact integers
+// and can never pick up float drift.
 export function calculatePrice(
   qty: number,
   basePrice: number,

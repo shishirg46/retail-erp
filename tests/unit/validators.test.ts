@@ -143,7 +143,7 @@ describe("D1–D7 request validators", () => {
     expect(out).toEqual({
       supplierId: "s1",
       paymentType: "CASH",
-      items: [{ productId: "p1", quantity: 5, costPerUnit: 20 }],
+      items: [{ productId: "p1", quantity: 5, costPerUnit: 2000 }],
     });
   });
 
@@ -288,7 +288,7 @@ describe("D1–D7 request validators", () => {
   it("customer-payment: valid plain and sale-linked", () => {
     expect(validateCreateCustomerPaymentInput({ customerId: "c1", amount: 100 })).toEqual({
       customerId: "c1",
-      amount: 100,
+      amount: 10000,
     });
     const linked = validateCreateCustomerPaymentInput({
       customerId: "c1",
@@ -317,7 +317,7 @@ describe("D1–D7 request validators", () => {
   it("supplier-payment: valid", () => {
     expect(validateCreateSupplierPaymentInput({ supplierId: "s1", amount: 50 })).toEqual({
       supplierId: "s1",
-      amount: 50,
+      amount: 5000,
     });
   });
 

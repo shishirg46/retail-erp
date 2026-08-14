@@ -35,26 +35,28 @@ async function scalar(query: string): Promise<number> {
 }
 
 async function seedLedger(): Promise<{ supplierId: string; customerId: string }> {
-  const rice = await createProduct(prisma, { name: "Rpt Rice", unit: "kg", costPrice: 20, currentPrice: 20 });
-  const oil = await createProduct(prisma, { name: "Rpt Oil", unit: "liter", costPrice: 30, currentPrice: 30 });
+  // Domain inputs are paisa (D11); the DB stores rupees, so the report
+  // assertions below stay in rupees (20000 paisa = Rs. 200.00).
+  const rice = await createProduct(prisma, { name: "Rpt Rice", unit: "kg", costPrice: 2000, currentPrice: 2000 });
+  const oil = await createProduct(prisma, { name: "Rpt Oil", unit: "liter", costPrice: 3000, currentPrice: 3000 });
   const supplierId = await createSupplier(prisma, "Rpt Wholesale");
   const customerId = await createCustomer(prisma, "Rpt Customer");
 
-  await purchaseService.createPurchase({ // wallet -200
+  await purchaseService.createPurchase({ // wallet -200.00
     supplierId,
     paymentType: "CASH",
-    items: [{ productId: rice.id, quantity: 10, costPerUnit: 20 }],
+    items: [{ productId: rice.id, quantity: 10, costPerUnit: 2000 }],
   });
-  await purchaseService.createPurchase({ // supplier owes 150
+  await purchaseService.createPurchase({ // supplier owes 150.00
     supplierId,
     paymentType: "CREDIT",
-    items: [{ productId: oil.id, quantity: 5, costPerUnit: 30 }],
+    items: [{ productId: oil.id, quantity: 5, costPerUnit: 3000 }],
   });
-  await saleService.createSale({ paymentType: "CASH", items: [{ productId: rice.id, quantity: 3 }] }); // wallet +60
-  await saleService.createSale({ paymentType: "ECASH", items: [{ productId: oil.id, quantity: 2 }] }); // wallet +60
-  await saleService.createSale({ paymentType: "CREDIT", customerId, items: [{ productId: oil.id, quantity: 1 }] }); // owes 30
-  await customerPaymentService.createCustomerPayment({ customerId, amount: 10 }); // wallet +10, owes 20
-  await supplierPaymentService.createSupplierPayment({ supplierId, amount: 50 }); // wallet -50, owes 100
+  await saleService.createSale({ paymentType: "CASH", items: [{ productId: rice.id, quantity: 3 }] }); // wallet +60.00
+  await saleService.createSale({ paymentType: "ECASH", items: [{ productId: oil.id, quantity: 2 }] }); // wallet +60.00
+  await saleService.createSale({ paymentType: "CREDIT", customerId, items: [{ productId: oil.id, quantity: 1 }] }); // owes 30.00
+  await customerPaymentService.createCustomerPayment({ customerId, amount: 1000 }); // wallet +10.00, owes 20.00
+  await supplierPaymentService.createSupplierPayment({ supplierId, amount: 5000 }); // wallet -50.00, owes 100.00
   await stockService.adjustStock({ productId: rice.id, reason: "DAMAGE", quantity: 2 }); // stock 5
 
   return { supplierId, customerId };
