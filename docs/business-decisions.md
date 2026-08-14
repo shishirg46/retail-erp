@@ -377,3 +377,118 @@ can no longer oversell. Purchases and CORRECTION unchanged.
 runs 5 scenarios against the dedicated `erp_retail_test` database proving no
 oversell, D6 reconciliation, and no wallet/customer/supplier side effects from
 DAMAGE. Regression: `tsc`, `lint`, `prisma validate`, 12 HTTP checks.
+
+---
+
+## D9 — Authentication and roles (F-10)
+
+**Status:** Accepted — 14 Aug 2026 (PM-approved; recorded before F-10 implementation)
+
+**Architecture:** Authentication is delegated to **Better Auth** (self-hosted,
+database-backed). Prisma/PostgreSQL remains the database; Better Auth owns
+password hashing, sessions, cookies, login/logout, and user administration via
+its Prisma adapter. Application-level authorization enforces the OWNER/CASHIER
+role matrix (`admin` plugin, `defaultRole: "CASHIER"`, `adminRoles: ["OWNER"]`,
+no Organization plugin). The original custom-auth design (interim commits
+`653a8ba`/`33ef36d`) was superseded by PM approval and removed from history.
+
+**Current behavior (before)**
+No authentication, authorization, or user model anywhere. Every `/api/*` route
+is unguarded; the audit finding F-10 blocks production exposure beyond a trusted
+network.
+
+**Proposed behavior**
+
+**D9.1 — Identity source.** Local username + password only. No OAuth/SSO/external
+identity provider, no MFA, no public sign-up. The owner manages all accounts
+inside the app.
+
+**D9.2 — Roles.** Exactly two: `OWNER` and `CASHIER`.
+
+**D9.3 — Permission matrix.**
+
+| Capability | OWNER | CASHIER |
+| ---------- | :---: | :-----: |
+| View products | ✅ | ✅ |
+| Create/update product & pricing | ✅ | ❌ |
+| View customers | ✅ | ✅ |
+| Create customers | ✅ | ✅ |
+| View suppliers | ✅ | ✅ |
+| Create suppliers | ✅ | ❌ |
+| Create sales | ✅ | ✅ |
+| View sales | ✅ | ✅ |
+| Customer payments | ✅ | ✅ |
+| Stock adjustments | ✅ | ✅ |
+| View stock movements | ✅ | ✅ |
+| Create purchases | ✅ | ❌ |
+| Supplier payments | ✅ | ❌ |
+| Reports | ✅ (all 6) | ⚠️ sales + stock only |
+| User management | ✅ | ❌ |
+| Auth management | ✅ | ❌ |
+
+CASHIER is the counter operator: sales, customer payments, stock
+damage/correction, and reading master data. Purchasing (wholesale cost/supplier
+exposure), supplier payouts, pricing, user management, and non-sales/stock
+reports are owner-only — **purchase read for cashiers is explicitly rejected**;
+any future grant is a separate D9 amendment.
+
+**D9.4 — Passwords.** Minimum 8 characters. Hashing and verification are
+**entirely delegated to Better Auth** (scrypt with per-user salt, cost
+parameters embedded in the stored hash, NFKC normalization, constant-time
+verification). No custom crypto code. Stored in Better Auth's `account.password`
+(provider `credential`). No plaintext anywhere.
+
+**D9.5 — Sessions.** Better Auth DB-backed sessions (opaque tokens, no JWT),
+`expiresIn: 12h` with sliding `updateAge: 6h`, `HttpOnly` cookie
+(`SameSite=Lax`, `Secure` in production, prefix `erp`). Immediate revocation:
+logout, `banUser` (our DISABLED state), and password reset all invalidate active
+sessions (`revokeUserSessions` after `setUserPassword`, which does not revoke on
+its own).
+
+**D9.6 — Report visibility.** OWNER can access all six reports. CASHIER can
+access only the **sales** and **stock** reports (`/api/reports/sales`,
+`/api/reports/stock`). CASHIER receives `403` for the supplier, purchases,
+customers, and wallet reports.
+
+**D9.7 — Invariant.** There must always be at least one active OWNER. The last
+active OWNER cannot be banned/disabled/demoted; the service rejects the change.
+
+**D9.8 — Route protection model.** Defense-in-depth. A coarse Next.js **proxy**
+gate checks cookie presence only (no DB access, 401 without the cookie), while
+every protected route handler performs the authoritative DB-backed
+authentication and role authorization itself (`auth.api.getSession` + role
+guard). A random/forged cookie passes the proxy but fails at the route with 401.
+
+**D9.9 — Origin check.** On every state-changing ERP request
+(POST/PUT/PATCH/DELETE), a present `Origin` header that does not match the
+request's own origin is rejected before the session is touched; a missing
+`Origin` (non-browser clients) is allowed. Defense-in-depth layered with
+`SameSite=Lax`; deliberately not the F-11 security-header/rate-limit work.
+
+**D9.10 — Email is internal.** Username login via Better Auth's username plugin
+requires a unique email column on `user`; we derive `<username>@erp.local` for
+every account. This internal value is **never exposed** through the ERP API —
+responses return only `id`, `username`, `role`, and status fields.
+
+**Reason**
+A single-owner + cashiers shop needs counter access for staff without exposing
+the owner's financial picture or the ability to move money to suppliers. Better
+Auth gives audited, maintained auth primitives (password handling, sessions,
+CSRF protection) at the right complexity level for a small ERP, keeping the
+ledger invariants untouched.
+
+**Database impact:** new `user`, `session`, `account`, `verification` tables
+(Better Auth core schema, migration generated by `npx auth@latest generate`);
+no change to existing tables or F-05 constraints.
+**API impact:** Better Auth mounts at `/api/auth/*` (`[...all]` handler +
+`proxy.ts`); new `POST /api/auth/sign-in`, `POST /api/auth/sign-out`,
+`GET /api/auth/get-session` (auth framework endpoints), plus
+`GET/POST /api/users`, `GET/PATCH/DELETE /api/users/[id]` (user admin);
+all existing routes gain `401` (unauthenticated) / `403` (insufficient role)
+guards; route paths, payloads, and success/validation status codes are unchanged.
+**Existing feature impact:** none to services, ledger logic, or reconciliation
+invariants; transactional behavior is identical once authenticated.
+**Testing impact:** new unit, integration, and HTTP suites (login, 401/403
+matrix, forged-cookie bypass, origin rejection, last-owner invariant) on the
+existing Vitest infrastructure; existing HTTP suites log in as a fixture owner
+first.

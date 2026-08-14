@@ -79,32 +79,46 @@ repositories. Historical prices are frozen (`SaleItem.pricePerUnit`,
 | Customer payments (credit) | `POST /api/customer-payments` |
 | Stock adjustments | `POST /api/stock/adjustments`, `GET /api/stock/movements` |
 | Reports (read-only) | `GET /api/reports/{sales,purchases,stock,customers,suppliers,wallet}` |
+| Auth (Better Auth) | `/api/auth/*` (sign-in/out, get-session) |
+| Users (OWNER only) | `GET/POST /api/users`, `GET/PATCH/DELETE /api/users/[id]`, `POST /api/users/[id]/{ban,unban,reset-password}` |
+
+Every `/api/*` route is guarded (F-10): a coarse `proxy.ts` gate rejects
+requests without a session cookie, and each route re-checks the session against
+the database and enforces the OWNER/CASHIER role matrix (D9.3). The internal
+derived email (`<username>@erp.local`) is never exposed by the API; the
+Better Auth `/api/auth/admin/*` endpoints are blocked. State-changing requests
+with a foreign `Origin` are rejected (D9.9).
 
 ## Setup
 
 ```bash
-# Create .env with your DATABASE_URL (no .env.example is shipped yet — see note)
+# Create .env with your DATABASE_URL and a BETTER_AUTH_SECRET (no .env.example
+# is shipped yet — see note)
 printf 'DATABASE_URL=postgresql://USER:PASS@localhost:5432/erp_retail\n' > .env
+printf 'BETTER_AUTH_SECRET=generate-a-long-random-secret\n' >> .env
 npm install
 npx prisma migrate dev
+node scripts/seed-owner.mjs   # creates the initial OWNER (owner / ownerpass123)
 npm run dev
 ```
 
 > **Note:** `.env.example` does not currently exist in the repository (tracked as
-> a known gap for the upcoming audit). Provide `DATABASE_URL` in `.env` before
-> running Prisma.
+> a known gap for the upcoming audit). Provide `DATABASE_URL` and
+> `BETTER_AUTH_SECRET` in `.env` before running Prisma. The seed script accepts
+> `OWNER_USERNAME` / `OWNER_PASSWORD` overrides.
 
 ## Verification workflow
 
 - `npx tsc --noEmit` and `npm run lint` must stay green.
-- `npm run test:all` runs the full D1–D7 regression gate — 18 suites / 221
-  tests (Vitest) — exclusively against the dedicated `erp_retail_test` database
-  (`TEST_DATABASE_URL` in `.env`); every suite refuses to run against any other
-  database. It covers unit (product validation, error mapping, pricing, D1–D7
-  validators, input bounds), integration (sales, purchases, customer-payments,
-  supplier-payments, stock adjustments, rollback, ledger, reports, db-hardening),
-  HTTP (error contract, input bounds, full D1–D7 API smoke), and concurrency
-  (stock never goes negative).
+- `npm run test:all` runs the full D1–D7 + F-10 regression gate — 21 suites /
+  259 tests (Vitest) — exclusively against the dedicated `erp_retail_test`
+  database (`TEST_DATABASE_URL` in `.env`); every suite refuses to run against
+  any other database. It covers unit (product validation, error mapping,
+  pricing, D1–D7 validators, input bounds, auth config, user management),
+  integration (sales, purchases, customer-payments, supplier-payments, stock
+  adjustments, rollback, ledger, reports, db-hardening), HTTP (error contract,
+  input bounds, full D1–D7 API smoke, F-10 auth flow), and concurrency (stock
+  never goes negative).
 - `node scripts/verify-dev-db.mjs` proves the gate could not have touched the
   development database: it snapshots every `erp_retail` table row count plus a
   product digest and fails non-zero on any difference from the baseline
@@ -130,8 +144,13 @@ npm run dev
     allocation over real HTTP (incl. the documented `quantity: 1e8` DoS
     payload returning 400 quickly).
   - `npm run test:http:smoke` — full D1–D7 API walk over real HTTP.
+  - `npm run test:auth` — F-10 HTTP suite: sign-in lifecycle, proxy gate,
+    forged-cookie 401, CASHIER 403 matrix, cross-origin rejection, OWNER user
+    management (create/role/ban/unban/reset/delete, last-OWNER invariant).
   - All HTTP suites refuse to run if `TEST_DATABASE_URL` is not
     `erp_retail_test` or a dev server is already running for the project.
+  - Seed a fresh database: `node scripts/seed-owner.mjs` (idempotent OWNER
+    account for sign-in; defaults `owner` / `ownerpass123`).
 - Import the Postman collection (`postman/Retail-ERP.postman_collection.json`)
   and run folders in order — ids chain via environment variables.
 - Reconciliation invariants, verified via SQL:
@@ -141,7 +160,7 @@ npm run dev
 
 ## Documentation
 
-- [`docs/business-decisions.md`](docs/business-decisions.md) — D1–D8 business
+- [`docs/business-decisions.md`](docs/business-decisions.md) — D1–D9 business
   and architecture decisions
 - [`docs/implementation-log.md`](docs/implementation-log.md) — milestone log
 - [`docs/project-progress.md`](docs/project-progress.md) — current status,

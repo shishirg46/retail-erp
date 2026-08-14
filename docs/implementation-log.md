@@ -516,6 +516,85 @@ or repository changes):**
 
 ---
 
+## Milestone 14 — Authentication & authorization (F-10, ERP-007) (14 Aug 2026)
+
+**Scope (per ERP-007, D9 approved by PM):** local username+password
+authentication delegated to **Better Auth** (self-hosted, database-backed),
+an OWNER/CASHIER role matrix, every ERP route guarded, and OWNER user
+management. Explicitly out of scope: OAuth/MFA/public sign-up, frontend UI,
+audit log, F-06/07/08/09/11.
+
+- **Schema** — migration `20260814050107_auth_f10` adds the four core Better
+  Auth tables (`user`, `session`, `account`, `verification`, quoted reserved
+  words) plus `user.role` (`OWNER`/`CASHIER`, default `CASHIER`) and
+  `user.username` (fed by Better Auth's `username` plugin with
+  `additionalFields: { username }` so `data.username` lands on the column).
+- **`lib/auth.ts`** — Better Auth instance: email+password (sign-up disabled,
+  min 8 chars), `username` + `admin` (`adminRoles: ["OWNER"]`) plugins, 12h
+  sessions, 6h sliding window, cookie prefix `erp`. Password hashes live in
+  `account.password` (`salt:key` scrypt from `@better-auth/utils/password`).
+- **`lib/auth/authorize.ts`** — `assertSameOrigin` (D9.9: a present `Origin`
+  header on a state-changing method must match the request's own origin; absent
+  Origin — non-browser clients — is allowed), `requireUser` (D9.8 authoritative
+  DB-backed session lookup → 401), `requireRole` (D9.3 matrix → 403).
+- **`lib/errors.ts`** — `UnauthorizedError` (401, "Authentication required"),
+  `ForbiddenError` (403, "Insufficient permissions" / "Cross-origin request
+  rejected").
+- **`proxy.ts`** — coarse network-boundary gate (D9.8): `/api/*` carrying no
+  session cookie → 401 without touching the DB; `/api/auth/*` excluded so
+  sign-in is reachable. Never authoritative — every route re-checks.
+- **`app/api/auth/[...all]/route.ts`** — Better Auth's HTTP entry; blocks
+  `/api/auth/admin/*` with 404 so the admin plugin's `user.email` leak surface
+  is unreachable (D9.10).
+- **`modules/users/` + `app/api/users/`** — OWNER-only user management:
+  create (derived internal email `<username>@erp.local`, D9.10), list/get,
+  role update, ban/unban, reset-password (revokes all of that user's sessions,
+  D9.5), delete. `toUserAdminView` never exposes the email/emailVerified.
+  Last-active-OWNER invariant: demote/ban/delete of the last active OWNER →
+  400.
+- **Guard coverage** — all ERP routes guarded per D9.3: CASHIER = sales,
+  customers (view/create), customer payments, stock adjustments, stock
+  movements, sales + stock reports; everything else OWNER-only.
+- **`scripts/seed-owner.mjs`** — idempotent initial OWNER seed using Better
+  Auth's own scrypt hash, so the credential verifies at real sign-in.
+- **Behavioral fix** — Better Auth swallows session-lookup errors into `null`,
+  so a dead database is indistinguishable from an invalid token; `requireUser`
+  probes the DB with a no-op query on the null path so an unreachable database
+  surfaces as a sanitized 500 (server fault) while a genuinely invalid session
+  still gets 401. Keeps the F-03 unreachable-DB leak-canary HTTP proof green
+  under the auth gate.
+
+**Commits** (granular per the approved plan): `b1bd02d` (core + schema +
+guards), `975d1e4` (guard all routes + user management), `e276e6b` (dead-DB →
+sanitized 500), `d491bde` (F-10 suites + authenticate existing HTTP suites),
+`c7bfb67` (route warming for the dev route-discovery race + wire `test:auth`
+into the gate).
+
+**Verified**
+
+- `npx tsc --noEmit` and `npm run lint` green; `npx prisma validate` green.
+- `npm run test:all` — **21 suites, 259 tests, 0 failures, exit 0**: unit
+  126/126 (incl. auth-config 10, user-management 11), integration 73/73,
+  concurrency 5/5, HTTP error 12/12 (incl. unreachable-DB leak-canaries),
+  HTTP bounds 11/11, HTTP smoke 15/15, F-10 HTTP auth-flow **17/17** — sign-in
+  lifecycle, proxy gate, D9.8 forged-cookie 401, D9.3 CASHIER 403 matrix,
+  D9.9 cross-origin (foreign → 403, matching → allowed), D9.10 admin endpoints
+  404 + no email exposure, user create/get/delete, role promote/demote,
+  last-active-OWNER invariant, ban blocks sign-in + unban restores, D9.5 reset
+  revokes sessions.
+- Dev database (`erp_retail`) byte-identical to baseline after the full gate
+  (`node scripts/verify-dev-db.mjs`; baseline refreshed once to include the
+  F-10 migration row in `_prisma_migrations` — all 12 application tables and
+  the digest unchanged).
+- Manual dev-server checks: matching-origin POST → 403 "Cross-origin request
+  rejected", no session cookie → 401, forged cookie → 401 (authoritative check),
+  `/api/auth/admin/list-users` → 404, sign-up disabled.
+- Tracking: GitHub issue **ERP-007** (F-10) — evidence to comment, **left open
+  for PM review** per the approved plan. D9 decisions recorded in
+  `docs/business-decisions.md`.
+
+---
+
 ## Current state (14 Aug 2026)
 
 - **Done:** Products/Pricing, Sales, Purchasing, Suppliers + Supplier Payments,
@@ -523,14 +602,17 @@ or repository changes):**
   F-02 (concurrency), F-01 (product validation), F-03 (error privacy),
   F-04 (input upper bounds), F-15 (automated regression suite as the gate,
   now standardized on Vitest), F-05 (DB hardening: 17 CHECK constraints +
-  9 report indexes).
+  9 report indexes), and **F-10 (authentication & authorization: Better Auth,
+  OWNER/CASHIER matrix, all routes guarded, OWNER user management)**.
   All green on `tsc --noEmit` and `eslint`; the full `npm run test:all` gate
-  (18 suites, 221 tests) passes against `erp_retail_test`.
+  (21 suites, 259 tests) passes against `erp_retail_test`.
 - **Test data:** Rice stock 13, Oil 10, Biscuits 30; Kathmandu Wholesale balance
   0; customers Ramesh −5, Sita −100 (prepaid); wallet −4235; credit payments 405.
 - **Postman:** `postman/Retail-ERP.postman_collection.json` — 58 requests,
   9 folders (Products, Suppliers, Purchases, Supplier Payments, Stock
   Adjustments, Customers, Customer Payments & Credit Lifecycle, Sales — Tier
-  Pricing & Payment Types, Reports).
-- **Next:** remaining P1 audit fix F-10 (auth) — requires a D9 business
-  decision (roles/permissions) before code; separate planned milestone.
+  Pricing & Payment Types, Reports). Collection calls now need a session cookie
+  (sign in first) once F-10 is live.
+- **Next:** PM review of **ERP-007** (F-10 evidence) and **ERP-006** (F-05
+  evidence); remaining audit fixes F-06/07/08/09/11 require their own business
+  decisions before code.

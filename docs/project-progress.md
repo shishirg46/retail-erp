@@ -45,7 +45,8 @@ read-only reporting layer.
 | Audit fix — F-04 input upper bounds | COMPLETE (Milestone 10) — `lib/bounds.ts` caps (`MAX_ITEM_QUANTITY`, `MAX_ITEMS_PER_DOCUMENT`, `MAX_AMOUNT`) enforced in all six validators; over-limit → 400 before allocation; unit + HTTP suites |
 | Audit fix — F-15 regression suite | COMPLETE (Milestone 11) — full D1–D7 automated gate (`npm run test:all`, 17 suites / 197 assertions) against `erp_retail_test` only; dev DB proven byte-identical before/after. **Standardized on Vitest (Milestone 12)** — single runner, same 197 tests, exit 0. **CLOSED (PM-approved) — ERP-005** |
 | Audit fix — F-05 DB hardening | COMPLETE (Milestone 13) — 17 CHECK constraints + 9 report indexes (migration `20260814034336_db_hardening_f05`); pre-migration validator green on both DBs; `tests/integration/db-hardening.test.ts` 24/24 (constraints/indexes exist, raw-SQL rejections, signed semantics preserved). Gate now 18 suites / 221 tests. Evidence on ERP-006, left open for PM review |
-| Production readiness | NOT YET COMPLETE — requires the remaining audit fix (F-10 auth, needs a D9 business decision) |
+| Audit fix — F-10 auth & roles | COMPLETE (Milestone 14) — Better Auth (local username+password, no sign-up), OWNER/CASHIER role matrix (D9.3), every ERP route guarded, OWNER user management; `app/api/users`, `modules/users/`, seed script. Gate now 21 suites / 259 tests. Evidence on ERP-007, left open for PM review |
+| Production readiness | NOT YET COMPLETE — F-10 auth implemented (ERP-007 pending PM review); remaining audit fixes F-06/07/08/09/11, deployment, and load testing still open |
 
 Evidence:
 
@@ -97,6 +98,7 @@ recorded, not reinterpreted.
 | D5 | Optional `saleId` on customer payments — must exist (404), belong to the customer (400), be a CREDIT sale (400); no amount-matching | Locked — implemented |
 | D6 | Stock adjustment semantics: DAMAGE quantity = amount ruined (−delta); CORRECTION quantity = desired final level; results < 0 rejected (409); baseline invariant `Product.stockQty == Σ movements` (products start at 0, opening stock via CORRECTION) | Locked — implemented |
 | D7 | Reporting is a read-only derivation layer over transactional tables; never store report totals; no COGS / valuation / profit until a costing method is decided; inclusive `from ≤ date ≤ to` filtering | Locked — implemented |
+| D9 | Authentication & roles (F-10): Better Auth (local username+password, no OAuth/MFA/sign-up); exactly two roles OWNER/CASHIER; permission matrix D9.3 (CASHIER = sales, customers view/create, customer payments, stock adjustments, stock movements, sales+stock reports); coarse proxy gate + authoritative DB-backed check (D9.8); same-origin enforcement on state-changing requests (D9.9); derived internal email `<username>@erp.local` never exposed (D9.10); reset-password revokes sessions (D9.5) | Locked — implemented |
 
 ## 5. Architecture Currently Implemented
 
@@ -255,13 +257,15 @@ SQL.
   221 tests, exit 0; dev DB byte-identical before/after. Tracking:
   [GitHub issue ERP-006](https://github.com/shishirg46/retail-erp/issues/6).
   Evidence commented; left open for PM review.
-- Next audit fix pending PM decision: P1 finding F-10 (auth) — requires a D9
-  business decision (roles/permissions) before code.
+- Next audit fix pending PM decision: P1 finding F-10 (auth) — **DONE (Milestone
+  14, ERP-007)**, evidence commented, left open for PM review; then remaining
+  P2/P3 findings F-06/07/08/09/11 need their own decisions before code.
 
 **WHAT HAS NOT BEEN STARTED**
 - Remaining fixes from the audit (see [`docs/architecture-audit.md`](architecture-audit.md)
   "Recommended Fix Order" — P1: F-10, F-05; P2/P3: F-06, F-07, F-09, F-08, F-11).
-- Authentication / authorization / roles.
+  F-10 and F-05 are **implemented (M13/M14)** and awaiting PM review on
+  ERP-006/ERP-007.
 - Frontend UI; dashboards; advanced reporting; exports; pagination/search.
 - Deployment, backups, observability.
 
@@ -289,7 +293,7 @@ proving stock never goes negative); **(2) products validation for
 route; invalid payloads → 400; `tests/unit/product.validation.ts` 30/30).
 
 ### Step 2 — Fix Remaining HIGH/Selected Findings
-P1 (per audit): auth/roles decision (F-10), automated test framework
+P1 (per audit): auth/roles decision (F-10) — DONE, automated test framework
 (F-15) — DONE, DB CHECK + indexes (F-05) — DONE.
 
 ### Step 3 — Regression Testing
@@ -417,14 +421,15 @@ REPORTING:        COMPLETE — 6 read-only reports, SQL-verified, no stored tota
 DOCUMENTATION:    COMPLETE — README, AGENTS.md, business-decisions (D1–D8),
                   implementation-log, project-progress, architecture-audit,
                   postman suite
-TESTING:          COMPLETE — full D1–D7 gate (`npm run test:all`, 18 suites,
-                  221 tests, 0 failures, Vitest) against erp_retail_test only:
-                  unit 105/105 (validation 30, error 11, pricing 6, validators
-                  30, bounds 28), integration 73/73 (sales 10, purchases 6,
-                  customer-payments 8, supplier-payments 5, stock 8, rollback
-                  8, ledger 2, reports 2, db-hardening 24), concurrency 5/5,
-                  HTTP error 12/12, HTTP bounds 11/11, HTTP D1–D7 smoke 15/15
-                  (F-15, M11+M12)
+TESTING:          COMPLETE — full D1–D7 + F-10 gate (`npm run test:all`, 21
+                  suites, 259 tests, 0 failures, Vitest) against erp_retail_test
+                  only: unit 126/126 (validation 30, error 11, pricing 6,
+                  validators 30, bounds 28, auth-config 10, user-management 11),
+                  integration 73/73 (sales 10, purchases 6, customer-payments 8,
+                  supplier-payments 5, stock 8, rollback 8, ledger 2, reports 2,
+                  db-hardening 24), concurrency 5/5, HTTP error 12/12, HTTP
+                  bounds 11/11, HTTP D1–D7 smoke 15/15, F-10 auth-flow 17/17
+                  (F-15, M11+M12 / F-10, M14)
 DB HARDENING:     COMPLETE — 17 CHECK constraints + 9 report indexes (F-05,
                   M13): constraints/indexes proven in pg_catalog, raw SQL
                   cannot write invalid rows (signed semantics preserved: no
@@ -433,12 +438,22 @@ INPUT SAFETY:     COMPLETE — quantity/amount/items upper bounds (F-04 fixed):
                   MAX_ITEM_QUANTITY 100000, MAX_ITEMS_PER_DOCUMENT 100,
                   MAX_AMOUNT 10000000 enforced in all six validators; over-limit
                   → 400 before any allocation (DoS payload 1e8 rejected < 15 s)
-CURRENT TASK:     P0+P1 audit fixes through F-04 + F-15 + F-05 — F-02 (M7,
-                  closed), F-01 (M8, closed), F-03 (M9, closed), F-04 (M10,
-                  ERP-004, closed), F-15 (M11 tsx → M12 Vitest, ERP-005, closed
+AUTH (F-10, M14): COMPLETE — Better Auth (local username+password, sign-up
+                  disabled), OWNER/CASHIER roles, all routes guarded (coarse
+                  proxy gate + authoritative DB-backed check), OWNER user
+                  management (create/list/get/role/ban/unban/reset-password/
+                  delete, last-OWNER invariant), D9.10 derived email never
+                  exposed, /api/auth/admin/* blocked, same-origin enforcement,
+                  reset revokes sessions. D9 recorded. ERP-007 left open
+CURRENT TASK:     P0+P1 audit fixes through F-05 + F-10 — F-02 (M7, closed),
+                  F-01 (M8, closed), F-03 (M9, closed), F-04 (M10, ERP-004,
+                  closed), F-15 (M11 tsx → M12 Vitest, ERP-005, closed
                   PM-approved), F-05 (M13, ERP-006, evidence commented, left
-                  open for PM review)
-NEXT TASK:        F-10 (auth — requires D9 business decision first)
-PRODUCTION READY: NO — remaining P1 finding (F-10 auth), auth/deployment
+                  open for PM review), F-10 (M14, ERP-007, evidence commented,
+                  left open for PM review)
+NEXT TASK:        PM review of ERP-006 (F-05) + ERP-007 (F-10); then P2/P3
+                  findings F-06/07/08/09/11 each need their own business
+                  decisions
+PRODUCTION READY: NO — P2/P3 audit findings (F-06/07/08/09/11), deployment
                   decisions, and load testing remain
 ```
