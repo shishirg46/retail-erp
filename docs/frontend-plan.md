@@ -747,3 +747,41 @@ None of these are scheduled in M21.
 - UI page CSP added in Phase A; the `/api` CSP is untouched.
 - No business math in the frontend: totals, tiers, stock deltas, and balances
   are always the API's numbers.
+
+## 16. Architecture & stack (D22, accepted 15 Aug 2026)
+
+Full decision in `docs/business-decisions.md` (D22.1–D22.7). Summary:
+
+**Stack:** Next.js 16 App Router (RSC shell + minimal client islands) · Tailwind
+v4 · `better-auth/react` (session). New deps: TanStack Query (server state),
+Zustand (cart only), React Hook Form + Zod (+ `@hookform/resolvers`), shadcn/ui
+(curated subset) + lucide-react (icons) + Sonner (success toasts).
+**Not added:** Recharts (plan §2, backlog), `@tanstack/react-table` (semantic
+`<table>`; revisit only if column features are wanted), Playwright (post-M21),
+Redux.
+
+**State separation (D22.2):**
+
+| Concern | Owner |
+| --- | --- |
+| Server state | TanStack Query (per-resource query keys; mutations invalidate dependents) |
+| Client-global | Zustand — POS cart only (items, qty, paymentType, customerId) |
+| Local UI | `useState` (sheet open, section collapse, search focus, keypad) |
+| URL | `searchParams` — filters, cursor `next`, report `from`/`to` (Next 16 async `searchParams`) |
+| Forms | React Hook Form + Zod (schemas mirror backend validators) |
+| Business math | Backend only (pricing, tiers, totals, stock, wallet, balances, cost, voids); frontend math is preview/UX only |
+
+**Responsive (D22.3):** <768px bottom tab bar + bottom-sticky CTA (56px) ·
+768–1199px icon rail (72px) · ≥1200px sidebar (240px). Row→card (mobile) →
+2-col grid (tablet) → semantic table (desktop, sticky header). Touch ≥44px,
+body 16px, safe-area insets, no hover-only interactions, WCAG AA, Devanagari
+font.
+
+**Testing (D22.6):** Vitest unit (node env: format, shop-local dates, cursor,
+schemas) + Vitest component (jsdom + RTL + user-event: sales entry, search
+debounce, ConfirmSheet, PaginatedList, role-adaptive nav, MoneyText/VoidBadge)
+via a new `test:frontend` in the gate. Playwright deferred.
+
+**API integration (D22.5):** one typed `lib/api/client.ts` (same-origin,
+`{ message }` errors, typed payloads); wire types reused from `@/modules/*`
+via `import type`; exports via Content-Disposition links.

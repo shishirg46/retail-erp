@@ -96,7 +96,7 @@ verified live).
 | 18 | Audit Fix | Transaction void/correction (F-07 remaining, ERP-009) | COMPLETE | `modules/voids/`, 5 void endpoints, `lib/locks.ts`, VoidRecord model | D18.1–D18.11; immutable originals + reversal rows; FOR UPDATE race closure; 18 integration + 11 HTTP + concurrency race tests |
 | 19 | Audit Fix | Security hardening (F-08/F-11/P3/P4) | COMPLETE | `lib/rate-limit.ts`, `lib/validate.ts`, `lib/mutex.ts`, `next.config.ts`, `lib/auth/authorize.ts` | Rate limits (auth per IP / API writes per user), headers + strict CSP + no-CORS, id validation, last-OWNER mutex; D19.1–D19.4; 394-test gate green |
 | 20 | Export | Data export (D20.1–D20.3) | COMPLETE | `modules/exports/`, `app/api/exports/` | Six read-only `/api/exports/*` endpoints serializing the D7 reports as Excel-ready CSV (UTF-8 BOM, RFC-4180, injection-guarded) or JSON; streamed, full-range (never capped at 50); D9.6 roles reused; JSON ≡ report endpoint; 14 unit + 11 HTTP tests; 419-test gate green |
-| 21 | Frontend | Responsive mobile-first UI (M21) | PLANNED | `docs/frontend-plan.md` (kickoff), D21.1–D21.8 | Kickoff package prepared: information architecture, page-by-page wireframe spec (desktop/tablet/mobile), role-adaptive nav (D9.3), fast sales entry, responsive table→card rules; five M21 scope questions resolved by PM (wallet read-only, no customer-filter, no low-stock alert, report presets, no day-close); implementation pending PM approval |
+| 21 | Frontend | Responsive mobile-first UI (M21) | PLANNED | `docs/frontend-plan.md` (kickoff + §16 arch), D21, D22 | Kickoff package prepared and committed (`dbe35fe`); five M21 scope questions + architecture/stack (D22.1–D22.7, no charts, semantic tables, no Playwright) approved by PM; implementation pending PM go-ahead |
 
 ## 4. Business Decisions Locked
 
@@ -119,7 +119,8 @@ recorded, not reinterpreted.
 | D18 | Transaction void/correction (F-07 remaining): immutable originals, offsetting reversal rows, unique `(targetType, targetId)`, `SELECT ... FOR UPDATE` race closure, report exclusion, status exposure. D18.1–D18.11 | Locked — implemented |
 | D19 | Security hardening: D19.1 process-local rate limiting (F-08 — auth per IP, API writes per user, 429, env-configurable), D19.2 security headers + strict CSP + no-CORS (F-11), D19.3 route id format validation (P3 — `assertUuid`/`assertUserId` → 400), D19.4 last-active-OWNER async mutex (P4). All document the single-process deployment model | Locked — implemented |
 | D20 | Data export (M20): six read-only `/api/exports/*` endpoints that serialize the exact D7 report payload (no own computation, no DB writes). D20.1 CSV = comma + RFC-4180 quoting + CRLF + UTF-8 BOM, deterministic metadata + table sections, bare numeric cells (negative balances preserved), text-only formula-injection guard; JSON = UTF-8, no BOM. D20.2 full-range exports, never truncated at the 50-row pagination cap, streamed chunk-per-row/element. D20.3 authorization reuses D9.6 (CASHIER: sales + stock only; no separate export role matrix); exports are GET reads and are never rate-limited (F-08) | Locked — implemented |
-| D21 | Responsive mobile-first frontend (M21): same-origin Next.js App Router app consuming only the existing `/api/*` endpoints (no new data plane, no CORS change, UI-page CSP). D21.2 mobile-first breakpoints + navigation (bottom tabs <768 / icon rail 768–1199 / sidebar ≥1200); D21.3 touch targets ≥44 px + double-submit prevention; D21.4 fast sales entry centerpiece; D21.5 tables→cards transform, never shrink; D21.6 simple stock/customer/payment workflows; D21.7 role-adaptive menu (D9.3); D21.8 explicit error/loading/empty states. M21 scope resolved by PM: wallet read-only, no customer-filter on sales, no low-stock alert, report presets Today/7d/30d/month/custom (shop-local), no day-close | Locked — planned (plan finalized 15 Aug 2026; implementation pending PM approval) |
+| D21 | Responsive mobile-first frontend (M21): same-origin Next.js App Router app consuming only the existing `/api/*` endpoints (no new data plane, no CORS change, UI-page CSP). D21.2 mobile-first breakpoints + navigation (bottom tabs <768 / icon rail 768–1199 / sidebar ≥1200); D21.3 touch targets ≥44 px + double-submit prevention; D21.4 fast sales entry centerpiece; D21.5 tables→cards transform, never shrink; D21.6 simple stock/customer/payment workflows; D21.7 role-adaptive menu (D9.3); D21.8 explicit error/loading/empty states. M21 scope resolved by PM: wallet read-only, no customer-filter on sales, no low-stock alert, report presets Today/7d/30d/month/custom (shop-local), no day-close | Locked — planned (plan finalized 15 Aug 2026; implementation pending PM go-ahead) |
+| D22 | M21 frontend architecture & stack: Next.js 16 App Router (RSC shell + minimal client islands) + Tailwind v4 + `better-auth/react`; new deps TanStack Query (server state), Zustand (cart only), React Hook Form + Zod, shadcn/ui (curated) + lucide-react + Sonner; NOT added Recharts (no charts, plan §2), `@tanstack/react-table` (semantic tables), Playwright (post-M21), Redux. State separation: TanStack / Zustand / useState / searchParams / RHF+Zod; backend authoritative for all business math. Mobile-first three-tier responsive; Vitest unit + jsdom component tests in the gate | Locked — approved (15 Aug 2026; implementation pending PM go-ahead) |
 
 ## 5. Architecture Currently Implemented
 
@@ -559,11 +560,11 @@ SECURITY (M19):   COMPLETE — F-08 rate limiting (auth attempts per IP, 20/15mi
                   validation (assertUuid/assertUserId → 400); P4 last-OWNER
                   async mutex. D19.1–D19.4 recorded
 CURRENT TASK:     M20 data export complete, PM-approved, committed (`11bd68e`)
-                  and pushed; docs reconciled; gate 419/419 green; tree clean.
-                  M21 frontend kickoff package (IA + wireframes + D21) prepared
-                  and the five M21 scope questions resolved by PM (15 Aug 2026)
-NEXT TASK:        PM approval of the finalized M21 plan; then M21 responsive
-                  mobile-first frontend implementation; then deployment,
+                  and pushed; M21 planning package committed (`dbe35fe`) and
+                  pushed; gate 419/419 green. M21 architecture proposal (D22)
+                  approved by PM; PM scope decisions + stack decisions accepted
+NEXT TASK:        PM go-ahead to begin M21 implementation (Phase A: shell +
+                  sign-in, per docs/frontend-plan.md §13); then deployment,
                   backups/observability, and load testing
 PRODUCTION READY: NO — deployment, backups/observability, and load testing
                   remain; all audit findings (F-01…F-15) are implemented

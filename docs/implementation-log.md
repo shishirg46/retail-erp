@@ -991,6 +991,41 @@ per-product reorder/low-stock threshold, `POST /api/day-close` daily snapshot.
 **Verification:** `npx tsc --noEmit`, `npm run lint`, `git diff --check` green;
 backend gate untouched (419/419). No frontend code written.
 
+## M21 — Frontend architecture proposal (D22) — 15 Aug 2026
+
+**Status: architecture approved by PM — implementation not yet started.**
+
+Proposal prepared against the actual repository (routes, wire shapes, auth,
+`proxy.ts` matcher, CSP, deps) and recorded in `docs/business-decisions.md`
+(D22.1–D22.7) and `docs/frontend-plan.md` §16:
+
+- **Stack:** Next.js 16 App Router (RSC shell + minimal client islands),
+  Tailwind v4, `better-auth/react`; new deps TanStack Query (server state),
+  Zustand (POS cart only), React Hook Form + Zod, shadcn/ui (curated) +
+  lucide-react + Sonner.
+- **Not added:** Recharts (no charts in M21 — plan §2), `@tanstack/react-table`
+  (semantic `<table>` for desktop), Playwright (deferred post-M21), Redux.
+- **State separation:** TanStack Query (server) / Zustand (cart) / `useState`
+  (local) / `searchParams` (filters, cursor, report range) / RHF+Zod (forms);
+  backend remains authoritative for all business math.
+- **Responsive:** mobile-first three-tier (bottom tab bar / icon rail /
+  sidebar), never-shrink row→card→grid→table rules, touch targets ≥44 px,
+  Devanagari font coverage, no hover-only interactions.
+- **Testing:** Vitest unit (node) + component (jsdom + RTL + user-event) as a
+  new `test:frontend` in the gate; Playwright deferred.
+- **Discrepancies found & reported:** `proxy.ts` gates `/api/*` only (UI pages
+  need their own RSC session gate); UI pages currently have no CSP (D21.1
+  nonce CSP is a Phase A `next.config.ts` change); Geist font is latin-only
+  (needs Devanagari coverage).
+
+**PM decisions accepted 15 Aug 2026:** D1 no charts in M21 (backlog);
+D2 semantic tables, defer TanStack Table; D3 defer Playwright to post-M21
+hardening.
+
+**Verification:** docs-only changes; no code/tests/config changed, so the
+backend gate was not rerun (test-rule §8). `git diff --check` clean; working
+tree has the D22 + §16 doc updates uncommitted.
+
 ---
 
 ## Current state (15 Aug 2026)

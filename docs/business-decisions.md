@@ -1446,3 +1446,100 @@ change; the backend gate stays green.
 **Testing impact:** new unit tests for formatting/validation helpers and new
 frontend integration tests (mobile breakpoints, sales-entry flow, role-adaptive
 menu) run by the same gate; backend suites unchanged.
+## D22 — M21 frontend architecture & stack (responsive mobile-first web app)
+
+**Status:** Accepted — 15 Aug 2026 (implementation awaits final PM go-ahead)
+
+**Current behavior (before)**
+The frontend is the untouched create-next-app scaffold (`app/layout.tsx`,
+`app/page.tsx`, `app/globals.css`, scaffold `public/` SVGs). No components,
+no UI libraries, no pages beyond the boilerplate.
+
+**Proposed behavior**
+A same-origin Next.js 16 App Router app (D21.1) whose pages and components are
+organized, styled, and tested as specified below. Mobile is the primary
+workflow surface (phone portrait/landscape, tablet, laptop, desktop) per D21.2.
+
+**D22.1 — Frameworks and dependencies.** Already installed and reused: Next.js
+16.2.11 (App Router, RSC shell + minimal client islands), React 19.2.4,
+Tailwind CSS v4, TypeScript 5 strict, `better-auth/react` for the session.
+New runtime dependencies: **TanStack Query** (`@tanstack/react-query`, server
+state), **Zustand** (POS cart only — client-global state), **React Hook Form +
+Zod** (+ `@hookform/resolvers`) for forms/validation, **shadcn/ui** curated
+subset (Radix-based accessible primitives) + **lucide-react** (icons) +
+**Sonner** (success toasts; errors stay inline per D21.8).
+Explicitly **not** added in M21: Recharts (plan §2 — no charts/dashboards
+beyond report payloads; recorded as backlog), `@tanstack/react-table`
+(desktop tables are semantic `<table>` with sticky header; cursor pagination
+D12 gives no full-dataset client sort — revisit only if column
+sorting/resizing/virtualization/visibility is genuinely needed), Playwright
+E2E (deferred to post-M21 hardening), Redux (Zustand covers the one genuine
+global need).
+
+**D22.2 — State management separation.** Server state → TanStack Query (query
+keys per resource; mutations invalidate dependents — a sale refreshes stock,
+sales list, and reports). Client-global state → Zustand, only the cart store
+(`items`, qty steppers, `paymentType`, `customerId`; `reset` keeps the CREDIT
+customer). Local UI state → `useState`. URL state → `searchParams` (filters,
+cursor pagination `next`, report `from`/`to`; Next 16 async `searchParams`).
+Form state → RHF + Zod with schemas mirroring the backend validators. The
+backend remains authoritative for all business math (pricing/tiers, totals,
+stock, wallet, balances, cost, voids); frontend math is preview/UX only and
+displays the server's returned values after every mutation.
+
+**D22.3 — Responsive/mobile-first architecture.** Three tiers, mobile-first
+authoring (D21.2): **<768px** bottom tab bar (Home · Sell · Stock · Customers ·
+More sheet) + bottom-sticky 56px primary CTA; **768–1199px** left icon rail
+(72px); **≥1200px** full sidebar (240px). Never-shrink rule (plan §7): row →
+card on mobile, 2-col card grid on tablet, real semantic `<table>` with sticky
+header on desktop; no horizontal scroll. Touch targets ≥44px (48 preferred)
+on touch, ≥40px desktop; 16px body text; `env(safe-area-inset-bottom)` for the
+tab bar; no hover-dependent functionality; WCAG AA contrast; fixed (non
+dark-mode-dependent) money color semantics. Font covers Devanagari
+(Asia/Kathmandu shop). Desktop is denser, not "more primary": sales entry is
+two-pane with Enter-to-add on desktop, stacked one-thumb column on mobile.
+
+**D22.4 — Directory structure.** `app/` UI routes (with `(workspace)` route
+group for the session-gated, role-adaptive shell; `app/api/` untouched),
+`components/` (`ui/` shadcn primitives, `layout/`, `entities/`, `pos/`,
+`reports/`, `shared/`), `lib/` (`api/` typed client + query key factory,
+`auth-client.ts`, `query-client.ts`, `format/` money + shop-local dates,
+`validate/` zod schemas, `constants.ts`), `stores/cart.ts`.
+
+**D22.5 — API integration.** One typed `lib/api/client.ts` builds same-origin
+URLs (search, filters, cursor, `from`/`to`), throws typed errors from the API's
+`{ message }` contract, and returns typed payloads. Wire types are reused from
+`@/modules/*` via `import type` (report payloads, `SaleApi`, product/customer
+wire shapes) — no hand-maintained DTO copy. Export download = same-origin
+`<a href="/api/exports/{name}?format=&from=&to=">` (Content-Disposition D20.1;
+session cookie flows automatically). Session read via `auth.api.getSession` in
+the RSC workspace layout; `better-auth/react` on the client.
+
+**D22.6 — Testing.** Vitest unit tests (node env) for `lib/format/` money and
+shop-local date derivation from the report `range` echo (Q4), report presets →
+`from`/`to`, cursor URL helpers, zod schemas. Vitest component tests (jsdom +
+React Testing Library + user-event) for the sales-entry flow (CREDIT forces
+customer picker, double-submit blocked), SearchBar debounce, ConfirmSheet
+(void reason required), PaginatedList "Load more", role-adaptive nav, MoneyText
+/VoidBadge. New `test:frontend` script chained into `test:all`; backend suites
+remain separate and are only rerun when backend-affecting changes occur.
+Playwright deferred (D3).
+
+**D22.7 — Loading/error/empty states.** Skeletons matching card/table shape;
+inline API `{ message }` + Retry; 401 → `/sign-in`, 429 → rate-limit message,
+403 → defensive (menus already role-filtered, D21.7); every mutating button
+disabled while its mutation is pending (D21.3).
+
+**Reason**
+Keeps M21 thin and frontend-only (consuming only the existing `/api/*`), reuses
+every security/consistency control (session cookie, proxy, headers, rate
+limits, roles), gives the shop owner a fast mobile-first daily-workflow UI, and
+adds dependencies only where the architecture genuinely needs them.
+
+**Database impact:** none. No new tables, no migrations.
+**API impact:** none. No new routes; existing endpoints consumed as-is.
+**Existing feature impact:** scaffold `app/layout.tsx`/`app/page.tsx` replaced;
+`next.config.ts` gains a nonce-based UI-page CSP in Phase A (API CSP
+unchanged); backend behavior unchanged.
+**Testing impact:** `test:frontend` (Vitest unit + jsdom component) added to the
+gate; backend suites untouched.
