@@ -59,3 +59,10 @@ export class ForbiddenError extends AppError {
     super(message, 403);
   }
 }
+
+// 429 — the client exceeded a rate limit for an endpoint.
+export class RateLimitError extends AppError {
+  constructor(message = "Too many requests") {
+    super(message, 429);
+  }
+}

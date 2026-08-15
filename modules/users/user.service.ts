@@ -1,4 +1,5 @@
 import { BusinessRuleError } from "../../lib/errors";
+import { AsyncMutex } from "../../lib/mutex";
 import { PrismaUserRepository } from "./user.repository";
 import {
   validateCreateUserInput,
@@ -8,6 +9,11 @@ import {
 import type { UserAdminView } from "./user.types";
 
 const INTERNAL_EMAIL_DOMAIN = "erp.local";
+
+// Serializes the last-active-OWNER guard with its mutation (P4). Better Auth
+// performs the write in its own transaction, so the read-then-write race can
+// only be closed by serializing the critical section in-process.
+const ownerGuardMutex = new AsyncMutex();
 
 export class UserService {
   constructor(private readonly repository = new PrismaUserRepository()) {}
@@ -33,27 +39,33 @@ export class UserService {
 
   async updateRole(headers: Headers, id: string, body: unknown): Promise<UserAdminView> {
     const input = validateUpdateUserInput(body);
-    const target = await this.repository.findUserById(headers, id);
-    if (target.role === "OWNER" && input.role !== "OWNER") {
-      await this.assertNotLastActiveOwner(target);
-    }
-    return this.repository.updateRole(headers, id, input.role);
+    return ownerGuardMutex.runExclusive(async () => {
+      const target = await this.repository.findUserById(headers, id);
+      if (target.role === "OWNER" && input.role !== "OWNER") {
+        await this.assertNotLastActiveOwner(target);
+      }
+      return this.repository.updateRole(headers, id, input.role);
+    });
   }
 
   async deleteUser(headers: Headers, id: string): Promise<void> {
-    const target = await this.repository.findUserById(headers, id);
-    if (target.role === "OWNER") {
-      await this.assertNotLastActiveOwner(target);
-    }
-    await this.repository.remove(headers, id);
+    return ownerGuardMutex.runExclusive(async () => {
+      const target = await this.repository.findUserById(headers, id);
+      if (target.role === "OWNER") {
+        await this.assertNotLastActiveOwner(target);
+      }
+      await this.repository.remove(headers, id);
+    });
   }
 
   async banUser(headers: Headers, id: string): Promise<UserAdminView> {
-    const target = await this.repository.findUserById(headers, id);
-    if (target.role === "OWNER") {
-      await this.assertNotLastActiveOwner(target);
-    }
-    return this.repository.ban(headers, id);
+    return ownerGuardMutex.runExclusive(async () => {
+      const target = await this.repository.findUserById(headers, id);
+      if (target.role === "OWNER") {
+        await this.assertNotLastActiveOwner(target);
+      }
+      return this.repository.ban(headers, id);
+    });
   }
 
   async unbanUser(headers: Headers, id: string): Promise<UserAdminView> {

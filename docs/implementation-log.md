@@ -741,6 +741,8 @@ into the gate).
   `void.service.ts` (OWNER-only, whole-transaction, one `$transaction` per
   void). Original rows are never deleted; voiding posts **offsetting reversal
   rows** carrying origin FKs (wallet source `VOID`, stock reason `VOID`).
+  `void.repository.ts` also exposes `attachVoidStatus` and the
+  `listVoidedTargetIds(targetType)` helper.
 - **5 void endpoints**, all `POST .../void` and OWNER-only (D18.1):
   sales, purchases, credit payments (customer-payments), supplier payments,
   stock movements (`reason: CORRECTION` only — DAMAGE voids are rejections).
@@ -748,8 +750,10 @@ into the gate).
   repository-level `assertNotVoided` (P2002 → 409 Conflict).
 - D18.4: a sale with an active linked credit payment cannot be voided;
   new payments to a voided sale are rejected.
-- D18.5 (Option A): voiding a sale re-derives the product `costPrice` from
-  surviving non-voided purchases via the shared `recalculateCostPrice` helper.
+- D18.5 (Option A): voiding a **purchase** re-derives the product `costPrice`
+  from surviving non-voided purchases via the `VoidService.latestNonVoidedCost`
+  private helper; if no non-voided purchase history remains the cost falls
+  to 0.
 - D18.10: wallet origin FKs (`purchaseId`, `supplierPaymentId`) replace the old
   note-matching; void reversals are linked by FK, not note text.
 - D18.8: reports exclude voided records — `salesReport`, `purchasesReport`,
@@ -790,3 +794,130 @@ into the gate).
   `FOR UPDATE` locks removed, the suite fails immediately (both succeed).
 - D18.1–D18.11 recorded in `docs/business-decisions.md` (D18.11 documents the
   row-lock strategy and its verification).
+
+## 2026-08-15 — Test-infra hardening: sign-in cold-start + leftover-server leak
+
+- The spawned-dev-server HTTP suites intermittently failed with a Next.js 404
+  HTML page (or 401) on the FIRST sign-in after server start: a POST to
+  `/api/auth/sign-in/email` landing before Turbopack registers the route is
+  answered by the dev proxy, never reaching the route handler.
+- `tests/helpers/http.ts` `signIn()` now retries the POST itself on 404 until
+  the route is registered (a GET probe is useless — better-auth delegates it,
+  so it 404s forever). 404s served by the proxy never hit the handler, so the
+  retry consumes no rate-limit quota.
+- Second leak: a failed `beforeAll` left `server` undefined, so `afterAll`
+  crashed in `stopServer` and the previous run's dev server was never cleaned
+  up — the `.next/dev/lock` then blocked every later HTTP suite (snowball).
+  `stopServer()` is now null-safe and, when the lock's pid is alive and its
+  port matches the spawned server, kills that pid directly (Next can fork the
+  lock-writing worker in a different process group than the supervisor) and
+  unlinks the lock.
+- Verified: the 3 HTTP suites (error-handling, rate-limit, security-headers)
+  pass 3/3 consecutive runs; two full `npm run test:all` runs pass end-to-end
+  with no leftover `next dev` processes and no stale `.next/dev/lock`;
+  `tsc --noEmit`, `npm run lint`, `git diff --check` all clean.
+
+---
+
+## Milestone 19 — Security hardening: rate limiting, headers, id validation, OWNER race (F-08 / F-11 / P3 / P4) (15 Aug 2026)
+
+**Shipped**
+
+- **F-08 rate limiting** — `lib/rate-limit.ts`, process-local fixed-window:
+  - `consumeAuthAttempt(req)` — keyed by client IP (`x-forwarded-for` left-most
+    value, else `unknown`); default 20 / 15 min; throws `RateLimitError` (429).
+    Wired in `app/api/auth/[...all]/route.ts` **only** on the sign-in paths
+    (`/api/auth/sign-in/email`, `/api/auth/sign-in/username`); get-session and
+    sign-out are deliberately unlimited.
+  - `consumeApiRequest(userId, method)` — keyed by user id; **state-changing
+    methods only** (POST/PUT/PATCH/DELETE); GET reads never limited; default
+    300 / 60 s. Wired at the single authorization choke point in
+    `requireUser` (`lib/auth/authorize.ts`), so every guarded route is covered.
+  - All caps configurable via env (`ERP_RATE_LIMIT_AUTH_MAX`,
+    `ERP_RATE_LIMIT_AUTH_WINDOW_MS`, `ERP_RATE_LIMIT_API_MAX`,
+    `ERP_RATE_LIMIT_API_WINDOW_MS`), read at call time; defaults documented in
+    `.env.example`. Deployment model documented in code + D19.1: process-local
+    counters, exact under the single-process deployment, must become a shared
+    store (Redis) if the backend ever scales horizontally.
+  - `RateLimitError` (429) added to `lib/errors.ts`; rendered by the existing
+    `toHttpResponse`.
+- **F-11 security headers + no-CORS** — `next.config.ts` `headers()`:
+  - Baseline on `/:path*`: `X-Content-Type-Options: nosniff`,
+    `Referrer-Policy: strict-origin-when-cross-origin`,
+    `X-Frame-Options: DENY`, `Permissions-Policy: camera=(), microphone=(),
+    geolocation=(), payment=()`.
+  - `/api/:path*` additionally: strict CSP `default-src 'none'; base-uri
+    'none'; frame-ancestors 'none'` (safe for a pure JSON API) and
+    `Cross-Origin-Resource-Policy: same-origin`.
+  - CORS **deliberately disabled as policy** — no `Access-Control-Allow-*`
+    header is ever emitted, so browsers enforce same-origin for reads and
+    writes; combined with the app-level `assertSameOrigin` (D9.9) on
+    state-changing requests, cross-origin access is rejected at both layers.
+- **P3 route id validation** — `lib/validate.ts`: `assertUuid` (structural
+  8-4-4-4-12 hex, not version-restricted — the all-zeros key stays a valid
+  404) and `assertUserId` (UUID **or** Better Auth 32-char `[a-zA-Z0-9]`,
+  since API-created users carry 32-char ids). Wired into all 14 `[id]` route
+  files; malformed ids → `ValidationError` 400 instead of a Prisma-driven 500.
+- **P4 last-OWNER race** — `lib/mutex.ts` `AsyncMutex`; `UserService` wraps
+  `updateRole`/`deleteUser`/`banUser` in `ownerGuardMutex.runExclusive` so the
+  D7 read-then-write guard (whose write Better Auth performs in its own
+  transaction, outside Postgres row-lock reach) cannot be beaten by two
+  concurrent demotions/bans/deletions. `unbanUser` unguarded (cannot reduce the
+  OWNER count). Single-process limitation documented in code + D19.4.
+- **P6 cleanup (M18 ride-along, verified no-op):** the duplicated
+  `voidedIds` helper was already consolidated — `void.repository.ts` now
+  exports `listVoidedTargetIds` and `report.repository.ts` imports it (the
+  private copy was removed); the redundant
+  `void_records_target_type_target_id_idx` index was already dropped by
+  migration `20260815084442_drop_redundant_void_index` on both `erp_retail`
+  and `erp_retail_test` (`pg_indexes` now shows only the pkey + unique
+  constraint). No code change was needed for either.
+
+**Verified**
+
+- `tsc --noEmit` green; `npm run lint` green; `git diff --check` clean.
+- `tests/unit/rate-limit.test.ts` (window semantics, state-changing-only API
+  scope, env-config parsing), `tests/unit/validate.test.ts` (UUID + 32-char id
+  acceptance, garbage rejection, field-name in message, all-zeros UUID stays
+  valid), `tests/unit/mutex.test.ts` (mutual exclusion, ordering).
+- `tests/http/rate-limit.test.ts` — dev server with low caps: sign-in blocked
+  after N attempts with 429, API write requests blocked after N, **reads stay
+  200** after a block, config read from env.
+- `tests/http/security-headers.test.ts` — baseline on the scaffold page, strict
+  CSP + CORP on `/api/*` and better-auth endpoints, no `access-control-*`
+  header ever emitted.
+- `tests/concurrency/last-owner.test.ts` — cross-demotions, cross-bans,
+  cross-deletions by two OWNERs: exactly one succeeds, exactly one active OWNER
+  remains; deletion scenario leaves exactly one user. Proven against the
+  regression by temporarily bypassing the mutex.
+- `tests/http/input-bounds.test.ts` — two new hostile-path cases: malformed
+  entity id (`/api/products/not-a-uuid`) and malformed user id → 400, not 500;
+  the suite's liveness check still passes.
+- Full gate: **unit 189/189, integration 91/91, concurrency 9/9, HTTP
+  (error-handling + rate-limit + security-headers) 17/17, HTTP bounds 13/13,
+  HTTP smoke 15/15, auth 17/17, pagination 32/32, voids 11/11 — 394/394**,
+  exit 0, no leftover `next dev` processes, no stale `.next/dev/lock`.
+- D19.1–D19.4 recorded in `docs/business-decisions.md`; `.env.example`
+  documents the rate-limit knobs; `docs/architecture-audit.md` re-audited at
+  HEAD `c314953`.
+
+## Current state (15 Aug 2026)
+
+- **Done through M19:** Products/Pricing, Sales, Purchasing, Suppliers +
+  Supplier Payments, Customers + Credit Payments, Stock Adjustments, Reporting,
+  and audit fixes F-01 (product validation), F-02 (stock concurrency),
+  F-03 (error privacy), F-04 (input upper bounds), F-05 (DB hardening),
+  F-06/F-09 (integer-paisa money + shop-local timezone), F-07
+  (pagination/search/filtering), F-08 (rate limiting), F-10 (auth & roles),
+  F-11 (security headers + no-CORS), F-15 (automated regression gate), plus
+  M18 transaction void/correction (D18.1–D18.11) and M19 security hardening
+  (D19.1–D19.4).
+- **Test gate:** `npm run test:all` — unit 189, integration 91, concurrency 9,
+  HTTP 17, HTTP bounds 13, HTTP smoke 15, auth 17, pagination 32, voids 11 =
+  **394 tests, all green**, against `erp_retail_test`. No leftover dev servers
+  or stale lock files after the run.
+- **Open / PM review:** ERP-007 (F-10) and ERP-008 (F-06/F-09) evidence are
+  still awaiting PM review; ERP-009 (M18 voids) evidence is on this log. No
+  new functional milestone is planned to start after M19.
+- **Next:** PM review and closure of ERP-007 / ERP-008 / ERP-009; deployment +
+  load-testing remain the last open audit items.

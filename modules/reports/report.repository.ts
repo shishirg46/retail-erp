@@ -2,8 +2,8 @@ import { prisma } from "../../lib/prisma";
 import { paisaFromDecimal, paisaToRupees } from "../../lib/money";
 import { formatShopLocal } from "../../lib/timezone";
 import { toNumber } from "./report.mapper";
+import { listVoidedTargetIds } from "../voids/void.repository";
 
-import type { VoidTargetType } from "../voids/void.types";
 import type {
   CustomerPaymentHistoryRow,
   CurrentStockRow,
@@ -54,17 +54,8 @@ function rangeEcho(range: ReportDateRange): ReportRange {
 export class PrismaReportRepository implements ReportRepository {
   constructor(private readonly db: typeof prisma) {}
 
-  private async voidedIds(targetType: VoidTargetType): Promise<string[]> {
-    const rows = await this.db.voidRecord.findMany({
-      where: { targetType },
-      select: { targetId: true },
-    });
-
-    return rows.map((row) => row.targetId);
-  }
-
   async salesReport(range: ReportDateRange): Promise<SalesReport> {
-    const voidedSaleIds = await this.voidedIds("SALE");
+    const voidedSaleIds = await listVoidedTargetIds(this.db, "SALE");
     const where = { date: dateFilter(range), id: { notIn: voidedSaleIds } };
 
     const [aggregate, byPaymentType, items, products] = await Promise.all([
@@ -133,7 +124,7 @@ export class PrismaReportRepository implements ReportRepository {
   }
 
   async purchasesReport(range: ReportDateRange): Promise<PurchasesReport> {
-    const voidedPurchaseIds = await this.voidedIds("PURCHASE");
+    const voidedPurchaseIds = await listVoidedTargetIds(this.db, "PURCHASE");
     const where = { date: dateFilter(range), id: { notIn: voidedPurchaseIds } };
 
     const [aggregate, byPaymentType, bySupplier, suppliers] = await Promise.all([
@@ -182,9 +173,9 @@ export class PrismaReportRepository implements ReportRepository {
   async stockReport(range: ReportDateRange): Promise<StockReport> {
     const [voidedMovementIds, voidedSaleIds, voidedPurchaseIds] =
       await Promise.all([
-        this.voidedIds("STOCK_MOVEMENT"),
-        this.voidedIds("SALE"),
-        this.voidedIds("PURCHASE"),
+        listVoidedTargetIds(this.db, "STOCK_MOVEMENT"),
+        listVoidedTargetIds(this.db, "SALE"),
+        listVoidedTargetIds(this.db, "PURCHASE"),
       ]);
 
     const [currentStock, summary] = await Promise.all([
@@ -234,7 +225,7 @@ export class PrismaReportRepository implements ReportRepository {
   }
 
   async customersReport(range: ReportDateRange): Promise<CustomersReport> {
-    const voidedCreditPaymentIds = await this.voidedIds("CREDIT_PAYMENT");
+    const voidedCreditPaymentIds = await listVoidedTargetIds(this.db, "CREDIT_PAYMENT");
     const [customers, paymentRows] = await Promise.all([
       this.db.customer.findMany({ select: { id: true, name: true, balanceOwed: true } }),
       this.db.creditPayment.groupBy({
@@ -282,7 +273,7 @@ export class PrismaReportRepository implements ReportRepository {
   }
 
   async suppliersReport(range: ReportDateRange): Promise<SuppliersReport> {
-    const voidedSupplierPaymentIds = await this.voidedIds("SUPPLIER_PAYMENT");
+    const voidedSupplierPaymentIds = await listVoidedTargetIds(this.db, "SUPPLIER_PAYMENT");
     const [suppliers, paymentRows] = await Promise.all([
       this.db.supplier.findMany({ select: { id: true, name: true, balanceOwed: true } }),
       this.db.supplierPayment.groupBy({
@@ -329,10 +320,10 @@ export class PrismaReportRepository implements ReportRepository {
   async walletReport(range: ReportDateRange): Promise<WalletReport> {
     const [voidedSaleIds, voidedPurchaseIds, voidedCreditPaymentIds, voidedSupplierPaymentIds] =
       await Promise.all([
-        this.voidedIds("SALE"),
-        this.voidedIds("PURCHASE"),
-        this.voidedIds("CREDIT_PAYMENT"),
-        this.voidedIds("SUPPLIER_PAYMENT"),
+        listVoidedTargetIds(this.db, "SALE"),
+        listVoidedTargetIds(this.db, "PURCHASE"),
+        listVoidedTargetIds(this.db, "CREDIT_PAYMENT"),
+        listVoidedTargetIds(this.db, "SUPPLIER_PAYMENT"),
       ]);
 
     // Exclude wallet activity whose originating transaction is voided — both

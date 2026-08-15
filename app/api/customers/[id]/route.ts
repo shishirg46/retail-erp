@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole, CASHIER, OWNER } from "@/lib/auth/authorize";
 import { prisma } from "@/lib/prisma";
 import { toHttpResponse } from "@/lib/response";
+import { assertUuid } from "@/lib/validate";
 import { PrismaCustomerRepository } from "@/modules/customers/customer.repository";
 import { toCustomerApi } from "@/modules/customers/customer.mapper";
 import { CustomerService } from "@/modules/customers/customer.service";
@@ -13,6 +14,7 @@ export async function GET(req: NextRequest, context: Context) {
   try {
     await requireRole(req, [OWNER, CASHIER]);
     const { id } = await context.params;
+    assertUuid(id);
 
     const customer = await new CustomerService(
       new PrismaCustomerRepository(prisma)

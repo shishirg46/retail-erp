@@ -1,13 +1,18 @@
 # Retail ERP Architecture Audit
 
-**Date:** 13 Aug 2026
+**Date:** 13 Aug 2026 (re-audited 15 Aug 2026)
 **Audited commit:** `cd3458e` (`docs: reconcile README and project-progress with repository state`)
+**Re-audit commit:** `c314953` (`feat: add transaction void and correction capability (M18 / ERP-009)`) — M19 security hardening is in the uncommitted working tree
 **Scope:** `main` branch, full transactional backend (products, sales, purchasing, suppliers,
-customer credit, stock, wallet, reporting), Prisma schema + migrations, all API routes, lib/,
+customer credit, stock, wallet, reporting, voids), Prisma schema + migrations, all API routes, lib/,
 error taxonomy, git state.
 **Method:** static source inspection; `npx tsc --noEmit --incremental false`; `npm run lint`;
 `prisma validate`; raw SQL-read reconciliation claims cross-checked against code. No load
 test was run; concurrency is analyzed from code + database semantics (see §4).
+**Re-audit note (15 Aug 2026):** the original finding table below is retained verbatim as the
+historical record. Findings are marked with the milestone that fixed them. F-01…F-15 are now
+all resolved; F-08 and F-11 shipped in Milestone 19, and the P3/P4 items raised by the M18/M19
+post-review are recorded in §Findings (F-17, F-18) and resolved in the same milestones.
 
 ---
 
@@ -24,50 +29,54 @@ wallet), and the reporting layer is genuinely read-only.
 The audit found **no critical data-corruption defects** and **no contradictions between
 documentation and repository** (the prior reconciliation session is now consistent).
 
-The gaps that matter, in order of importance:
+**Re-audit status (15 Aug 2026):** every finding in §Findings is now resolved.
 
-1. **A real concurrency race in stock** (HIGH). Sales and stock adjustments use a
-   *read → check → increment* pattern with no row lock, no conditional update, and no
-   serializable isolation. Two concurrent requests can both pass the stock check and
-   oversell → negative `stockQty`, violating D6. Customer/supplier balances are safe because
-   they update via atomic `increment`; the wallet is append-only — so the financial ledgers
-   are concurrency-safe; **stock is the one exposed surface**.
-2. **Products endpoint is layered differently and unvalidated** (HIGH). `POST /api/products`
-   has no `*.validation.ts`, casts the body with `as CreateProductInput`, and calls the
-   repository directly (no service). Unlike the other seven POST endpoints, it can persist
-   malformed master data (negative prices, bad tier shapes) and converts those errors into
-   raw 500 responses.
-3. **500 responses leak raw error messages** (HIGH). `toHttpResponse` returns
-   `error.message` for any unknown error — contradicting its own comment that DB errors are
-   "never leaked".
-4. **No authentication/authorization anywhere** (HIGH, known & planned). Every endpoint is
-   open; production-readiness is not yet possible.
-5. Medium: unbounded quantities → memory-exhaustion DoS in pricing; no DB CHECK constraints/
-   secondary indexes; float money arithmetic beyond the documented D1 drift; no pagination.
+The gaps that mattered at the original audit, in order of importance — all now fixed:
 
-Recommendation: proceed with the **P0 concurrency + products-layering fixes** before the next
-feature, per the fix order in §“Recommended Fix Order”.
+1. **A real concurrency race in stock** (HIGH) — **FIXED (Milestone 7).** Sales and stock
+   adjustments use an atomic conditional decrement (`ProductRepository.reserveStock`,
+   `updateMany … stockQty.gte`) so two concurrent requests can never both pass the stock check
+   and oversell → negative `stockQty`. Customer/supplier balances update via atomic `increment`
+   and the wallet is append-only, so the financial ledgers were already concurrency-safe.
+2. **Products endpoint is layered differently and unvalidated** (HIGH) — **FIXED (Milestone 8).**
+   `POST /api/products` validates through `product.validation.ts` before persist; invalid
+   payloads → 400 instead of raw 500s.
+3. **500 responses leak raw error messages** (HIGH) — **FIXED (Milestone 9).** `toHttpResponse`
+   returns a generic `Internal Server Error` for any unknown error; details are logged
+   server-side only.
+4. **No authentication/authorization anywhere** (HIGH, known & planned) — **IMPLEMENTED
+   (Milestone 14 / F-10, hardening in M19).** Every endpoint is guarded (coarse proxy cookie
+   gate + authoritative DB-backed session check + OWNER/CASHIER role matrix); sign-in attempts
+   and state-changing API requests are rate-limited; the last-active-OWNER invariant is
+   concurrency-safe.
+5. Medium: unbounded quantities (fixed M10 via `lib/bounds.ts`), no DB CHECK constraints /
+   secondary indexes (fixed M13), float money arithmetic (fixed M15 / integer paisa), no
+   pagination (fixed M16). Remaining post-M19: no load test has been executed; deployment,
+   backups/observability, and load testing are the last open production-readiness items.
+
+Recommendation (updated): proceed to deployment + load testing once the PM reviews ERP-007,
+ERP-008, and ERP-009 evidence. No further functional audit findings remain open.
 
 ## Overall Assessment
 
 | Area | Assessment |
 | ---- | ---------- |
-| Architecture layering | Good — uniform for transactional modules; Products deviates (documented now) |
-| Transactions | Correct — single `$transaction` per op; no partial-state risk |
-| Concurrency | Financial safe; **stock oversell race** (HIGH, unverified by load test) |
-| Database / Prisma | Schema consistent with migrations; **no CHECK constraints / missing indexes** |
-| Validation | Solid except **Products (none)**; no upper bounds on quantities/amounts |
-| Error handling | Taxonomy clean; **500s return raw `error.message`** |
-| Type safety | `tsc --noEmit` green; no `any`; mild enum/Db casts (acceptable) |
-| API design | Consistent shapes/status codes; **no pagination/search/update endpoints** |
-| Security | No auth (planned); no CORS/rate limits; `.env` untracked; Prisma parameterized (no SQLi) |
-| Financial consistency | Invariants hold by construction — verified in code |
-| Inventory consistency | Identity `stockQty == Σ qtyChange` holds; negative stock possible only via the race |
-| Business rules D1–D7 | All implemented correctly; D6 has one documented validation nuance (400 vs 409) |
-| Reporting | Genuinely read-only; aggregates match SQL re-derivation; D1 drift documented |
-| Testing | None automated (manual Postman + SQL) — highest operational risk |
-| Documentation | Accurate and current after reconciliation |
-| Git hygiene | Clean tree; `main == origin/main`; secrets untracked; generated client ignored |
+| Architecture layering | Good — uniform for transactional modules; Products validated since M8 |
+| Transactions | Correct — single `$transaction` per op; no partial-state risk; void reversals atomic (D18.11) |
+| Concurrency | Financial safe; **stock oversell race fixed (F-02, M7)**; void+payment race fixed via `FOR UPDATE` (D18.11, M18); last-OWNER race fixed via mutex (P4, M19); load test not yet run |
+| Database / Prisma | Schema consistent with migrations; 17 CHECK constraints + 9 report indexes (F-05); redundant void index dropped (M19) |
+| Validation | Solid — all six validators + products; `lib/bounds.ts` caps (F-04); route id format validation (P3, M19) |
+| Error handling | Taxonomy clean; sanitized 500s (F-03); `RateLimitError` 429 (F-08) |
+| Type safety | `tsc --noEmit` green; no `any`; mild enum/Db casts (F-12, accepted) |
+| API design | Consistent shapes/status codes; pagination/search/filtering (D12); void + status exposure (D18); no update endpoints for master data (see F-07, resolved by void-capability) |
+| Security | Auth (F-10, M14) + rate limiting (F-08, M19) + headers/CSP/no-CORS (F-11, M19); parameterized Prisma (no SQLi); `.env` untracked |
+| Financial consistency | Invariants hold by construction — verified in code; void-aware reconciliation |
+| Inventory consistency | Identity `stockQty == Σ qtyChange` holds; negative stock impossible (F-02 + D18.6 reversal guards) |
+| Business rules D1–D19 | All implemented; D6 400-vs-409 nuance documented; void rules D18.1–D18.11, security D19.1–D19.4 recorded |
+| Reporting | Genuinely read-only; aggregates match SQL re-derivation; voided records excluded (D18.8) |
+| Testing | Full Vitest gate — 34 files / 394 tests (`npm run test:all`), incl. unit, integration, concurrency (stock, void+payment, last-OWNER), HTTP error/rate-limit/headers/bounds/smoke/auth/pagination/voids |
+| Documentation | Accurate and current — reconciled at HEAD `c314953` + M19 working tree (15 Aug 2026) |
+| Git hygiene | 33 commits on `main`; M19 changes uncommitted awaiting PM approval; secrets untracked; generated client ignored |
 
 ---
 
@@ -304,19 +313,19 @@ types clean.
 
 | Concern | Status |
 | ------- | ------ |
-| Naming / methods | Consistent (`/api/<resource>`, POST = create, GET = list, GET `/[id]` = fetch). |
-| Status codes | 201 create, 200 fetch/list, 400/404/409/500 errors — consistent. |
+| Naming / methods | Consistent (`/api/<resource>`, POST = create, GET = list, GET `/[id]` = fetch, POST `/[id]/void` = void). |
+| Status codes | 201 create, 200 fetch/list, 400/404/409/429/500 errors — consistent. |
 | Response shapes | Success returns the domain object; errors return `{ message }` — uniform. |
 | Route structure | Matches module layout; routes are thin. |
-| **Pagination** | **None.** All `GET /api/*` return full tables (products, sales, purchases, suppliers, customers, supplier-payments, customer-payments, stock movements). **(F-07)** |
-| **Search / filtering** | Only stock movements (`?productId=`) and reports (`from`/`to`). **(F-07)** |
-| **Update / delete** | **No PATCH/PUT/DELETE anywhere** — no way to correct a data-entry mistake or void a sale/payment. Limitation for auditing/ops (recorded, not a bug). |
-| Resource ownership / IDOR | N/A — no auth or tenant model exists (covered by F-10). |
-| ID validation | Implicit (unparseable id → not found → 404); no explicit format check (low value). |
-| Response sizes | Unbounded lists; compounding with no pagination. |
+| **Pagination** | **FIXED (F-07/D12, M16).** Cursor-based pagination on all 8 list endpoints (default 50, max 500, backward-compatible). |
+| **Search / filtering** | **FIXED (D12).** `search`, `paymentType`, `category`, `supplierId`, `customerId`, `productId`, `reason` filters plus stock-movement `productId`. |
+| **Correction capability** | **FIXED (F-07 remaining, M18).** Transaction void/correction: 5 OWNER-only void endpoints; voided records stay visible with `status: ACTIVE \| VOIDED` (D18.9). |
+| Resource ownership / IDOR | Auth + roles cover access (F-10); same-origin enforcement on state-changing requests (D9.9). |
+| ID validation | **FIXED (P3, M19).** `assertUuid`/`assertUserId` format checks → 400 (D19.3). |
+| Response sizes | Bounded by pagination caps (max 500). |
 
-Documented limitations: pagination/search/update are future roadmap items (project-progress §10);
-audit confirms they are genuinely absent.
+Documented limitations (updated): no update endpoints for master data (correction handled by
+void capability); no client-side UI.
 
 ---
 
@@ -324,21 +333,20 @@ audit confirms they are genuinely absent.
 
 | Check | Status |
 | ----- | ------ |
-| Authentication | **None.** No middleware, no user model, no session. **(F-10, HIGH)** |
-| Authorization / roles | **None.** Every endpoint open to any caller. **(F-10)** |
-| IDOR / resource ownership | N/A until auth exists. |
-| Unrestricted POST endpoints | All 8 POST endpoints unauthenticated. |
+| Authentication | **IMPLEMENTED (F-10, M14).** Better Auth (local username+password, sign-up disabled), coarse proxy cookie gate + authoritative DB-backed session check per route. |
+| Authorization / roles | **IMPLEMENTED (D9.3).** OWNER/CASHIER matrix on every route; OWNER user management; last-OWNER invariant concurrency-safe (P4, M19). |
+| IDOR / resource ownership | Covered by session + role checks; same-origin enforcement (D9.9) on state-changing requests. |
+| Unrestricted POST endpoints | None — all guarded; sign-in rate-limited (F-08). |
 | Sensitive error leakage | **FIXED (F-03, Milestone 9)** — generic 500 body, details logged server-side. |
-| Input validation | Products validated (F-01 fixed); quantity/amount upper bounds enforced (F-04 fixed). |
+| Input validation | Products validated (F-01); quantity/amount upper bounds (F-04); route id format (P3/M19). |
 | SQL injection | **Safe** — all queries are parameterized Prisma; no raw SQL/string interpolation. |
 | Secrets in Git | **None.** `.env` is gitignored and untracked (`git ls-files | grep .env` empty — verified). |
 | Env handling | `lib/prisma.ts` + `prisma.config.ts` read `DATABASE_URL` via dotenv; no hardcoded secrets. |
-| CORS / headers / rate limiting | **Not configured.** No CORS config, no security headers, no rate limits. **(F-11, LOW)** |
+| CORS / headers / rate limiting | **FIXED (F-11/F-08, M19).** No-CORS as policy; baseline headers + strict CSP + `CORP: same-origin` on `/api/*`; rate limits: sign-in attempts per IP (20/15 min), state-changing API requests per user (300/60 s), 429 on exceed; session checks unlimited. |
 
-**Meaning for production readiness:** F-10 alone means the backend must not be exposed to the
-internet as-is. Until authentication/authorization lands, this is a **local/single-trust
-network tool**. This is a known, planned gap (project-progress §9/§10/§11) — the audit
-re-confirms it as the primary blocker to production.
+**Meaning for production readiness:** all audit findings are implemented. The remaining
+production-readiness blockers are operational: deployment, backups/observability, and a load
+test.
 
 ---
 
@@ -446,40 +454,44 @@ automated suite, and no `test` script in `package.json`**. Verification was manu
 Postman collection (58 requests) + live SQL reconciliation against a local Postgres, per
 implementation-log.
 
-Current state after Milestones 11-16: the project uses Vitest as the automated gate.
-`npm run test:all` runs 25 test files / 338 tests against the dedicated
+Current state after Milestones 11-19: the project uses Vitest as the automated gate.
+`npm run test:all` runs 34 test files / **394 tests** against the dedicated
 `erp_retail_test` database only, with `fileParallelism: false` for DB-touching suites.
+Breakdown: unit 189, integration 91, concurrency 9 (stock, void+payment, last-OWNER),
+HTTP 17 (error-handling + rate-limit + security-headers), HTTP bounds 13, HTTP smoke 15,
+auth 17, pagination 32, voids 11.
 
 | Consideration | Assessment |
 | ------------- | ---------- |
-| Critical flows without automated tests | Sales, purchasing, both payment paths, stock adjustments, wallet ledger, all report derivations, all D1–D7 invariants |
-| Unit-test opportunities | `calculatePrice` (D1 min-cost bundles), `effectiveUnitPrice`, report `toNumber`, validation functions, `coerceRangeQuery` |
-| Integration-test opportunities | Route → service → repository with a real Postgres (or driver-adapter in-memory) per flow, asserting wallet/customer/supplier/stock side effects atomically |
-| Transaction tests | Assert rollback on mid-flow failure (e.g. second sale item out of stock ⇒ no sale, no movement, no wallet row) |
-| Concurrency tests | **Highest value** — two simultaneous sales on the last unit, DAMAGE + sale, two payments. Provable assertion: stock never < 0 (currently fails ⇒ proves F-02) |
-| Regression coverage | Original audit: Postman covered happy+error paths only. Current state: Vitest gate covers unit, integration, concurrency, and HTTP regression paths |
+| Critical flows without automated tests | None of the core flows — sales, purchasing, both payment paths, stock adjustments, wallet ledger, report derivations, voids, auth/roles, D1–D19 invariants are covered by the gate |
+| Unit-test opportunities | Covered: `calculatePrice`, money/timezone helpers, validators, bounds, error responses, pagination, rate-limit, validate, mutex |
+| Integration-test opportunities | Covered: route → service → repository against a real Postgres per flow, asserting wallet/customer/supplier/stock side effects atomically |
+| Transaction tests | Covered: rollback on mid-flow failure; void reversal atomicity (D18) |
+| Concurrency tests | Covered: two simultaneous sales on the last unit (F-02), DAMAGE + sale, void + payment race (D18.11), last-OWNER cross-demotions/bans/deletions (P4) |
+| Regression coverage | Vitest gate covers unit, integration, concurrency, HTTP error/bounds/smoke/auth/pagination/voids/rate-limit/headers regression paths |
 
 This was the **largest operational risk** in the original audit. **FIXED by Milestones
-11-12 / F-15:** automated unit, integration, concurrency, and HTTP suites now cover the
-core D1-D7 flows and later F-05/F-10/F-06/F-09 work.
+11-12 / F-15 and kept green through M19:** the gate is the documented verification workflow
+(AGENTS.md) and must stay green before any milestone is complete.
 
 ---
 
 ## 15. Documentation
 
-Audit confirms the five files are **accurate and internally consistent** after the
-reconciliation commit `cd3458e`:
+Audit confirms the five files are **accurate and internally consistent** at the original
+audit commit `cd3458e`, and again at the re-audit (`c314953` + M19 working tree):
 
-- `README.md` — correct stack, layering (now honestly describing products’ deviation), route
-  table, setup (no `.env.example` noted), invariants. ✓
+- `README.md` — correct stack, layering, route table (incl. void endpoints), setup
+  (`.env.example` documents `ERP_RATE_LIMIT_*`), invariants, security notes (F-08/F-11). ✓
 - `AGENTS.md` — conventions match implementation. Read before writing code (Next 16 breaking
   changes note). ✓
-- `docs/business-decisions.md` — D1–D7 record the exact implemented behavior. ✓
+- `docs/business-decisions.md` — D1–D19 record the exact implemented behavior. ✓
 - `docs/implementation-log.md` — milestones and verification evidence match repository state. ✓
-- `docs/project-progress.md` — current status/HEAD/roadmap/risks truthful as of `cd3458e`. ✓
+- `docs/project-progress.md` — current status/HEAD/roadmap/risks truthful at the re-audit. ✓
 
-No documentation corrections required by this audit. **No doc changes are included in this
-commit** beyond the audit report + progress update.
+No documentation corrections were required by the re-audit; the M19 doc reconciliation
+(M19 milestone entry, D19 decisions, audit re-run, README/progress updates) is in the
+uncommitted working tree.
 
 ---
 
@@ -488,8 +500,8 @@ commit** beyond the audit report + progress update.
 | Check | Result |
 | ----- | ------ |
 | Branch | `main` |
-| Working tree | **Clean** at audit time |
-| Origin sync | `main == origin/main` (`cd3458e3680910ac8ef246d3eeb893e02ec4bd5d`) |
+| Working tree | **M19 changes uncommitted** (code + tests + docs + index-drop migration, per `git status`) awaiting PM approval; clean apart from that |
+| Origin sync | `main == origin/main` (`c314953760cc41889c9b40d176f3470ecdee5f1a`) — M19 changes are uncommitted on top |
 | Secrets tracked | **None.** `.env` gitignored + untracked; no key material in tracked files |
 | Generated files | `generated/prisma/` gitignored (correct); `*.tsbuildinfo`, `next-env.d.ts`, `.next/` ignored |
 | Editor/agent dirs | `.agents/`, `.claude/`, `.windsurf/`, `skills-lock.json` ignored; `CLAUDE.md` tracked (one-line import of AGENTS.md) |
@@ -511,15 +523,17 @@ No hygiene action required (beyond the audit commit itself).
 | **F-04** | **MEDIUM** | Security/DoS | Unbounded sale quantity → `new Array(qty + 1)` allocation server-side | `product.service.ts:16`; `sale.validation.ts` has no upper bound | Unauthenticated large `quantity` → memory exhaustion | **FIXED (Milestone 10):** shared caps in `lib/bounds.ts` (`MAX_ITEM_QUANTITY=100000`, `MAX_ITEMS_PER_DOCUMENT=100`, `MAX_AMOUNT=10000000`) wired into all six validators; over-limit → 400 before allocation. `tests/unit/input-bounds.ts` (28/28) + `tests/http/input-bounds.ts` (11/11) incl. the documented `quantity: 1e8` payload rejected < 15 s | NO | YES | FIXED |
 | **F-05** | **MEDIUM** | Database | No CHECK constraints (notably `stock_qty >= 0`) and no secondary indexes on report/FK columns | `schema.prisma`; `prisma/migrations/*` | Negative stock physically storable; report joins scan as tables grow | **FIXED (Milestone 13):** migration `20260814034336_db_hardening_f05` adds 17 CHECK constraints (restating service rules at the DB layer; signed semantics preserved — no constraint on customer/supplier balances or CORRECTION) and 9 report indexes. Pre-migration validator `scripts/validate-f05-preconditions.mjs` green on both DBs. `tests/integration/db-hardening.test.ts` (24/24) proves constraints/indexes exist in the catalog, raw SQL cannot write invalid rows, and legitimate signed/special values still work | YES | YES | FIXED |
 | **F-06** | **MEDIUM** | Money | Float money arithmetic in services (running `grandTotal`, `qty × costPerUnit`) with rounding only for `pricePerUnit` | purchase.sale/purchase/service grand-total sums; no paisa-wide rounding helper | Float noise can enter stored Decimals beyond the documented D1 drift | **FIXED (Milestone 15 / D11):** integer-paisa domain money via `lib/money.ts`; validators convert rupees→paisa once, services/reports do whole-paisa math, repositories read/write rupee `DECIMAL`, API remains rupee-based | NO | YES | FIXED |
-| **F-07** | **MEDIUM** | API | No pagination / search / filtering on any list endpoint; no update/void capability | `app/api/*` GET handlers return full tables; no PATCH/PUT/DELETE | Unbounded responses + no correction path for entry mistakes | **PARTIALLY FIXED (Milestone 16 / D12):** cursor-based pagination, search, and filtering implemented on all 8 list endpoints (default 50, max 500, backward-compatible). Transaction correction/update/void capability remains outstanding — planned for M18. | NO | YES | PARTIALLY FIXED |
-| **F-08** | LOW | Validation | No upper bounds / max lengths on string fields; no explicit ID validation | validators check type/non-empty only | Trivially: oversized strings; low real-world impact | Add sane length caps when touching validation | NO | YES | OPEN |
+| **F-07** | **MEDIUM** | API | No pagination / search / filtering on any list endpoint; no update/void capability | `app/api/*` GET handlers return full tables; no PATCH/PUT/DELETE | Unbounded responses + no correction path for entry mistakes | **FIXED (Milestone 16 / D12 + Milestone 18):** cursor-based pagination, search, and filtering on all 8 list endpoints (default 50, max 500, backward-compatible); transaction void/correction shipped as M18 (5 OWNER-only void endpoints, D18.1–D18.11) | NO | YES | FIXED |
+| **F-08** | LOW | Validation | No upper bounds / max lengths on string fields; no explicit ID validation | validators check type/non-empty only | Trivially: oversized strings; low real-world impact | **FIXED (Milestone 19 / P3 + D19.3):** route id format validation via `lib/validate.ts` (`assertUuid`/`assertUserId` → 400) wired into all 14 `[id]` route files; string length caps remain a follow-up if ever needed | NO | YES | FIXED |
 | **F-09** | LOW | Reporting/Timezone | Date coercion is server-local; Postgres timestamps are naive `TIMESTAMP(3)` | `report.validation.ts:47-71`; migration DDL | Day boundaries shift with server TZ; fine single-host, needs a decision for shared hosting/multi-region | **FIXED (Milestone 15 / D10):** `ERP_TIMEZONE` default `Asia/Kathmandu`; naive report params interpreted as shop-local wall clock; range echo uses shop-local offset strings; no schema migration | NO | YES | FIXED |
-| **F-11** | LOW | Security | No CORS config, security headers, or rate limiting | `next.config.ts` empty; no middleware | Hardens against casual abuse once exposed; low urgency pre-auth | Add headers/limits as part of production hardening | NO | YES | OPEN |
+| **F-11** | LOW | Security | No CORS config, security headers, or rate limiting | `next.config.ts` empty; no middleware | Hardens against casual abuse once exposed; low urgency pre-auth | **FIXED (Milestone 19 / D19.1 + D19.2):** process-local rate limiting (auth attempts per IP, state-changing API requests per user, 429, env-configurable); baseline headers + strict CSP + `CORP: same-origin` on `/api/*`; no-CORS as policy | NO | YES | FIXED |
 | **F-12** | INFO | Type safety | Enum/Decimal `as` casts rely on DB guarantees | `wallet.repository`, `report.repository` enum casts | Acceptable; no invalid value reachable via DB enums | None (or tighten via `satisfies`) | NO | NO | ACCEPTED |
 | **F-13** | INFO | Transactions | All 5 multi-step ops transactional & correct; balances atomic; no partial-state | §3 table | Foundation is sound | No action | NO | NO | OK |
 | **F-14** | INFO | Financial/Inventory | Invariants hold by construction; only stock race (F-02) can break “never negative” | §10, §11 | Ledger soundness confirmed | Resolve via F-02 | NO | NO | OK |
 | **F-15** | INFO | Testing | No automated tests; D1–D7 correctness rests on manual Postman+SQL | `package.json` (no test script); empty `tests/unit/` | Regression risk highest on concurrency & rollback paths | Add unit + integration + concurrency tests (see §14) in a P1 milestone | YES | YES | FIXED (Milestone 11) |
 | **F-16** | INFO | Docs/Git | Documentation accurate; tree clean; main == origin/main; secrets untracked | §15, §16 | Audit baseline good | Keep going | NO | NO | OK |
+| **F-17** | HIGH | Concurrency | Last-active-OWNER guard (D7) is read-then-write, but Better Auth performs the write in its own transaction — two concurrent demotions/bans/deletions can both pass `N=2` and leave zero active OWNERs | `user.service.ts` `assertNotLastActiveOwner` + BA `setRole`/`banUser`/`removeUser` | Violates the at-least-one-OWNER invariant under concurrency | **FIXED (Milestone 19 / P4 + D19.4):** process-local `AsyncMutex` (`lib/mutex.ts`) serializes guard + write in `updateRole`/`deleteUser`/`banUser`; `tests/concurrency/last-owner.test.ts` proves exactly one active OWNER survives cross-demotions/bans/deletions. Single-process limitation documented | NO | YES | FIXED |
+| **F-18** | LOW | Hygiene | M18 left two blemishes: duplicated `voidedIds` helper (void + report repositories) and a redundant `(targetType, targetId)` index on VoidRecord | `report.repository.ts` private `voidedIds`; schema `@@index` next to `@@unique` | Duplication drifts; a redundant index is pure write overhead | **FIXED (Milestone 19 / P6):** `void.repository.ts` exports `listVoidedTargetIds` and `report.repository.ts` imports it; migration `20260815084442_drop_redundant_void_index` drops the duplicate index on both DBs (verified in `pg_indexes`) | YES | YES | FIXED |
 
 Severity scale used: CRITICAL (none found) → HIGH → MEDIUM → LOW → INFO. No finding is
 exaggerated; F-02/F-01/F-03/F-10 are the actionable HIGHs, and F-02 is the only one that can
@@ -540,8 +554,10 @@ corrupt *data* (and only under concurrent requests).
 
 Rationale: F-02 (stock integrity), F-01 (master data validation), F-03
 (error privacy), F-04 (DoS input bounds), F-15 (automated regression gate),
-F-05 (DB hardening), and F-10 (auth/roles) have implementation evidence in the
-milestone log. ERP-007 remains a separate PM-review item.
+F-05 (DB hardening), F-10 (auth/roles), F-06/F-09 (money/timezone), F-07
+(pagination + voids), F-08/F-11 (rate limiting + headers), P3 id validation,
+and P4 (last-OWNER race) all have implementation evidence in the milestone log.
+ERP-007/ERP-008/ERP-009 remain separate PM-review items.
 
 ### P1 — Should Fix Before Production
 3. **F-03 — FIXED (Milestone 9).** Generic 500 (no message/path/DB/host/port
@@ -578,16 +594,24 @@ milestone log. ERP-007 remains a separate PM-review item.
 ### P2 — Important Quality Improvements
 8. **F-06 — FIXED (Milestone 15 / D11).** Integer-paisa domain money; rupee API and
    Postgres `DECIMAL` storage preserved.
-9. **F-07 — PARTIALLY FIXED (Milestone 16 / D12).** Pagination, search, and
-   filtering on all 8 list endpoints. Error-correction (void) capability remains
-   outstanding — planned for M18.
+9. **F-07 — FIXED (Milestone 16 / D12 + Milestone 18).** Pagination, search, and
+   filtering on all 8 list endpoints (M16); transaction void/correction capability
+   shipped as M18 (D18.1–D18.11), with the void+payment race closed via
+   `SELECT ... FOR UPDATE` (D18.11).
 10. **F-09 — FIXED (Milestone 15 / D10).** Shop-local report day-boundaries via
     `ERP_TIMEZONE`, default `Asia/Kathmandu`.
 
 ### P3 — Future Improvements
-11. **F-08** — string length caps / ID format validation when validation is revisited.
-12. **F-11** — CORS policy, security headers, rate limiting (as part of production hardening).
+11. **F-08 — FIXED (Milestone 19 / P3 + D19.3).** Route id format validation
+    (`lib/validate.ts`: `assertUuid`/`assertUserId` → 400) wired into all 14 `[id]`
+    route files. String length caps remain an optional follow-up.
+12. **F-11 — FIXED (Milestone 19 / D19.1 + D19.2).** CORS policy (none — no-CORS as
+    policy), security headers + strict CSP + CORP, and process-local rate limiting.
 13. Route-boilerplate consolidation (shared JSON-parse/error shell); scaffold UI cleanup.
+14. **F-17 (P4) — FIXED (Milestone 19 / D19.4).** Last-active-OWNER race closed with
+    a process-local async mutex.
+15. **F-18 (P6) — FIXED (Milestone 19).** Duplicated void helper consolidated; redundant
+    VoidRecord index dropped.
 
 ---
 
@@ -642,6 +666,18 @@ milestone log. ERP-007 remains a separate PM-review item.
     `paymentType`, `category`, `supplierId`, `customerId`, `productId`, `reason`
     filters. Backward-compatible. 23 unit + 32 HTTP tests.
 11. Transaction correction/update/void capability (F-07 remaining) — planned for M18.
+12. **Milestone 17 — (not used).**
+13. **Milestone 18 — Transaction void/correction (F-07 remaining, ERP-009) — DONE.**
+    `modules/voids/` (types/validation/repository/service), 5 OWNER-only void endpoints,
+    immutable originals + offsetting reversal rows, unique `(targetType, targetId)` +
+    `SELECT ... FOR UPDATE` race closure (D18.11), report exclusion (D18.8), status
+    exposure (D18.9). D18.1–D18.11 recorded. 18 integration + 11 HTTP + concurrency
+    race tests. Evidence left open for PM review.
+14. **Milestone 19 — Security hardening (F-08/F-11/P3/P4) — DONE (working tree, uncommitted).**
+    Rate limiting (`lib/rate-limit.ts`, 429), headers + strict CSP + no-CORS
+    (`next.config.ts`), route id validation (`lib/validate.ts`), last-OWNER async mutex
+    (`lib/mutex.ts`); P6 cleanup (duplicated void helper + redundant index). D19.1–D19.4
+    recorded. Full gate 394/394.
 
 ---
 

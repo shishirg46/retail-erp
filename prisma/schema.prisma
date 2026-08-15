@@ -299,7 +299,6 @@ model VoidRecord {
   voidedAt   DateTime @default(now()) @map("voided_at")
 
   @@unique([targetType, targetId], map: "void_records_target_type_target_id_unique")
-  @@index([targetType, targetId], map: "void_records_target_type_target_id_idx")
   @@map("void_records")
 }
 

@@ -79,13 +79,13 @@ repositories. Historical prices are frozen (`SaleItem.pricePerUnit`,
 | Module | Routes |
 | ------ | ------ |
 | Products & tier pricing | `POST/GET /api/products`, `GET /api/products/[id]` |
-| Sales (CASH/ECASH/CREDIT) | `POST/GET /api/sales`, `GET /api/sales/[id]` |
+| Sales (CASH/ECASH/CREDIT) | `POST/GET /api/sales`, `GET /api/sales/[id]`, `POST /api/sales/[id]/void` |
 | Suppliers | `POST/GET /api/suppliers`, `GET /api/suppliers/[id]` |
-| Purchases (CASH/CREDIT) | `POST/GET /api/purchases`, `GET /api/purchases/[id]` |
-| Supplier payments | `POST/GET /api/supplier-payments` |
+| Purchases (CASH/CREDIT) | `POST/GET /api/purchases`, `GET /api/purchases/[id]`, `POST /api/purchases/[id]/void` |
+| Supplier payments | `POST/GET /api/supplier-payments`, `POST /api/supplier-payments/[id]/void` |
 | Customers | `POST/GET /api/customers`, `GET /api/customers/[id]` |
-| Customer payments (credit) | `POST/GET /api/customer-payments` |
-| Stock adjustments | `POST /api/stock/adjustments`, `GET /api/stock/movements` |
+| Customer payments (credit) | `POST/GET /api/customer-payments`, `POST /api/customer-payments/[id]/void` |
+| Stock adjustments | `POST /api/stock/adjustments`, `GET /api/stock/movements`, `POST /api/stock/movements/[id]/void` |
 | Reports (read-only) | `GET /api/reports/{sales,purchases,stock,customers,suppliers,wallet}` |
 | Auth (Better Auth) | `/api/auth/*` (sign-in/out, get-session) |
 | Users (OWNER only) | `GET/POST /api/users`, `GET/PATCH/DELETE /api/users/[id]`, `POST /api/users/[id]/{ban,unban,reset-password}` |
@@ -96,6 +96,29 @@ the database and enforces the OWNER/CASHIER role matrix (D9.3). The internal
 derived email (`<username>@erp.local`) is never exposed by the API; the
 Better Auth `/api/auth/admin/*` endpoints are blocked. State-changing requests
 with a foreign `Origin` are rejected (D9.9).
+
+Security hardening (M19):
+
+- **Rate limiting (F-08)** — process-local fixed-window, configured by
+  `ERP_RATE_LIMIT_*` env vars: credential sign-in attempts are capped per
+  client IP (default 20 / 15 min) and state-changing API requests per
+  authenticated user (default 300 / 60 s); GET reads are never limited;
+  over-limit → 429. Session checks (get-session, sign-out) are deliberately
+  unlimited. Counters are in-process — exact for the single-process deployment;
+  a horizontally scaled backend must swap in a shared store.
+- **Headers / no-CORS (F-11)** — every response carries
+  `X-Content-Type-Options: nosniff`, `Referrer-Policy:
+  strict-origin-when-cross-origin`, `X-Frame-Options: DENY`, and a restrictive
+  `Permissions-Policy`; `/api/*` additionally gets a strict CSP
+  (`default-src 'none'`) and `Cross-Origin-Resource-Policy: same-origin`. No
+  `Access-Control-Allow-*` header is ever emitted — browsers enforce
+  same-origin for reads and writes.
+- **Identifier validation (P3)** — route `[id]` params are checked before use:
+  entity ids must be UUID-shaped, user ids may also be the 32-char Better Auth
+  id; malformed ids → 400 instead of a 500.
+- **Last-OWNER race (P4)** — demote/ban/delete of an OWNER is serialized behind
+  a process-local async mutex so two concurrent operations can never leave
+  zero active OWNERs (D7).
 
 ## Setup
 
@@ -111,8 +134,9 @@ npm run dev
 
 > **Note:** Provide `DATABASE_URL` and `BETTER_AUTH_SECRET` in `.env` before
 > running Prisma; `ERP_TIMEZONE` (IANA name) controls shop-local report date
-> handling and defaults to `Asia/Kathmandu` when absent. The seed script accepts
-> `OWNER_USERNAME` / `OWNER_PASSWORD` overrides.
+> handling and defaults to `Asia/Kathmandu` when absent; `ERP_RATE_LIMIT_*`
+> tune the F-08 rate limits (see `.env.example` for defaults). The seed script
+> accepts `OWNER_USERNAME` / `OWNER_PASSWORD` overrides.
 
 ## Verification workflow
 

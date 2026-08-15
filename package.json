@@ -9,7 +9,7 @@
     "lint": "eslint",
     "test:unit": "vitest run tests/unit",
     "test:error": "vitest run tests/unit/error-response.test.ts",
-    "test:http": "vitest run tests/http/error-handling.test.ts",
+    "test:http": "vitest run tests/http/error-handling.test.ts tests/http/rate-limit.test.ts tests/http/security-headers.test.ts",
     "test:concurrency": "vitest run tests/concurrency",
     "test:bounds": "vitest run tests/unit/input-bounds.test.ts",
     "test:http:bounds": "vitest run tests/http/input-bounds.test.ts",

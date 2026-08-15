@@ -1098,3 +1098,170 @@ rejects with the expected business rule, no active CreditPayment ever sits on a
 voided Sale, and the void-aware D3/D4/D6/wallet `reconcile()` stays clean.
 Proven against the regression: with the locks removed the suite fails
 immediately (both operations succeed, `ok.length === 2`).
+
+---
+
+## D19.1 — Rate limiting: process-local fixed-window (F-08)
+
+**Status:** Accepted — 15 Aug 2026
+
+**Current behavior (before)**
+Sign-in has no attempt cap (unlimited password guessing) and authenticated users
+can issue unlimited state-changing API requests.
+
+**Approved behavior**
+Process-local fixed-window rate limiting in `lib/rate-limit.ts`, two scopes:
+
+- **Auth scope** — `consumeAuthAttempt(req)`, keyed by client IP (left-most
+  `x-forwarded-for` when present, else an `unknown` sentinel). Applied only to
+  the credential-verification endpoints (`/api/auth/sign-in/email`,
+  `/api/auth/sign-in/username`). Default **20 attempts per 15 minutes**; exceed
+  → 429. Session/lifecycle endpoints (`get-session`, `sign-out`) are
+  deliberately unlimited so legitimate flows are never disrupted.
+- **API scope** — `consumeApiRequest(userId, method)`, keyed by authenticated
+  user id. Applied **only to state-changing methods** (POST/PUT/PATCH/DELETE);
+  GET reads are never limited. Wired into `requireUser` in
+  `lib/auth/authorize.ts`, so every guarded route is covered at the single
+  authorization choke point. Default **300 write requests per 60 seconds**;
+  exceed → 429.
+
+Both scopes are configured at call time via `ERP_RATE_LIMIT_AUTH_MAX`,
+`ERP_RATE_LIMIT_AUTH_WINDOW_MS`, `ERP_RATE_LIMIT_API_MAX`,
+`ERP_RATE_LIMIT_API_WINDOW_MS` (documented in `.env.example`).
+
+**Deployment model (documented limitation):** the counters are in-memory and
+per-process. The ERP deploys as a single Next.js process, where the counts are
+exact. If the backend ever scales to multiple instances, this module must be
+replaced with a shared store (e.g. Redis) — the counts must not be treated as
+global across instances.
+
+**Reason**
+Brute-force protection for sign-in and a per-user cap on write requests without
+adding infrastructure. Fixed windows are deterministic and cheap.
+
+**Database impact:** none (counters are in-memory).
+**API impact:** `RateLimitError` (429, `"Too many requests"`) is added to the
+error taxonomy and rendered via the existing `toHttpResponse`.
+**Existing feature impact:** no route is limited unless it is a sign-in path or
+an authenticated state-changing request under the default caps.
+**Testing impact:** `tests/unit/rate-limit.test.ts`; `tests/http/rate-limit.test.ts`
+spawns a dev server with low caps and proves: sign-in blocks after N attempts,
+API write requests block after N, reads stay 200 after a block, and the config
+is read from the environment.
+
+---
+
+## D19.2 — Security headers + strict CSP + no-CORS (F-11)
+
+**Status:** Accepted — 15 Aug 2026
+
+**Current behavior (before)**
+No security headers are emitted. No explicit CORS policy exists (no
+`Access-Control-Allow-*` header is produced, but this is not stated as policy).
+
+**Approved behavior**
+`next.config.ts` `headers()` emits:
+
+- **Baseline on every route** (`/:path*`): `X-Content-Type-Options: nosniff`,
+  `Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: DENY`,
+  `Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()`.
+- **JSON API additionally** (`/api/:path*`):
+  `Content-Security-Policy: default-src 'none'; base-uri 'none';
+  frame-ancestors 'none'` and `Cross-Origin-Resource-Policy: same-origin` — a
+  strict CSP is
+  safe for a pure JSON API (no scripts/styles) and `CORP: same-origin` stops
+  cross-origin embedding.
+- **CORS is deliberately disabled as policy**: no `Access-Control-Allow-*`
+  header is ever emitted, so browsers enforce same-origin for reads AND writes.
+  The app-level `assertSameOrigin` (D9.9) additionally rejects state-changing
+  requests carrying a foreign `Origin` (absent Origin — non-browser clients — is
+  allowed), so the no-CORS policy is enforced at both layers.
+
+**Reason**
+Hardening the HTTP surface per F-11 without a CORS allow-list: the API has no
+cross-origin consumers, so the strongest policy (no CORS at all) is also the
+simplest to keep correct.
+
+**Database impact:** none.
+**API impact:** every response gains the baseline headers; `/api/*` gains the
+strict CSP + CORP. No behavioral change to status codes or bodies.
+**Existing feature impact:** none — browsers only.
+**Testing impact:** `tests/http/security-headers.test.ts` asserts the baseline
+on the scaffold page, the strict CSP/CORP on API and better-auth responses, and
+that no `access-control-*` header is ever emitted.
+
+---
+
+## D19.3 — Route identifier format validation (P3)
+
+**Status:** Accepted — 15 Aug 2026
+
+**Current behavior (before)**
+Route params (`[id]`) are passed straight to the repository. A malformed
+identifier such as `not-a-uuid` reaches Prisma and surfaces as a 500.
+
+**Approved behavior**
+`lib/validate.ts`:
+
+- `assertUuid(value, field?)` — structural `8-4-4-4-12` hex check. Deliberately
+  **not** version/variant-restricted: any well-formed UUID string is a valid
+  route key (pre-existing behavior treats the all-zeros UUID as a valid-looking
+  key that resolves to 404); only non-UUID garbage is rejected.
+- `assertUserId(value, field?)` — UUID **or** the Better Auth 32-char
+  `[a-zA-Z0-9]` id, because users created through the API carry 32-char ids
+  while seeded users carry UUIDs. Applied to `/api/users/*` routes only.
+- Rejections throw `ValidationError` → **400**.
+
+Wired into all 14 `[id]` route files (`products`, `customers`, `suppliers`,
+`sales`, `purchases`, `stock/movements/[id]/void`, the three payment/void
+routes, and `users/[id]` + ban/unban/reset-password).
+
+**Reason**
+Malformed identifiers are client error (400), not server fault (500), and the
+boundary check keeps Prisma from seeing garbage keys.
+
+**Database impact:** none.
+**API impact:** malformed ids in paths → 400 with a clear message instead of 500.
+**Existing feature impact:** all valid ids (UUIDs and 32-char user ids) are
+accepted unchanged.
+**Testing impact:** `tests/unit/validate.test.ts`; two hostile-path cases in
+`tests/http/input-bounds.test.ts` (malformed entity id and malformed user id →
+400, not 500, with the liveness check still green afterwards).
+
+---
+
+## D19.4 — Last-active-OWNER concurrency (P4)
+
+**Status:** Accepted — 15 Aug 2026
+
+**Current behavior (before)**
+The D7 last-active-OWNER guard (`assertNotLastActiveOwner`) is a read-then-write
+sequence, and Better Auth performs the write (`setRole`/`banUser`/`removeUser`)
+in its own transaction that the ERP service cannot join. Two concurrent
+demotions (or bans/deletions) of each other by two OWNERs can both read `N = 2`
+active OWNERs, both pass the guard, and both commit — leaving **zero** active
+OWNERs. Postgres row locks cannot span the check and the mutation.
+
+**Approved behavior**
+A process-local async mutex (`lib/mutex.ts` `AsyncMutex`) serializes the
+guard-and-mutate critical section in `UserService.updateRole` / `deleteUser` /
+`banUser` (single `ownerGuardMutex`). Whichever operation runs first commits its
+change; the second re-checks the count against the committed state and is
+rejected. `unbanUser` is deliberately unguarded — unbanning cannot reduce the
+active-OWNER count.
+
+**Deployment model (documented limitation):** the mutex is process-local and
+correct for the single-process deployment. A multi-process deployment would
+need a distributed lock (e.g. Redis).
+
+**Reason**
+The invariant (D7: at least one active OWNER must always remain) must hold under
+concurrency; the mutex closes the race without weakening the guard.
+
+**Database impact:** none.
+**API impact:** none (serialization only).
+**Existing feature impact:** none.
+**Testing impact:** `tests/unit/mutex.test.ts`; `tests/concurrency/last-owner.test.ts`
+races cross-demotions, cross-bans, and cross-deletions by two OWNERs with
+`Promise.allSettled`, asserting exactly one succeeds and exactly one active
+OWNER remains (and one user for the deletion scenario).

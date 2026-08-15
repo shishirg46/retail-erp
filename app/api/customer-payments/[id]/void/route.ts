@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole, OWNER } from "@/lib/auth/authorize";
 import { prisma } from "@/lib/prisma";
 import { toHttpResponse } from "@/lib/response";
+import { assertUuid } from "@/lib/validate";
 import { VoidService } from "@/modules/voids/void.service";
 import { validateVoidInput } from "@/modules/voids/void.validation";
 
@@ -12,6 +13,7 @@ export async function POST(req: NextRequest, context: Context) {
   try {
     const session = await requireRole(req, [OWNER]);
     const { id } = await context.params;
+    assertUuid(id);
     let body: unknown;
 
     try {

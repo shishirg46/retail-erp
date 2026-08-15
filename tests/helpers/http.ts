@@ -130,7 +130,8 @@ export function startServer(port: number, databaseUrl?: string): Server {
   return server;
 }
 
-export async function stopServer(server: Server): Promise<void> {
+export async function stopServer(server: Server | undefined): Promise<void> {
+  if (server === undefined) return; // beforeAll never started one (null-safe)
   const { child } = server;
   const group = -(child.pid as number);
   if (child.exitCode === null && child.signalCode === null) {
@@ -151,14 +152,26 @@ export async function stopServer(server: Server): Promise<void> {
   try {
     const raw = await readFile(LOCK_PATH, "utf8");
     const lock = JSON.parse(raw) as DevLock;
-    if (typeof lock.pid === "number") {
+    if (typeof lock.pid === "number" && lock.port === server.port) {
       let alive = true;
       try {
         process.kill(lock.pid, 0);
       } catch {
         alive = false;
       }
-      if (!alive) await unlink(LOCK_PATH);
+      if (alive) {
+        // Next dev can fork the lock-writing worker in a different process
+        // group than the spawned supervisor, so the group kill above can
+        // miss it. Kill the lock's pid directly to avoid leaving a foreign
+        // server that blocks every later suite.
+        try {
+          process.kill(lock.pid, "SIGKILL");
+        } catch {
+          // already gone
+        }
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+      await unlink(LOCK_PATH);
     }
   } catch {
     // no lock file — Next removed it on graceful shutdown
@@ -225,17 +238,34 @@ export async function warmRoutes(port: number, paths: string[]): Promise<void> {
 
 // Sign in through the real Better Auth route and return the session cookies
 // (erp.session_token + signature cookie) as one `cookie` header value.
+//
+// The auth route is not covered by `warmRoutes`, and a POST that lands before
+// Turbopack registers the route returns a Next.js 404 HTML page. A GET probe is
+// useless here (better-auth delegates it, so it 404s forever), so retry the
+// POST itself on a cold-start 404 instead. 404s served by the dev proxy never
+// reach the route handler, so retrying does not consume rate-limit quota.
 export async function signIn(
   port: number,
   email: string,
   password: string
 ): Promise<string> {
-  const res = await fetch(`http://127.0.0.1:${port}/api/auth/sign-in/email`, {
-    method: "POST",
-    signal: AbortSignal.timeout(60000),
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email, password }),
-  });
+  const endpoint = `http://127.0.0.1:${port}/api/auth/sign-in/email`;
+  const deadline = Date.now() + 60000;
+  let res: Response | null = null;
+  while (Date.now() < deadline) {
+    res = await fetch(endpoint, {
+      method: "POST",
+      signal: AbortSignal.timeout(60000),
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    if (res.status !== 404) break;
+    res = null;
+    await new Promise((resolve) => setTimeout(resolve, 750));
+  }
+  if (res === null) {
+    throw new Error(`sign-in route never became available on port ${port}`);
+  }
   if (res.status !== 200) {
     throw new Error(`sign-in failed (${res.status}): ${await res.text()}`);
   }

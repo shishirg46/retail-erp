@@ -79,13 +79,23 @@ export class PrismaVoidRecordRepository implements VoidRecordRepository {
   // IDs of every record of a type that has been voided — used by reports to
   // exclude voided activity and by repositories to derive status (D18.8/D18.9).
   async listVoidedTargetIds(targetType: VoidTargetType): Promise<string[]> {
-    const rows = await this.db.voidRecord.findMany({
-      where: { targetType },
-      select: { targetId: true },
-    });
-
-    return rows.map((row) => row.targetId);
+    return listVoidedTargetIds(this.db, targetType);
   }
+}
+
+// Shared helper: IDs of every record of a type that has been voided (D18.8).
+// Used by the void repository and the read-only report repository, which are
+// otherwise independent modules.
+export async function listVoidedTargetIds(
+  db: Db,
+  targetType: VoidTargetType
+): Promise<string[]> {
+  const rows = await db.voidRecord.findMany({
+    where: { targetType },
+    select: { targetId: true },
+  });
+
+  return rows.map((row) => row.targetId);
 }
 
 // Attach void facts (voidedAt, reason) to a batch of already-mapped domain

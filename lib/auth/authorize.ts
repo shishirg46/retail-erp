@@ -7,6 +7,7 @@ import type { NextRequest } from "next/server";
 import { auth } from "../auth";
 import { ForbiddenError, UnauthorizedError } from "../errors";
 import { prisma } from "../prisma";
+import { consumeApiRequest } from "../rate-limit";
 import { hasSessionCookie } from "./session-cookie";
 
 export const OWNER = "OWNER" as const;
@@ -45,7 +46,12 @@ export async function requireUser(req: NextRequest): Promise<SessionContext> {
   }
 
   const session = await auth.api.getSession({ headers: req.headers });
-  if (session) return session;
+  if (session) {
+    // F-08: state-changing authenticated API requests are rate-limited per
+    // user. Read requests are not limited.
+    consumeApiRequest(session.user.id, req.method);
+    return session;
+  }
 
   // Better Auth swallows session-lookup errors into `null`, so a dead database
   // is indistinguishable from an invalid/expired token here. Probe the DB so an

@@ -11,6 +11,8 @@ import { NextResponse } from "next/server";
 import { toNextJsHandler } from "better-auth/next-js";
 
 import { auth } from "@/lib/auth";
+import { consumeAuthAttempt } from "@/lib/rate-limit";
+import { toHttpResponse } from "@/lib/response";
 
 const { GET: authGet, POST: authPost } = toNextJsHandler(auth);
 
@@ -19,6 +21,11 @@ const ADMIN_PREFIX = "/api/auth/admin/";
 function isAdminEndpoint(url: string): boolean {
   return new URL(url).pathname.startsWith(ADMIN_PREFIX);
 }
+
+// Credential-verification endpoints that are subject to brute-force rate
+// limiting (F-08). Session/lifecycle endpoints (get-session, sign-out) are
+// deliberately not limited so legitimate flows are never disrupted.
+const SIGN_IN_PATHS = new Set(["/api/auth/sign-in/email", "/api/auth/sign-in/username"]);
 
 export async function GET(request: Request) {
   if (isAdminEndpoint(request.url)) {
@@ -31,5 +38,13 @@ export async function POST(request: Request) {
   if (isAdminEndpoint(request.url)) {
     return NextResponse.json({ message: "Not found" }, { status: 404 });
   }
-  return authPost(request);
+
+  try {
+    if (SIGN_IN_PATHS.has(new URL(request.url).pathname)) {
+      consumeAuthAttempt(request);
+    }
+    return authPost(request);
+  } catch (error) {
+    return toHttpResponse(error);
+  }
 }

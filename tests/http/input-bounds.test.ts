@@ -188,6 +188,21 @@ describe("HTTP input upper bounds (F-04)", () => {
     expect(res.status).toBe(201);
   });
 
+  // ── P3: route identifier format validation ────────────────────────────────
+  it("P3: malformed entity id in path → 400, not 500", async () => {
+    const res = await httpGet(port, "/api/products/not-a-uuid", cookie);
+    expect(res.status).toBe(400);
+    const body = await errorBody(res);
+    expect(body.message).toMatch(/Invalid id format/);
+  });
+
+  it("P3: malformed user id in path → 400, not 500", async () => {
+    const res = await httpGet(port, "/api/users/not-a-uuid", cookie);
+    expect(res.status).toBe(400);
+    const body = await errorBody(res);
+    expect(body.message).toMatch(/Invalid id format/);
+  });
+
   // ── Liveness: the app never crashed under hostile input ────────────────────
   it("liveness: GET /api/products → 200 after all hostile requests", async () => {
     const res = await httpGet(port, "/api/products", cookie);

@@ -48,19 +48,25 @@ read-only reporting layer.
 | Audit fix — F-10 auth & roles | COMPLETE (Milestone 14) — Better Auth (local username+password, no sign-up), OWNER/CASHIER role matrix (D9.3), every ERP route guarded, OWNER user management; `app/api/users`, `modules/users/`, seed script. Gate now 21 suites / 259 tests. Evidence on ERP-007, left open for PM review |
 | Audit fix — F-06/F-09 money & timezone | COMPLETE (Milestone 15) — D11 integer-paisa domain money (`lib/money.ts`; validators/ services/repositories/routes converted, rupees in/out at the API unchanged, Postgres DECIMAL rupees unchanged — no migration) + D10 shop-local timezone (`lib/timezone.ts`, `ERP_TIMEZONE`, default `Asia/Kathmandu`; shop-local naive report params, offset-string range echo). Robustness ride-along: `lib/auth/session-cookie.ts` shared cookie gate + `requireUser` cookie short-circuit. Gate now 23 test files / 283 tests. Evidence on ERP-008, left open for PM review |
 | Audit fix — F-07 pagination/search/filtering | COMPLETE (Milestone 16) — D12 cursor-based pagination on all 8 list endpoints; backward-compatible (no params → raw array, any param → `{ data, paging }` envelope); default 50, max 500; `search`, `paymentType`, `category`, `supplierId`, `customerId`, `productId`, `reason` filters; `lib/pagination.ts` shared library; 23 unit + 32 HTTP tests. Gate now 25 test files / 338 tests |
-| Production readiness | NOT YET COMPLETE — F-10 auth implemented (ERP-007 pending PM review) and F-06/F-09 done (ERP-008 pending PM review); F-07 pagination/search/filtering complete; transaction correction/update/void (F-07 remaining, M18 planned); F-08/11, deployment, and load testing still open |
+| Transaction void/correction (F-07 remaining) | COMPLETE (Milestone 18, ERP-009) — 5 OWNER-only void endpoints, immutable originals + offsetting reversal rows, unique `(targetType, targetId)` + `SELECT ... FOR UPDATE` race closure, reports exclude voided records, void status exposed on all transaction APIs. D18.1–D18.11 recorded. Gate now 394 tests |
+| Security hardening (F-08/F-11/P3/P4) | COMPLETE (Milestone 19) — process-local rate limiting (auth attempts per IP, state-changing API requests per user; 429); baseline headers + strict CSP + CORP with no-CORS as policy; route id format validation (`assertUuid`/`assertUserId` → 400); last-active-OWNER race closed with an async mutex. D19.1–D19.4 recorded |
+| Production readiness | MOSTLY COMPLETE — F-01…F-15 audit fixes all implemented (F-10 ERP-007, F-06/F-09 ERP-008, M18 ERP-009 evidence pending PM review); F-08 rate limiting and F-11 headers/CORS shipped in M19; remaining: deployment, backups/observability, and load testing |
 
 Evidence:
 
 - **Branch:** `main`
-- **Base commit:** `b62eff9` (F-10 evidence) — Milestone 15 commits on top.
+- **Base commit:** `c314953` (M18 / ERP-009) — M19 changes are in the working
+  tree, **uncommitted, awaiting PM approval**.
 - **Milestone/feature commits:** verifiable via `git rev-list --count 9065199..HEAD`.
-- **Working tree:** clean after the Milestone 16 commit (`git status -s` empty),
-  pushed to sync with `origin/main`.
+- **Working tree:** holds M19 (F-08/F-11/P3/P4) + doc reconciliation; `git status`
+  shows the 15 modified route/lib/module/test files, 3 new `lib/` files, 3 new
+  test files, the index-drop migration, and the doc updates.
 - **Typecheck / lint:** currently pass — `npx tsc --noEmit` OK, `npm run lint`
-  OK.
-- **Test gate:** 25 test files / 338 tests (`npm run test:all` green) — includes
-  D12 pagination tests (23 unit + 32 HTTP).
+  OK, `git diff --check` clean.
+- **Test gate:** 34 test files / 394 tests (`npm run test:all` green) — unit
+  189, integration 91, concurrency 9, HTTP 17 (error-handling + rate-limit +
+  security-headers), HTTP bounds 13, HTTP smoke 15, auth 17, pagination 32,
+  voids 11. No leftover `next dev` processes, no stale `.next/dev/lock`.
 
 ## 3. Completed Milestones
 
@@ -84,6 +90,9 @@ verified live).
 | 13 | Audit Fix | F-02 stock concurrency hardening | COMPLETE | `modules/products/product.repository.ts` (`reserveStock`), `modules/sales/sale.service.ts`, `modules/stock/stock.service.ts`, `tests/concurrency/stock.ts` | Atomic conditional decrement for SALE + DAMAGE; concurrency suite (5 scenarios) + 12 HTTP regression checks all pass; dev DB untouched |
 | 14 | Audit Fix | F-01 product validation | COMPLETE | `modules/products/product.validation.ts`, `app/api/products/route.ts`, `tests/unit/product.validation.ts` | `POST /api/products` validates before persist; invalid payloads → 400; unit tests 30/30 + 13 HTTP checks pass; dev DB untouched |
 | 15 | Audit Fix | F-03 error privacy (sanitized 500s) | COMPLETE | `lib/response.ts`, `tests/unit/error-response.ts`, `tests/http/error-handling.ts` | Generic 500 for all non-AppError failures (message/paths/DB/host/port never leaked), original error logged server-side; unit 11/11 + HTTP 12/12 incl. unreachable-DB leak-canary proof; F-01/F-02 regressions re-run green; dev DB untouched |
+| 16 | Audit Fix | F-07 pagination/search/filtering (D12) | COMPLETE | `lib/pagination.ts`, 8 list endpoints, 8 repositories | Cursor-based pagination + search/filters; 23 unit + 32 HTTP tests; backward compatible |
+| 18 | Audit Fix | Transaction void/correction (F-07 remaining, ERP-009) | COMPLETE | `modules/voids/`, 5 void endpoints, `lib/locks.ts`, VoidRecord model | D18.1–D18.11; immutable originals + reversal rows; FOR UPDATE race closure; 18 integration + 11 HTTP + concurrency race tests |
+| 19 | Audit Fix | Security hardening (F-08/F-11/P3/P4) | COMPLETE | `lib/rate-limit.ts`, `lib/validate.ts`, `lib/mutex.ts`, `next.config.ts`, `lib/auth/authorize.ts` | Rate limits (auth per IP / API writes per user), headers + strict CSP + no-CORS, id validation, last-OWNER mutex; D19.1–D19.4; 394-test gate green |
 
 ## 4. Business Decisions Locked
 
@@ -103,6 +112,8 @@ recorded, not reinterpreted.
 | D10 | Shop-local timezone (F-09): `ERP_TIMEZONE` env (default `Asia/Kathmandu`, read at runtime — no schema change); naive `YYYY-MM-DD` report params interpreted as shop-local wall clock via Intl-offset technique; explicit-zone ISO strings parse as-is; report `range` echo is a shop-local offset string, never `.toISOString()`; impossible dates rejected 400 | Locked — implemented |
 | D11 | Integer-paisa domain money (F-06): all app-domain money arithmetic in whole paisa; validators convert rupees→paisa once (round-half-up, exactly once); repositories read/write rupees `DECIMAL` via `paisaFromDecimal`/`paisaToRupees` (no migration); routes return rupees via `to*Api` mappers; API/report JSON shape and denomination unchanged; caps `MAX_AMOUNT`/`MAX_ITEM_QUANTITY`/`MAX_ITEMS_PER_DOCUMENT` preserved + new `MAX_AMOUNT_PAISA` | Locked — implemented |
 | D12 | Cursor-based pagination, search, and filtering (F-07): optional cursor params on all 8 list endpoints; backward-compatible (no params → raw array, any param → `{ data, paging }` envelope); default 50, max 500; cursor = base64url(`date|id`); ordering: `date DESC, id DESC` (transactional) / `createdAt DESC, id DESC` (master-data); filters: search (name ILIKE), paymentType, category, supplierId, customerId, productId, reason; `lib/pagination.ts` shared library | Locked — implemented |
+| D18 | Transaction void/correction (F-07 remaining): immutable originals, offsetting reversal rows, unique `(targetType, targetId)`, `SELECT ... FOR UPDATE` race closure, report exclusion, status exposure. D18.1–D18.11 | Locked — implemented |
+| D19 | Security hardening: D19.1 process-local rate limiting (F-08 — auth per IP, API writes per user, 429, env-configurable), D19.2 security headers + strict CSP + no-CORS (F-11), D19.3 route id format validation (P3 — `assertUuid`/`assertUserId` → 400), D19.4 last-active-OWNER async mutex (P4). All document the single-process deployment model | Locked — implemented |
 
 ## 5. Architecture Currently Implemented
 
@@ -282,15 +293,13 @@ SQL.
   tests, exit 0; dev DB byte-identical before/after. Tracking:
   [GitHub issue ERP-008](https://github.com/shishirg46/retail-erp/issues/8).
   Evidence commented; left open for PM review.
-- Next audit fix pending PM decision: F-10 (ERP-007) and F-06/F-09 (ERP-008)
-  evidence reviewed by PM — **implemented (M14/M15)**, left open for review;
-  then remaining P2/P3 findings F-07/08/11 need their own decisions before
-  code.
+- Next audit fix pending PM decision: F-10 (ERP-007), F-06/F-09 (ERP-008) and
+  M18 voids (ERP-009) evidence reviewed by PM — **implemented (M14/M15/M18)**,
+  left open for review; M19 (F-08/F-11/P3/P4) shipped.
 
 **WHAT HAS NOT BEEN STARTED**
-- Transaction correction/update/void capability (F-07 remaining, planned for M18).
-- F-08 (string length caps / ID validation), F-11 (CORS / security headers / rate
-  limiting) still need their own business decisions before code.
+- Transaction correction/update/void capability (F-07 remaining) — **COMPLETE
+  (M18)**; F-08 rate limiting and F-11 headers/CORS — **COMPLETE (M19)**.
 - Frontend UI; dashboards; advanced reporting; exports.
 - Deployment, backups, observability, load testing.
 
@@ -320,14 +329,21 @@ route; invalid payloads → 400; `tests/unit/product.validation.ts` 30/30).
 ### Step 2 — Fix Remaining HIGH/Selected Findings
 P1 (per audit): auth/roles decision (F-10) — DONE, automated test framework
 (F-15) — DONE, DB CHECK + indexes (F-05) — DONE. Pagination/search/filtering
-(F-07/D12) — DONE (Milestone 16).
+(F-07/D12) — DONE (Milestone 16). Transaction void/correction (F-07 remaining)
+— DONE (Milestone 18). Rate limiting (F-08), security headers/CORS (F-11),
+id validation (P3) and OWNER race (P4) — DONE (Milestone 19).
 
 ### Step 3 — Regression Testing
 Run the complete existing feature suite after fixes (Postman folders + SQL
-reconciliation invariants + `tsc`/`lint`).
+reconciliation invariants + `tsc`/`lint`). **DONE** — `npm run test:all` gate:
+unit 189 + integration 91 + concurrency 9 + HTTP 17 + HTTP bounds 13 + HTTP
+smoke 15 + auth 17 + pagination 32 + voids 11 = **394 tests**, exit 0, against
+`erp_retail_test` only.
 
 ### Step 4 — Production Readiness
-Only after the audit findings and regression testing.
+Only after the audit findings and regression testing. Remaining open items:
+deployment, backups/observability, and load testing; plus PM review of ERP-007,
+ERP-008, and ERP-009 evidence.
 
 ## 10. Future Roadmap
 
@@ -338,15 +354,14 @@ Required to make the backend robust, per
 (F-01) — DONE**; **error privacy (F-03) — DONE**; **input upper bounds
 (F-04) — DONE**; automated tests for the existing flows (F-15) — DONE;
 DB CHECK + indexes (F-05) — DONE; **pagination / search / filtering on list
-endpoints (F-07/D12) — DONE**. `.env.example` — DONE.
-Remaining: transaction correction/update/void capability (F-07, M18 planned),
-concurrency verification by load test.
+endpoints (F-07/D12) — DONE**; **transaction void/correction (F-07 remaining,
+M18) — DONE**; **rate limiting (F-08), security headers/CORS (F-11), id
+validation (P3), OWNER race (P4) — DONE (M19)**. `.env.example` — DONE.
+Remaining: concurrency verification by load test, deployment.
 
 ### Medium Term
-Features/modules that logically follow: transaction correction/update/void
-capability (F-07 remaining, M18), CORS / security headers / rate limiting
-(F-11), a dashboard, advanced reporting, export, audit logs, backups,
-deployment, observability.
+Features/modules that logically follow: a dashboard, advanced reporting,
+export, audit logs, backups, observability, deployment.
 
 ### Long Term
 Potential ERP features not yet implemented: frontend/UI, barcode support,
@@ -369,7 +384,8 @@ Derived from actual repository inspection. Issues are honest and verifiable.
 | CORRECTION with a negative target is a 400 (validation) rather than the 409 of D6 | Low | Validation rejects negative integers before the service's `InsufficientStockError`; 409 effectively reachable only via DAMAGE | Document or align semantics in the audit (behavior is safe) | KNOWN, DOCUMENTED |
 | Per-product sales `amount` carries the D1 ≤ 3 paisa drift | Low | `productQuantities.amount = Σ qty × pricePerUnit` (e.g. 340.06 vs 340) | Keep informational; document in report docs | KNOWN, ACCEPTED (D1) |
 | No pagination / search / filtering on list endpoints | Low | `GET /api/*` return full lists | **RESOLVED (Milestone 16 / D12)** — cursor-based pagination on all 8 list endpoints; backward-compatible; default 50, max 500; search + filters | RESOLVED |
-| No auth / authorization anywhere | High (for production) | No auth middleware or user model in schema | Decide as part of production readiness | FUTURE |
+| No auth / authorization anywhere | High (for production) | No auth middleware or user model in schema | Decide as part of production readiness | **RESOLVED (Milestone 14 / F-10)** — Better Auth, OWNER/CASHIER matrix, every route guarded (proxy gate + DB-backed check), same-origin enforcement, rate limiting (F-08, M19) |
+| No rate limiting / security headers / CORS policy | Medium (for production) | No brute-force protection; no headers; no stated CORS policy | Ship F-08 + F-11 | **RESOLVED (Milestone 19)** — auth attempt + API write rate limits (429), baseline headers + strict CSP + CORP, no-CORS as policy |
 | `tests/unit/` empty directory — untracked intent only | Low | Empty dir present on disk; `git ls-files tests/` shows nothing (git does not track empty directories) | Fill with tests or remove | OPEN |
 
 ## 12. Important Files
@@ -406,7 +422,11 @@ From `git log --oneline` (hashes are actual):
 | `c2d6073` | Wallet transaction ledger | Merged into history |
 | `8a28c10` | Project progress tracker (this file) | Merged into history |
 | docs reconciliation | Documentation reconciliation + sync with `origin/main` | Merged into history |
-| audit | Full ERP architecture audit (this commit — `docs/architecture-audit.md`) | HEAD / latest |
+| audit | Full ERP architecture audit (this commit — `docs/architecture-audit.md`) | Merged into history |
+| `ab9f07a` | Cursor-based pagination/search/filtering (D12 / F-07, Milestone 16) | Merged into history |
+| `049fee2` | Documentation reconciliation after D12 | Merged into history |
+| `c314953` | Transaction void/correction (M18 / ERP-009) | HEAD |
+| working tree | M19 security hardening (F-08/F-11/P3/P4) + doc reconciliation | UNCOMMITTED — awaiting PM approval |
 
 Branch `main`, tracked at `origin/main` (`github.com/shishirg46/retail-erp`).
 `8a28c10` was 1 commit ahead of `origin/main` until the documentation
@@ -430,8 +450,8 @@ reconciliation commit that follows it was pushed.
 ## 15. Final Status Snapshot
 
 ```
-PROJECT STATUS:   BACKEND COMPLETE; AUDIT COMPLETE; P0 F-02/F-01 + P1 F-03,
-                  F-04, F-15, F-05, F-10, F-06/F-09 FIXED
+PROJECT STATUS:   BACKEND COMPLETE; AUDIT COMPLETE; ALL P0/P1/P2/P3 AUDIT
+                  FINDINGS F-01…F-15 IMPLEMENTED (M7–M19)
 CORE BACKEND:     COMPLETE — products, sales, purchases, suppliers, customers,
                   customer credit, stock adjustments, wallet ledger
 FINANCIAL FLOWS:  COMPLETE — wallet balance, supplier balance, signed customer
@@ -445,21 +465,17 @@ ERROR HANDLING:   COMPLETE — sanitized 500s (F-03 fixed): unexpected errors re
                   exactly {message:"Internal Server Error"}, no message/path/DB/
                   host leak; details logged server-side; 400/404/409 unchanged
 REPORTING:        COMPLETE — 6 read-only reports, SQL-verified, no stored totals
-                  (D7)
-DOCUMENTATION:    COMPLETE — README, AGENTS.md, business-decisions (D1–D11),
+                  (D7); voided records excluded (D18.8)
+DOCUMENTATION:    COMPLETE — README, AGENTS.md, business-decisions (D1–D19),
                   implementation-log, project-progress, architecture-audit,
                   postman suite
-TESTING:          COMPLETE — full D1–D7 + F-10 + money/timezone + D12 gate
-                  (`npm run test:all`, 25 test files, 338 tests, 0 failures,
-                  Vitest) against erp_retail_test only: unit 173/173
-                  (validation 30, error 11, pricing 6, validators 30, bounds
-                  28, auth-config 10, user-management 11, money 12, timezone
-                  12, pagination 23), integration 73/73 (sales 10, purchases 6,
-                  customer-payments 8, supplier-payments 5, stock 8, rollback
-                  8, ledger 2, reports 2, db-hardening 24), concurrency 5/5,
-                  HTTP error 12/12, HTTP bounds 11/11, HTTP D1–D7 smoke 15/15,
-                  F-10 auth-flow 17/17, HTTP pagination 32/32
-                  (F-15 M11+M12 / F-10 M14 / F-06+F-09 M15 / D12 M16)
+TESTING:          COMPLETE — full D1–D19 + F-01…F-15 gate (`npm run test:all`,
+                  34 test files, 394 tests, 0 failures, Vitest) against
+                  erp_retail_test only: unit 189/189, integration 91/91,
+                  concurrency 9/9 (stock, void+payment, last-OWNER), HTTP
+                  17/17 (error-handling + rate-limit + security-headers),
+                  HTTP bounds 13/13, HTTP smoke 15/15, auth 17/17,
+                  pagination 32/32, voids 11/11
 DB HARDENING:     COMPLETE — 17 CHECK constraints + 9 report indexes (F-05,
                   M13): constraints/indexes proven in pg_catalog, raw SQL
                   cannot write invalid rows (signed semantics preserved: no
@@ -467,14 +483,15 @@ DB HARDENING:     COMPLETE — 17 CHECK constraints + 9 report indexes (F-05,
 INPUT SAFETY:     COMPLETE — quantity/amount/items upper bounds (F-04 fixed):
                   MAX_ITEM_QUANTITY 100000, MAX_ITEMS_PER_DOCUMENT 100,
                   MAX_AMOUNT 10000000 enforced in all six validators; over-limit
-                  → 400 before any allocation (DoS payload 1e8 rejected < 15 s)
+                  → 400 before any allocation; route id format validation (P3)
 AUTH (F-10, M14): COMPLETE — Better Auth (local username+password, sign-up
                   disabled), OWNER/CASHIER roles, all routes guarded (coarse
                   proxy gate + authoritative DB-backed check), OWNER user
                   management (create/list/get/role/ban/unban/reset-password/
-                  delete, last-OWNER invariant), D9.10 derived email never
-                  exposed, /api/auth/admin/* blocked, same-origin enforcement,
-                  reset revokes sessions. D9 recorded. ERP-007 left open
+                  delete, last-OWNER invariant closed with a mutex in M19/P4),
+                  D9.10 derived email never exposed, /api/auth/admin/* blocked,
+                  same-origin enforcement, reset revokes sessions. D9 recorded.
+                  ERP-007 left open for PM review
 MONEY (F-06, M15): COMPLETE — integer-paisa domain money (D11): whole-paisa
                   math from validation to report sums; rupees in/out at the
                   API and DECIMAL rupees in Postgres unchanged (no migration);
@@ -484,17 +501,27 @@ TIMEZONE (F-09, M15): COMPLETE — shop-local timezone (D10): ERP_TIMEZONE env
                   (default Asia/Kathmandu), naive report params parsed as
                   shop-local wall clock (Intl-offset), explicit-zone ISO as-is,
                   range echo as shop-local offset strings, no schema change
-CURRENT TASK:     P0+P1 audit fixes through F-10 + F-06/F-09 + F-07/D12 —
-                  F-02 (M7, closed), F-01 (M8, closed), F-03 (M9, closed),
-                  F-04 (M10, closed), F-15 (M11 tsx → M12 Vitest, closed
-                  PM-approved), F-05 (M13, ERP-006, closed PM-approved),
-                  F-10 (M14, ERP-007, evidence commented, left open for PM
-                  review), F-06/F-09 (M15, ERP-008, evidence commented, left
-                  open for PM review), F-07/D12 (M16, pagination/search/
-                  filtering complete; correction/update/void planned for M18)
-NEXT TASK:        PM review of ERP-007 (F-10) + ERP-008 (F-06/F-09); then M18
-                  (transaction correction/update/void, F-07 remaining),
-                  F-08 (string caps), F-11 (CORS/headers/rate-limiting)
-PRODUCTION READY: NO — transaction correction/update/void (F-07, M18),
-                  F-08/11, deployment decisions, and load testing remain
+VOIDS (F-07 rem., M18): COMPLETE — 5 OWNER-only void endpoints (sales,
+                  purchases, credit payments, supplier payments, CORRECTION
+                  stock movements); immutable originals + offsetting reversal
+                  rows; unique (targetType,targetId) + SELECT ... FOR UPDATE
+                  race closure (D18.11); reports exclude voided records
+                  (D18.8); status ACTIVE/VOIDED exposed (D18.9); D18.1–D18.11
+                  recorded. ERP-009 left open for PM review
+SECURITY (M19):   COMPLETE — F-08 rate limiting (auth attempts per IP, 20/15min;
+                  state-changing API requests per user, 300/60s; GET never
+                  limited; 429; env-configurable; process-local, single-process
+                  documented); F-11 headers (nosniff, referrer-policy,
+                  x-frame-options, permissions-policy) + strict CSP +
+                  CORP same-origin on /api, no-CORS as policy; P3 route id
+                  validation (assertUuid/assertUserId → 400); P4 last-OWNER
+                  async mutex. D19.1–D19.4 recorded
+CURRENT TASK:     M19 security hardening complete — docs reconciled, gate
+                  394/394 green, no leftover dev servers/lock. Working tree
+                  holds the M19 changes + doc updates, UNCOMMITTED
+NEXT TASK:        PM review of ERP-007 (F-10), ERP-008 (F-06/F-09), ERP-009
+                  (M18 voids); then deployment, backups/observability, and
+                  load testing. No new functional milestone after M19
+PRODUCTION READY: NO — deployment, backups/observability, and load testing
+                  remain; all audit findings (F-01…F-15) are implemented
 ```

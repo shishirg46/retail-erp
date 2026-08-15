@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole, OWNER } from "@/lib/auth/authorize";
 import { prisma } from "@/lib/prisma";
 import { toHttpResponse } from "@/lib/response";
+import { assertUuid } from "@/lib/validate";
 import { PurchaseService } from "@/modules/purchases/purchase.service";
 import { toPurchaseApi } from "@/modules/purchases/purchase.mapper";
 
@@ -12,6 +13,7 @@ export async function GET(req: NextRequest, context: Context) {
   try {
     await requireRole(req, [OWNER]);
     const { id } = await context.params;
+    assertUuid(id);
 
     const purchase = await new PurchaseService(prisma).findPurchaseById(id);
 
