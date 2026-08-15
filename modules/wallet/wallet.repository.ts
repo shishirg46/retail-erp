@@ -20,7 +20,9 @@ function toWalletTransaction(
     date: Date;
     note: string | null;
     saleId: string | null;
+    purchaseId: string | null;
     creditPaymentId: string | null;
+    supplierPaymentId: string | null;
   }
 ): WalletTransaction {
   return {
@@ -31,7 +33,9 @@ function toWalletTransaction(
     date: raw.date,
     note: raw.note,
     saleId: raw.saleId,
+    purchaseId: raw.purchaseId,
     creditPaymentId: raw.creditPaymentId,
+    supplierPaymentId: raw.supplierPaymentId,
   };
 }
 
@@ -46,7 +50,9 @@ export class PrismaWalletRepository implements WalletRepository {
         amount: paisaToRupees(input.amount),
         note: input.note,
         saleId: input.saleId,
+        purchaseId: input.purchaseId,
         creditPaymentId: input.creditPaymentId,
+        supplierPaymentId: input.supplierPaymentId,
       },
     });
 

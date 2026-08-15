@@ -1,5 +1,6 @@
 import { prisma } from "../../lib/prisma";
 import { paisaToRupees } from "../../lib/money";
+import { attachVoidStatus } from "../voids/void.repository";
 
 import { toPurchase } from "./purchase.mapper";
 import type {
@@ -11,6 +12,7 @@ import type {
 
 type Db = {
   purchase: typeof prisma.purchase;
+  voidRecord: typeof prisma.voidRecord;
 };
 
 export class PrismaPurchaseRepository implements PurchaseRepository {
@@ -42,7 +44,13 @@ export class PrismaPurchaseRepository implements PurchaseRepository {
       include: { items: true },
     });
 
-    return raw ? toPurchase(raw) : null;
+    if (!raw) return null;
+
+    const [purchase] = await attachVoidStatus(this.db, "PURCHASE", [
+      toPurchase(raw),
+    ]);
+
+    return purchase;
   }
 
   async list(): Promise<Purchase[]> {
@@ -51,7 +59,7 @@ export class PrismaPurchaseRepository implements PurchaseRepository {
       orderBy: { date: "desc" },
     });
 
-    return raw.map(toPurchase);
+    return attachVoidStatus(this.db, "PURCHASE", raw.map(toPurchase));
   }
 
   async listPaginated(input: ListPurchasesInput): Promise<Purchase[]> {
@@ -80,6 +88,6 @@ export class PrismaPurchaseRepository implements PurchaseRepository {
       take: limit + 1,
     });
 
-    return raw.map(toPurchase);
+    return attachVoidStatus(this.db, "PURCHASE", raw.map(toPurchase));
   }
 }

@@ -40,6 +40,7 @@ export class SupplierPaymentService {
         source: "SUPPLIER_PAYMENT",
         amount: input.amount,
         note: `SupplierPayment ${payment.id}`,
+        supplierPaymentId: payment.id,
       });
 
       return payment;

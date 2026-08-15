@@ -63,6 +63,7 @@ export class PurchaseService {
           qtyChange: item.qty,
           reason: "PURCHASE",
           note: `Purchase ${purchase.id}`,
+          purchaseId: purchase.id,
         });
       }
 
@@ -77,6 +78,7 @@ export class PurchaseService {
           source: "SUPPLIER_PAYMENT",
           amount: grandTotal,
           note: `Purchase ${purchase.id}`,
+          purchaseId: purchase.id,
         });
       }
 

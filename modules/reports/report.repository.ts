@@ -3,6 +3,7 @@ import { paisaFromDecimal, paisaToRupees } from "../../lib/money";
 import { formatShopLocal } from "../../lib/timezone";
 import { toNumber } from "./report.mapper";
 
+import type { VoidTargetType } from "../voids/void.types";
 import type {
   CustomerPaymentHistoryRow,
   CurrentStockRow,
@@ -47,11 +48,24 @@ function rangeEcho(range: ReportDateRange): ReportRange {
   };
 }
 
+// IDs of every record of a type that has been voided. Reports are read-only
+// derivations over ACTIVE activity: voided transactions (and their offsetting
+// reversal records, which share the voided origin's FK) are excluded (D18.8).
 export class PrismaReportRepository implements ReportRepository {
   constructor(private readonly db: typeof prisma) {}
 
+  private async voidedIds(targetType: VoidTargetType): Promise<string[]> {
+    const rows = await this.db.voidRecord.findMany({
+      where: { targetType },
+      select: { targetId: true },
+    });
+
+    return rows.map((row) => row.targetId);
+  }
+
   async salesReport(range: ReportDateRange): Promise<SalesReport> {
-    const where = { date: dateFilter(range) };
+    const voidedSaleIds = await this.voidedIds("SALE");
+    const where = { date: dateFilter(range), id: { notIn: voidedSaleIds } };
 
     const [aggregate, byPaymentType, items, products] = await Promise.all([
       this.db.sale.aggregate({
@@ -66,7 +80,7 @@ export class PrismaReportRepository implements ReportRepository {
         _count: true,
       }),
       this.db.saleItem.findMany({
-        where: { sale: { date: dateFilter(range) } },
+        where: { sale: { date: dateFilter(range), id: { notIn: voidedSaleIds } } },
         select: {
           productId: true,
           qty: true,
@@ -119,7 +133,8 @@ export class PrismaReportRepository implements ReportRepository {
   }
 
   async purchasesReport(range: ReportDateRange): Promise<PurchasesReport> {
-    const where = { date: dateFilter(range) };
+    const voidedPurchaseIds = await this.voidedIds("PURCHASE");
+    const where = { date: dateFilter(range), id: { notIn: voidedPurchaseIds } };
 
     const [aggregate, byPaymentType, bySupplier, suppliers] = await Promise.all([
       this.db.purchase.aggregate({ where, _sum: { total: true }, _count: true }),
@@ -165,13 +180,31 @@ export class PrismaReportRepository implements ReportRepository {
   }
 
   async stockReport(range: ReportDateRange): Promise<StockReport> {
+    const [voidedMovementIds, voidedSaleIds, voidedPurchaseIds] =
+      await Promise.all([
+        this.voidedIds("STOCK_MOVEMENT"),
+        this.voidedIds("SALE"),
+        this.voidedIds("PURCHASE"),
+      ]);
+
     const [currentStock, summary] = await Promise.all([
       this.db.product.findMany({
         select: { id: true, name: true, stockQty: true },
       }),
+      // Exclude voided activity from the movement summary: reversal movements
+      // carry reason VOID, directly-voided adjustments are excluded by id, and
+      // movements belonging to voided sales/purchases are excluded by origin FK.
       this.db.stockMovement.groupBy({
         by: ["reason"],
-        where: { date: dateFilter(range) },
+        where: {
+          date: dateFilter(range),
+          reason: { not: "VOID" },
+          id: { notIn: voidedMovementIds },
+          AND: [
+            { OR: [{ saleId: null }, { sale: { id: { notIn: voidedSaleIds } } }] },
+            { OR: [{ purchaseId: null }, { purchase: { id: { notIn: voidedPurchaseIds } } }] },
+          ],
+        },
         _sum: { qtyChange: true },
         _count: true,
       }),
@@ -201,11 +234,12 @@ export class PrismaReportRepository implements ReportRepository {
   }
 
   async customersReport(range: ReportDateRange): Promise<CustomersReport> {
+    const voidedCreditPaymentIds = await this.voidedIds("CREDIT_PAYMENT");
     const [customers, paymentRows] = await Promise.all([
       this.db.customer.findMany({ select: { id: true, name: true, balanceOwed: true } }),
       this.db.creditPayment.groupBy({
         by: ["customerId"],
-        where: { date: dateFilter(range) },
+        where: { date: dateFilter(range), id: { notIn: voidedCreditPaymentIds } },
         _sum: { amount: true },
         _count: true,
       }),
@@ -248,11 +282,12 @@ export class PrismaReportRepository implements ReportRepository {
   }
 
   async suppliersReport(range: ReportDateRange): Promise<SuppliersReport> {
+    const voidedSupplierPaymentIds = await this.voidedIds("SUPPLIER_PAYMENT");
     const [suppliers, paymentRows] = await Promise.all([
       this.db.supplier.findMany({ select: { id: true, name: true, balanceOwed: true } }),
       this.db.supplierPayment.groupBy({
         by: ["supplierId"],
-        where: { date: dateFilter(range) },
+        where: { date: dateFilter(range), id: { notIn: voidedSupplierPaymentIds } },
         _sum: { amount: true },
         _count: true,
       }),
@@ -292,9 +327,28 @@ export class PrismaReportRepository implements ReportRepository {
   }
 
   async walletReport(range: ReportDateRange): Promise<WalletReport> {
+    const [voidedSaleIds, voidedPurchaseIds, voidedCreditPaymentIds, voidedSupplierPaymentIds] =
+      await Promise.all([
+        this.voidedIds("SALE"),
+        this.voidedIds("PURCHASE"),
+        this.voidedIds("CREDIT_PAYMENT"),
+        this.voidedIds("SUPPLIER_PAYMENT"),
+      ]);
+
+    // Exclude wallet activity whose originating transaction is voided — both
+    // the original entries and their VOID-source reversals carry the voided
+    // origin's FK, so they are all dropped deterministically (D18.8).
     const groups = await this.db.walletTransaction.groupBy({
       by: ["source", "type"],
-      where: { date: dateFilter(range) },
+      where: {
+        date: dateFilter(range),
+        AND: [
+          { OR: [{ saleId: null }, { sale: { id: { notIn: voidedSaleIds } } }] },
+          { OR: [{ purchaseId: null }, { purchase: { id: { notIn: voidedPurchaseIds } } }] },
+          { OR: [{ creditPaymentId: null }, { creditPayment: { id: { notIn: voidedCreditPaymentIds } } }] },
+          { OR: [{ supplierPaymentId: null }, { supplierPayment: { id: { notIn: voidedSupplierPaymentIds } } }] },
+        ],
+      },
       _sum: { amount: true },
       _count: true,
     });

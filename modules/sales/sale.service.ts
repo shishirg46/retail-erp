@@ -119,6 +119,7 @@ export class SaleService {
           qtyChange: -draft.quantity,
           reason: "SALE",
           note: `Sale ${sale.id}`,
+          saleId: sale.id,
         });
       }
 

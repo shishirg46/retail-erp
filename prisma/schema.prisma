@@ -76,6 +76,9 @@ model Purchase {
   supplier Supplier       @relation(fields: [supplierId], references: [id])
   items    PurchaseItem[]
 
+  stockMovements     StockMovement[]
+  walletTransactions WalletTransaction[]
+
   @@index([date], map: "purchases_date_idx")
   @@map("purchases")
 }
@@ -103,6 +106,8 @@ model SupplierPayment {
   date       DateTime @default(now())
 
   supplier Supplier @relation(fields: [supplierId], references: [id])
+
+  walletTransactions WalletTransaction[]
 
   @@index([supplierId, date], map: "supplier_payments_supplier_id_date_idx")
   @@map("supplier_payments")
@@ -151,6 +156,7 @@ model Sale {
   items              SaleItem[]
   creditPayments     CreditPayment[]
   walletTransactions WalletTransaction[]
+  stockMovements     StockMovement[]
 
   @@index([date], map: "sales_date_idx")
   @@map("sales")
@@ -207,6 +213,7 @@ enum WalletTxnSource {
   EXPENSE // cash paid out for a shop expense
   BANK_DEPOSIT // cash moved out of the box into a bank account
   OTHER
+  VOID // offsetting reversal of a voided transaction's wallet side effect
 }
 
 // Running cash-box balance = sum of all wallet transactions.
@@ -214,19 +221,25 @@ enum WalletTxnSource {
 // everything else is logged manually by whoever's managing the till.
 
 model WalletTransaction {
-  id              String          @id @default(uuid())
-  type            WalletTxnType
-  source          WalletTxnSource
-  amount          Decimal
-  date            DateTime        @default(now())
-  note            String?
-  saleId          String?         @map("sale_id") // set when source = SALE
-  creditPaymentId String?         @map("credit_payment_id") // set when source = CREDIT_PAYMENT
+  id                String          @id @default(uuid())
+  type              WalletTxnType
+  source            WalletTxnSource
+  amount            Decimal
+  date              DateTime        @default(now())
+  note              String?
+  saleId            String?         @map("sale_id") // set when source = SALE
+  purchaseId        String?         @map("purchase_id") // set for CASH-purchase wallet txns
+  creditPaymentId   String?         @map("credit_payment_id") // set when source = CREDIT_PAYMENT
+  supplierPaymentId String?         @map("supplier_payment_id") // set when source = SUPPLIER_PAYMENT from a supplier payment
 
-  sale          Sale?          @relation(fields: [saleId], references: [id])
-  creditPayment CreditPayment? @relation(fields: [creditPaymentId], references: [id])
+  sale            Sale?            @relation(fields: [saleId], references: [id])
+  purchase        Purchase?        @relation(fields: [purchaseId], references: [id])
+  creditPayment   CreditPayment?   @relation(fields: [creditPaymentId], references: [id])
+  supplierPayment SupplierPayment? @relation(fields: [supplierPaymentId], references: [id])
 
   @@index([date], map: "wallet_transactions_date_idx")
+  @@index([purchaseId], map: "wallet_transactions_purchase_id_idx")
+  @@index([supplierPaymentId], map: "wallet_transactions_supplier_payment_id_idx")
   @@map("wallet_transactions")
 }
 
@@ -239,24 +252,55 @@ enum StockReason {
   SALE
   DAMAGE
   CORRECTION
+  VOID // offsetting reversal of a voided transaction's stock side effect
 }
 
 // Every stock change logged with a reason — audit trail instead of a silently
 // updated Product.stockQty number.
 
 model StockMovement {
-  id        String      @id @default(uuid())
-  productId String      @map("product_id")
-  qtyChange Int         @map("qty_change") // positive = stock in, negative = stock out
-  reason    StockReason
-  date      DateTime    @default(now())
-  note      String?
+  id         String      @id @default(uuid())
+  productId  String      @map("product_id")
+  qtyChange  Int         @map("qty_change") // positive = stock in, negative = stock out
+  reason     StockReason
+  date       DateTime    @default(now())
+  note       String?
+  saleId     String?     @map("sale_id") // set when reason = SALE
+  purchaseId String?     @map("purchase_id") // set when reason = PURCHASE
 
-  product Product @relation(fields: [productId], references: [id])
+  product  Product   @relation(fields: [productId], references: [id])
+  sale     Sale?     @relation(fields: [saleId], references: [id])
+  purchase Purchase? @relation(fields: [purchaseId], references: [id])
 
   @@index([productId, date], map: "stock_movements_product_id_date_idx")
   @@index([date], map: "stock_movements_date_idx")
+  @@index([saleId], map: "stock_movements_sale_id_idx")
+  @@index([purchaseId], map: "stock_movements_purchase_id_idx")
   @@map("stock_movements")
+}
+
+// ────────────────────────────────
+// Transaction voiding (M18)
+// ────────────────────────────────
+
+// One row per voided transaction (D18.7). targetType/targetId are polymorphic:
+// SALE | PURCHASE | CREDIT_PAYMENT | SUPPLIER_PAYMENT | STOCK_MOVEMENT.
+// The unique constraint prevents double void (D18.11). Original transaction
+// rows are never deleted — void is always recorded here, atomically with the
+// reversal of the transaction's financial/stock side effects.
+
+model VoidRecord {
+  id         String   @id @default(uuid())
+  targetType String   @map("target_type")
+  targetId   String   @map("target_id")
+  reason     String
+  note       String?
+  voidedBy   String   @map("voided_by") // userId from session
+  voidedAt   DateTime @default(now()) @map("voided_at")
+
+  @@unique([targetType, targetId], map: "void_records_target_type_target_id_unique")
+  @@index([targetType, targetId], map: "void_records_target_type_target_id_idx")
+  @@map("void_records")
 }
 
 model User {

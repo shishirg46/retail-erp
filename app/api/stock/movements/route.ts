@@ -10,6 +10,7 @@ import {
   buildPaginatedResponse,
 } from "@/lib/pagination";
 import { StockService } from "@/modules/stock/stock.service";
+import { toStockMovementApi } from "@/modules/stock/stock.repository";
 
 export async function GET(req: NextRequest) {
   try {
@@ -27,12 +28,12 @@ export async function GET(req: NextRequest) {
 
     if (!hasPaginationParam && !productId) {
       const movements = await service.listMovements();
-      return NextResponse.json(movements);
+      return NextResponse.json(movements.map(toStockMovementApi));
     }
 
     if (!hasPaginationParam && productId) {
       const movements = await service.listMovements(productId);
-      return NextResponse.json(movements);
+      return NextResponse.json(movements.map(toStockMovementApi));
     }
 
     // Paginated path.
@@ -53,7 +54,7 @@ export async function GET(req: NextRequest) {
     );
 
     return NextResponse.json({
-      data: response.data,
+      data: response.data.map(toStockMovementApi),
       paging: response.paging,
     });
   } catch (error) {

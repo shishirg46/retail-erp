@@ -1,3 +1,5 @@
+import type { VoidInfo } from "../voids/void.types";
+
 // Money is whole paisa in the domain (D11). Rupee values convert at the
 // API boundary (validators in, routes out).
 export interface CreditPayment {
@@ -6,6 +8,7 @@ export interface CreditPayment {
   saleId: string | null;
   amount: number; // paisa
   date: Date;
+  voidInfo: VoidInfo;
 }
 
 export interface CreateCustomerPaymentInput {
@@ -30,6 +33,7 @@ export interface ListCreditPaymentsInput {
 
 export interface CreditPaymentRepository {
   create(input: CreateCreditPaymentRepositoryInput): Promise<CreditPayment>;
+  findById(id: string): Promise<CreditPayment | null>;
   list(): Promise<CreditPayment[]>;
   listPaginated(input: ListCreditPaymentsInput): Promise<CreditPayment[]>;
 }

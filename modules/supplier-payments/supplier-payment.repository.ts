@@ -1,5 +1,10 @@
 import { prisma } from "../../lib/prisma";
 import { paisaFromDecimal, paisaToRupees } from "../../lib/money";
+import { attachVoidStatus } from "../voids/void.repository";
+import type {
+  VoidStatusLabel,
+  VoidStatusOutput,
+} from "../voids/void.types";
 
 import type {
   SupplierPayment,
@@ -10,6 +15,7 @@ import type {
 
 type Db = {
   supplierPayment: typeof prisma.supplierPayment;
+  voidRecord: typeof prisma.voidRecord;
 };
 
 function toSupplierPayment(raw: {
@@ -23,14 +29,23 @@ function toSupplierPayment(raw: {
     supplierId: raw.supplierId,
     amount: paisaFromDecimal(raw.amount),
     date: raw.date,
+    voidInfo: { voidedAt: null, reason: null },
   };
 }
 
-// API output view: whole-paisa domain -> rupee wire representation (D11).
-export function toSupplierPaymentApi(payment: SupplierPayment): SupplierPayment {
+// API output view: whole-paisa domain -> rupee wire representation (D11),
+// plus the computed void status (D18.9).
+export type SupplierPaymentApi = SupplierPayment & VoidStatusOutput;
+
+export function toSupplierPaymentApi(
+  payment: SupplierPayment
+): SupplierPaymentApi {
   return {
     ...payment,
     amount: paisaToRupees(payment.amount),
+    status: (payment.voidInfo.voidedAt ? "VOIDED" : "ACTIVE") as VoidStatusLabel,
+    voidedAt: payment.voidInfo.voidedAt,
+    voidReason: payment.voidInfo.reason,
   };
 }
 
@@ -48,12 +63,28 @@ export class PrismaSupplierPaymentRepository implements SupplierPaymentRepositor
     return toSupplierPayment(raw);
   }
 
+  async findById(id: string): Promise<SupplierPayment | null> {
+    const raw = await this.db.supplierPayment.findUnique({ where: { id } });
+
+    if (!raw) return null;
+
+    const [payment] = await attachVoidStatus(this.db, "SUPPLIER_PAYMENT", [
+      toSupplierPayment(raw),
+    ]);
+
+    return payment;
+  }
+
   async list(): Promise<SupplierPayment[]> {
     const raw = await this.db.supplierPayment.findMany({
       orderBy: { date: "desc" },
     });
 
-    return raw.map(toSupplierPayment);
+    return attachVoidStatus(
+      this.db,
+      "SUPPLIER_PAYMENT",
+      raw.map(toSupplierPayment)
+    );
   }
 
   async listPaginated(input: ListSupplierPaymentsInput): Promise<SupplierPayment[]> {
@@ -77,6 +108,10 @@ export class PrismaSupplierPaymentRepository implements SupplierPaymentRepositor
       take: limit + 1,
     });
 
-    return raw.map(toSupplierPayment);
+    return attachVoidStatus(
+      this.db,
+      "SUPPLIER_PAYMENT",
+      raw.map(toSupplierPayment)
+    );
   }
 }

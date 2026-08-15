@@ -1,4 +1,5 @@
 import { prisma } from "../../lib/prisma";
+import { attachVoidStatus } from "../voids/void.repository";
 
 import type {
   StockMovement,
@@ -9,10 +10,20 @@ import type {
 
 type Db = {
   stockMovement: typeof prisma.stockMovement;
+  voidRecord: typeof prisma.voidRecord;
 };
 
 function toStockMovement(
-  raw: { id: string; productId: string; qtyChange: number; reason: string; date: Date; note: string | null }
+  raw: {
+    id: string;
+    productId: string;
+    qtyChange: number;
+    reason: string;
+    date: Date;
+    note: string | null;
+    saleId: string | null;
+    purchaseId: string | null;
+  }
 ): StockMovement {
   return {
     id: raw.id,
@@ -21,6 +32,26 @@ function toStockMovement(
     reason: raw.reason as StockMovement["reason"],
     date: raw.date,
     note: raw.note,
+    saleId: raw.saleId,
+    purchaseId: raw.purchaseId,
+    voidInfo: { voidedAt: null, reason: null },
+  };
+}
+
+// API output view for stock movements (D11 conversions not needed here — qty
+// is already an integer), plus the computed void status (D18.9).
+export type StockMovementApi = StockMovement & {
+  status: "ACTIVE" | "VOIDED";
+  voidedAt: Date | null;
+  voidReason: string | null;
+};
+
+export function toStockMovementApi(movement: StockMovement): StockMovementApi {
+  return {
+    ...movement,
+    status: movement.voidInfo.voidedAt ? "VOIDED" : "ACTIVE",
+    voidedAt: movement.voidInfo.voidedAt,
+    voidReason: movement.voidInfo.reason,
   };
 }
 
@@ -34,10 +65,24 @@ export class PrismaStockRepository implements StockRepository {
         qtyChange: input.qtyChange,
         reason: input.reason,
         note: input.note,
+        saleId: input.saleId,
+        purchaseId: input.purchaseId,
       },
     });
 
     return toStockMovement(raw);
+  }
+
+  async findById(id: string): Promise<StockMovement | null> {
+    const raw = await this.db.stockMovement.findUnique({ where: { id } });
+
+    if (!raw) return null;
+
+    const [movement] = await attachVoidStatus(this.db, "STOCK_MOVEMENT", [
+      toStockMovement(raw),
+    ]);
+
+    return movement;
   }
 
   async listByProduct(productId: string): Promise<StockMovement[]> {
@@ -46,7 +91,11 @@ export class PrismaStockRepository implements StockRepository {
       orderBy: { date: "desc" },
     });
 
-    return raw.map(toStockMovement);
+    return attachVoidStatus(
+      this.db,
+      "STOCK_MOVEMENT",
+      raw.map(toStockMovement)
+    );
   }
 
   async list(): Promise<StockMovement[]> {
@@ -54,7 +103,7 @@ export class PrismaStockRepository implements StockRepository {
       orderBy: { date: "desc" },
     });
 
-    return raw.map(toStockMovement);
+    return attachVoidStatus(this.db, "STOCK_MOVEMENT", raw.map(toStockMovement));
   }
 
   async listPaginated(input: ListStockMovementsInput): Promise<StockMovement[]> {
@@ -82,6 +131,6 @@ export class PrismaStockRepository implements StockRepository {
       take: limit + 1,
     });
 
-    return raw.map(toStockMovement);
+    return attachVoidStatus(this.db, "STOCK_MOVEMENT", raw.map(toStockMovement));
   }
 }

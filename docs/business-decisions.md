@@ -672,3 +672,429 @@ identical-timestamp tiebreaker, page boundaries, invalid params, filter
 combinations); `tests/http/pagination.test.ts` (backward-compat raw arrays,
 envelope shape, cursor traversal, filter behavior over real HTTP); existing
 test suites unchanged and green.
+
+---
+
+## D18.1 — Void authorization: OWNER only
+
+**Status:** Accepted — 15 Aug 2026
+
+**Current behavior (before)**
+No void/correction capability exists. All transactions are immutable once created.
+
+**Proposed behavior**
+Only OWNER can void transactions. CASHIER cannot void any transaction.
+
+- `POST /api/{entity}/{id}/void` requires OWNER role.
+- CASHIER requests receive the existing `403 Forbidden` response.
+- No `createdBy` field added to transaction models (not needed for OWNER-only).
+- Future permission system can introduce granular void permissions if needed.
+
+**Reason**
+Void operations reverse financial, stock, and transactional effects. The first
+implementation must be conservative. OWNER-only avoids the complexity of
+tracking which user created each transaction.
+
+**Database impact:** new `VoidRecord` table (D18.7).
+**API impact:** new `POST /api/{entity}/{id}/void` endpoints (OWNER-only).
+**Existing feature impact:** none — existing routes unchanged.
+**Testing impact:** authorization tests verify CASHIER receives 403 for void
+requests.
+
+---
+
+## D18.2 — Void time window: no limit
+
+**Status:** Accepted — 15 Aug 2026
+
+**Current behavior (before)**
+No void capability exists.
+
+**Proposed behavior**
+A valid transaction may be voided regardless of how old it is. No time-window
+validation.
+
+- Do not add time-window validation logic.
+- Use `ERP_TIMEZONE` only for timestamps/reporting where already required.
+- Keep the original transaction date unchanged.
+- Record the actual void timestamp separately in `VoidRecord.voidedAt`.
+
+**Reason**
+This is a small-shop ERP. Historical mistakes may only be discovered later.
+There is no requirement for same-day or configurable time restrictions.
+
+**Database impact:** none.
+**API impact:** none.
+**Existing feature impact:** none.
+**Testing impact:** void tests do not assert any time-window behavior.
+
+---
+
+## D18.3 — Void granularity: transaction-level, all-or-nothing
+
+**Status:** Accepted — 15 Aug 2026
+
+**Current behavior (before)**
+No void capability exists.
+
+**Proposed behavior**
+Void is transaction-level and all-or-nothing. No partial voiding of individual
+SaleItems or PurchaseItems in M18.
+
+Example: A sale with Product A × 5 and Product B × 3 — the user cannot void
+only Product A. The entire Sale is either ACTIVE or VOIDED.
+
+Correction workflow:
+1. Void the incorrect transaction (entire transaction).
+2. Create a new correct transaction.
+
+Transactions remain immutable; correction happens through void + new transaction.
+
+**Reason**
+Keeps accounting, stock, wallet, and reporting invariants manageable. Avoids
+introducing line-level correction complexity. If a transaction was entered
+incorrectly, the intended workflow is void + re-enter.
+
+**Database impact:** none.
+**API impact:** none.
+**Existing feature impact:** none.
+**Testing impact:** void tests verify entire transaction is voided, not individual
+items.
+
+---
+
+## D18.4 — Linked CreditPayment handling: manual void required
+
+**Status:** Accepted — 15 Aug 2026
+
+**Current behavior (before)**
+No void capability exists.
+
+**Proposed behavior**
+A Sale with active linked CreditPayment records cannot be voided until those
+CreditPayments have been voided first. Do NOT automatically void linked
+CreditPayments when voiding a Sale.
+
+Required dependency order:
+```
+CreditPayment(s) → Sale
+```
+
+Example: Sale = Rs. 500 CREDIT. Customer later pays Rs. 500. Attempt to void
+Sale → BLOCKED. Void the CreditPayment first, then void the Sale.
+
+Validation before Sale void:
+- Query for active CreditPayments where `saleId = sale.id`.
+- If any active linked CreditPayment exists, reject with `BusinessRuleError`.
+- Already-voided CreditPayments do not block the Sale.
+
+**Reason**
+Do not silently modify a customer's payment history. Every financial correction
+must be an explicit user action. Keeps the audit trail clear. Avoids cascading
+hidden void operations.
+
+**Database impact:** none.
+**API impact:** error message tells the user which CreditPayments must be voided
+first.
+**Existing feature impact:** none.
+**Testing impact:** tests verify: Sale with linked CreditPayment → void blocked;
+after voiding CreditPayment → Sale void succeeds.
+
+---
+
+## D18.5 — Purchase costPrice recalculation
+
+**Status:** Accepted — 15 Aug 2026
+
+**Current behavior (before)**
+`Product.costPrice` is set to the latest purchase's `costPerUnit` (D2). No
+weighted average. No historical cost tracking beyond `PurchaseItem.costPerUnit`.
+
+**Approved behavior — Option A (cost-price re-derivation, 15 Aug 2026)**
+When a Purchase is voided, `Product.costPrice` is recalculated from the latest
+remaining NON-VOIDED `PurchaseItem.costPerUnit`.
+
+- `costPrice = latest non-voided PurchaseItem.costPerUnit` per product, where
+  "latest" follows the existing D2 ordering (latest purchase first).
+- If NO valid purchase history remains for the product (every purchase voided),
+  set `costPrice = 0`.
+- Do NOT simply subtract the voided purchase's contribution from the current
+  `costPrice`; do NOT invent weighted averages. The recalculation derives from
+  the remaining non-voided purchase history.
+- This is safe because D2 stores the full `PurchaseItem.costPerUnit` history
+  immutably — the source of truth for the re-derivation already exists.
+
+Investigation result (15 Aug 2026): the D2 methodology is fully reversible. The
+only `costPrice` write paths are `ProductService.updateCostPrice` (via
+`PurchaseService.createPurchase`, latest cost wins). Recomputing from remaining
+non-voided `PurchaseItem` rows requires no new schema and no heuristic matching:
+a product's non-voided purchase history is simply `PurchaseItem` rows joined to
+`Purchase` rows that carry no `VoidRecord(targetType='PURCHASE')`.
+
+**Reason**
+The cost price must remain meaningful after a void. Simply leaving the old value
+would be incorrect if the voided purchase was the one that set it.
+
+**Database impact:** none (recalculation uses existing `PurchaseItem.costPerUnit`).
+**API impact:** `Product.costPrice` reflects the recalculated value after void.
+**Existing feature impact:** cost price behavior changes only when a purchase is
+voided.
+**Testing impact:** tests verify costPrice recalculation after purchase void.
+
+---
+
+## D18.6 — Stock safety: void must never create negative stock
+
+**Status:** Accepted — 15 Aug 2026
+
+**Current behavior (before)**
+D6 invariant: `Product.stockQty` must never be negative. DAMAGE uses atomic
+`reserveStock` (F-02). CORRECTION rejects if result < 0.
+
+**Proposed behavior**
+A void operation must never cause `Product.stockQty` to become negative. If
+reversing a transaction would make any affected Product's `stockQty < 0`, the
+void must be rejected.
+
+Example: Current stock = 5. Original Purchase added = 10. Voiding Purchase
+would require stock -= 10, result = -5. → BLOCK void.
+
+Validation requirements:
+- Validate stock impact before completing the void.
+- Use atomic/concurrency-safe stock updates consistent with F-02.
+- If any affected product fails the stock safety condition, the entire void
+  fails.
+- Do not introduce a physical maximum stock constraint (current ERP has none).
+
+For stock-adjustment voids:
+- Reverse the original adjustment.
+- If the reversal would produce negative stock, reject it.
+
+**Reason**
+Negative stock violates D6 and would corrupt the inventory invariant. The
+existing F-02 approach (atomic conditional updates) provides the safety net.
+
+**Database impact:** none.
+**API impact:** `409 InsufficientStockError` when void would cause negative stock.
+**Existing feature impact:** none.
+**Testing impact:** tests verify: void blocked when stock would go negative;
+void succeeds when stock remains >= 0.
+
+---
+
+## D18.7 — Audit trail: VoidRecord only
+
+**Status:** Accepted — 15 Aug 2026
+
+**Current behavior (before)**
+No void capability exists.
+
+**Proposed behavior**
+Use `VoidRecord` only for M18. Do NOT create `ReversalRecord` in M18.
+
+`VoidRecord` fields:
+- `id` (String, cuid)
+- `targetType` (String: "SALE" | "PURCHASE" | "CREDIT_PAYMENT" | "SUPPLIER_PAYMENT" | "STOCK_MOVEMENT")
+- `targetId` (String: ID of the original record)
+- `reason` (String: user-provided reason)
+- `note` (String, optional)
+- `voidedBy` (String: userId from session)
+- `voidedAt` (DateTime, default now)
+
+Unique constraint: `(targetType, targetId)` — prevents double void.
+
+**Reason**
+VoidRecord provides sufficient auditability for the current shop scale. A
+separate ReversalRecord table adds complexity without immediate business value.
+The actual reversal must still be performed atomically and deterministically.
+
+**Database impact:** new `VoidRecord` table with unique constraint.
+**API impact:** void responses include `voidId` and `voidedAt`.
+**Existing feature impact:** none.
+**Testing impact:** tests verify: VoidRecord created on void; double void blocked
+by unique constraint.
+
+---
+
+## D18.8 — Report treatment: exclude voided records
+
+**Status:** Accepted — 15 Aug 2026
+
+**Current behavior (before)**
+Reports include all records. No void capability exists.
+
+**Proposed behavior**
+Voided transactions must be excluded from normal reports. Reports represent
+active business activity, not cancelled/voided activity.
+
+Required exclusions:
+- Sales reports: exclude voided Sales.
+- Purchase reports: exclude voided Purchases.
+- Customer balances: exclude voided CreditPayments.
+- Supplier balances: exclude voided SupplierPayments.
+- Stock reports: exclude voided StockMovements.
+- Wallet/report calculations: exclude wallet transactions whose originating
+  transaction has been voided, using explicit schema relationships.
+
+**CRITICAL SCHEMA GAP (must resolve before implementation):**
+WalletTransaction currently lacks `purchaseId`. CASH purchase wallet
+transactions (source = SUPPLIER_PAYMENT) cannot be reliably identified for
+exclusion without this field. The note field (`Purchase {id}`) is not a
+reliable financial relationship.
+
+Required before implementation:
+- Add `purchaseId` to WalletTransaction (D18.10).
+- Verify every wallet transaction source relationship.
+- If a report cannot reliably determine whether a WalletTransaction belongs to
+  a voided transaction, STOP and report the exact gap.
+
+D7 remains valid: reports are read-only derivations over transactional data.
+
+**Database impact:** WalletTransaction gains `purchaseId` FK (D18.10).
+**API impact:** report values exclude voided activity.
+**Existing feature impact:** report totals change when voided records exist.
+**Testing impact:** tests verify: voided sale excluded from sales report;
+voided purchase excluded from purchase report; wallet balance excludes voided
+wallet transactions.
+
+---
+
+## D18.9 — API visibility: voided records remain visible
+
+**Status:** Accepted — 15 Aug 2026
+
+**Current behavior (before)**
+All records are returned as-is in list/detail endpoints. No status concept.
+
+**Proposed behavior**
+Voided records remain visible in normal list/detail APIs. They must NOT
+disappear. API responses expose:
+- `status: "ACTIVE" | "VOIDED"` (derived from VoidRecord existence)
+- `voidedAt` (optional, when voided)
+- `voidReason` (optional, when voided)
+
+Default behavior:
+- Existing records with no VoidRecord → `ACTIVE`
+- Records with matching VoidRecord → `VOIDED`
+
+Do NOT silently remove voided transactions from normal API responses.
+
+**Reason**
+Users need to see that a transaction was voided (audit trail). Disappearing
+records would be confusing. A future filter can be introduced, but M18 should
+at minimum expose status.
+
+**Database impact:** none (status is derived, not stored).
+**API impact:** all transaction list/detail endpoints include `status` field.
+**Existing feature impact:** API responses gain a new `status` field (backward
+compatible — existing clients ignore unknown fields).
+**Testing impact:** tests verify: voided record has `status: "VOIDED"`; active
+record has `status: "ACTIVE"`.
+
+---
+
+## D18.10 — Schema gap: WalletTransaction origin FKs (purchaseId, supplierPaymentId)
+
+**Status:** Accepted — 15 Aug 2026 (amended 15 Aug 2026 by M18 approval)
+
+**Current behavior (before)**
+`WalletTransaction` has `saleId` (for source = SALE) and `creditPaymentId`
+(for source = CREDIT_PAYMENT), but no `purchaseId` and no `supplierPaymentId`.
+CASH purchase wallet transactions (source = SUPPLIER_PAYMENT) are identified
+only by `note: "Purchase {id}"`; SupplierPayment wallet transactions are
+identified only by `note: "SupplierPayment {id}"`.
+
+**Approved behavior — explicit origin FKs (no note-based matching)**
+Add BOTH nullable FKs to `WalletTransaction`:
+- `purchaseId` (String?, FK to `Purchase.id`)
+- `supplierPaymentId` (String?, FK to `SupplierPayment.id`)
+
+`WalletTransaction` then identifies its origin via exactly one of:
+`saleId | purchaseId | creditPaymentId | supplierPaymentId`. New indexes on
+`purchaseId` and `supplierPaymentId`.
+
+No wallet-linked transaction is ever matched by note text, amount, date, or
+source heuristics. Financial reversal and report exclusion use the explicit FK.
+
+**Reason**
+The note field is not a financial relationship. SupplierPayment voids must not
+rely on `note: "SupplierPayment {id}"` matching; the wallet origin must be a
+first-class FK so void reversal, report exclusion, and reconciliation are
+deterministic.
+
+**Database impact:** `WalletTransaction` gains `purchaseId` and
+`supplierPaymentId` (String, optional, FKs). New indexes on both.
+**API impact:** none (internal relationships only).
+**Existing feature impact:** `PurchaseService.createPurchase` sets `purchaseId`
+when paymentType = CASH; `SupplierPaymentService.createSupplierPayment` sets
+`supplierPaymentId`. Wallet notes remain for human readability only.
+**Testing impact:** tests verify: CASH purchase wallet transaction has
+`purchaseId` set; SupplierPayment wallet transaction has `supplierPaymentId`
+set; voids reverse the correct wallet transaction via the FK.
+
+---
+
+## D18.11 — Concurrency: atomic void with unique constraint protection
+
+**Status:** Accepted — 15 Aug 2026
+
+**Current behavior (before)**
+No void capability exists. Existing transactions use `$transaction` for
+multi-step operations (Sale, Purchase, CustomerPayment, SupplierPayment,
+StockAdjustment).
+
+**Proposed behavior**
+All void operations must be atomic. The implementation must prevent:
+- Double void (unique constraint on `VoidRecord(targetType, targetId)`)
+- Void + payment race (CreditPayment created while Sale is being voided)
+- Void + stock modification race
+- Partial reversal where some side effects succeed and others fail
+
+Use the existing Prisma `$transaction` pattern. The VoidRecord unique constraint
+provides primary protection against duplicate voids. Additionally, the void
+service should verify the target is not already voided before beginning the
+transaction (defense-in-depth).
+
+**Reason**
+Financial operations must be atomic. Partial voids would corrupt invariants.
+
+**Database impact:** unique constraint on VoidRecord (D18.7).
+**API impact:** `409 ConflictError` on double void attempt.
+**Existing feature impact:** none.
+**Testing impact:** tests verify: concurrent void attempts → only one succeeds;
+void with concurrent CreditPayment creation → proper error handling.
+
+**Resolution (15 Aug 2026) — SELECT ... FOR UPDATE sale-row lock**
+
+The unique constraint alone does not close the void + payment race: two
+READ COMMITTED transactions that both *read* a Sale and then write their
+VoidRecord / CreditPayment can each see the other's pre-write state and both
+commit — producing an active CreditPayment on a voided Sale (the D18.4-forbidden
+state). Ledger invariants (D3/D4/D6/wallet) still hold in that state, which is
+why the regression suite asserts the Sale/CreditPayment/VoidRecord triangle
+directly.
+
+Fix: both sides acquire an exclusive row lock on the same `sales` row before
+reading the sale's void/linked-payment state, via
+`SELECT id FROM sales WHERE id = $1 FOR UPDATE` (`tx.$queryRaw`, shared helper
+`lib/locks.ts`):
+
+- `VoidService.voidSale` — locks the sales row, then checks the linked
+  CreditPayment state; a payment committed by the other transaction is seen.
+- `CustomerPaymentService.createCustomerPayment` (when `saleId` is set) — locks
+  the sales row, then checks the VoidRecord; a void committed by the other
+  transaction is seen.
+
+The lock is taken inside the existing `$transaction`; the loser blocks on the
+lock and then rejects against the winner's committed state. Deadlock is
+impossible here: both transactions lock one Sale row in the same order. The
+lock also serializes concurrent double-void attempts (the loser still hits the
+unique constraint → 409), so no check was weakened.
+
+**Testing:** `tests/concurrency/void-payment.test.ts` (F-08) races
+`voidSale` vs `createCustomerPayment` on a fresh CREDIT sale 12× per run with
+`Promise.allSettled`, asserting exactly one of the two succeeds and the loser
+rejects with the expected business rule, no active CreditPayment ever sits on a
+voided Sale, and the void-aware D3/D4/D6/wallet `reconcile()` stays clean.
+Proven against the regression: with the locks removed the suite fails
+immediately (both operations succeed, `ok.length === 2`).

@@ -1,5 +1,6 @@
 import { prisma } from "../../lib/prisma";
 import { paisaToRupees } from "../../lib/money";
+import { attachVoidStatus } from "../voids/void.repository";
 
 import { toSale } from "./sale.mapper";
 import type {
@@ -11,6 +12,7 @@ import type {
 
 type Db = {
   sale: typeof prisma.sale;
+  voidRecord: typeof prisma.voidRecord;
 };
 
 export class PrismaSaleRepository implements SaleRepository {
@@ -42,7 +44,11 @@ export class PrismaSaleRepository implements SaleRepository {
       include: { items: true },
     });
 
-    return raw ? toSale(raw) : null;
+    if (!raw) return null;
+
+    const [sale] = await attachVoidStatus(this.db, "SALE", [toSale(raw)]);
+
+    return sale;
   }
 
   async list(): Promise<Sale[]> {
@@ -51,7 +57,7 @@ export class PrismaSaleRepository implements SaleRepository {
       orderBy: { date: "desc" },
     });
 
-    return raw.map(toSale);
+    return attachVoidStatus(this.db, "SALE", raw.map(toSale));
   }
 
   async listPaginated(input: ListSalesInput): Promise<Sale[]> {
@@ -76,6 +82,6 @@ export class PrismaSaleRepository implements SaleRepository {
       take: limit + 1,
     });
 
-    return raw.map(toSale);
+    return attachVoidStatus(this.db, "SALE", raw.map(toSale));
   }
 }

@@ -1,4 +1,6 @@
-export type StockReason = "PURCHASE" | "SALE" | "DAMAGE" | "CORRECTION";
+import type { VoidInfo } from "../voids/void.types";
+
+export type StockReason = "PURCHASE" | "SALE" | "DAMAGE" | "CORRECTION" | "VOID";
 
 // Manual adjustments only ever use these two reasons (D6).
 export type StockAdjustmentReason = "DAMAGE" | "CORRECTION";
@@ -10,6 +12,9 @@ export interface StockMovement {
   reason: StockReason;
   date: Date;
   note: string | null;
+  saleId: string | null;
+  purchaseId: string | null;
+  voidInfo: VoidInfo;
 }
 
 export interface CreateStockMovementInput {
@@ -17,6 +22,8 @@ export interface CreateStockMovementInput {
   qtyChange: number;
   reason: StockReason;
   note?: string;
+  saleId?: string;
+  purchaseId?: string;
 }
 
 // DAMAGE:  quantity = amount damaged (applied as -quantity)
@@ -42,6 +49,7 @@ export interface ListStockMovementsInput {
 
 export interface StockRepository {
   createMovement(input: CreateStockMovementInput): Promise<StockMovement>;
+  findById(id: string): Promise<StockMovement | null>;
   listByProduct(productId: string): Promise<StockMovement[]>;
   list(): Promise<StockMovement[]>;
   listPaginated(input: ListStockMovementsInput): Promise<StockMovement[]>;

@@ -1,3 +1,5 @@
+import type { VoidInfo } from "../voids/void.types";
+
 // Money is whole paisa in the domain (D11). Rupee values convert at the
 // API boundary (validators in, routes out).
 export type PurchasePaymentType = "CASH" | "CREDIT";
@@ -29,6 +31,7 @@ export interface Purchase {
   total: number; // paisa
   date: Date;
   items: PurchaseItem[];
+  voidInfo: VoidInfo;
 }
 
 export interface CreatePurchaseRepositoryInput {

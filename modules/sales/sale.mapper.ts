@@ -1,5 +1,6 @@
 import type { Prisma } from "../../generated/prisma/client";
 import { paisaFromDecimal, paisaToRupees } from "../../lib/money";
+import type { VoidStatusLabel, VoidStatusOutput } from "../voids/void.types";
 
 import type { Sale, SaleItem } from "./sale.types";
 
@@ -27,11 +28,15 @@ export function toSale(raw: SaleWithItems): Sale {
     total: paisaFromDecimal(raw.total),
     date: raw.date,
     items: raw.items.map(toSaleItem),
+    voidInfo: { voidedAt: null, reason: null },
   };
 }
 
-// API output view: whole-paisa domain -> rupee wire representation (D11).
-export function toSaleApi(sale: Sale): Sale {
+// API output view: whole-paisa domain -> rupee wire representation (D11),
+// plus the computed void status (D18.9).
+export type SaleApi = Sale & VoidStatusOutput;
+
+export function toSaleApi(sale: Sale): SaleApi {
   return {
     ...sale,
     total: paisaToRupees(sale.total),
@@ -39,5 +44,8 @@ export function toSaleApi(sale: Sale): Sale {
       ...item,
       pricePerUnit: paisaToRupees(item.pricePerUnit),
     })),
+    status: (sale.voidInfo.voidedAt ? "VOIDED" : "ACTIVE") as VoidStatusLabel,
+    voidedAt: sale.voidInfo.voidedAt,
+    voidReason: sale.voidInfo.reason,
   };
 }

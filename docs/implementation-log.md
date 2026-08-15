@@ -728,3 +728,65 @@ into the gate).
 - All existing unit tests (173/173) and HTTP tests (d1-d7-smoke 15/15,
   input-bounds 11/11) pass. `error-handling.test.ts` passes in isolation
   (pre-existing parallel port-collision issue).
+
+---
+
+## Milestone 18 — Transaction void/correction (ERP-009) (15 Aug 2026)
+
+**Shipped**
+
+- `modules/voids/` — full module: `void.types.ts` (`VoidTargetType`, `VoidInfo`,
+  `VoidStatusOutput`, `VoidInput`), `void.validation.ts`, `void.repository.ts`
+  (`VoidRecord` + `voidedIds(targetType)` helper + `attachVoidStatus`),
+  `void.service.ts` (OWNER-only, whole-transaction, one `$transaction` per
+  void). Original rows are never deleted; voiding posts **offsetting reversal
+  rows** carrying origin FKs (wallet source `VOID`, stock reason `VOID`).
+- **5 void endpoints**, all `POST .../void` and OWNER-only (D18.1):
+  sales, purchases, credit payments (customer-payments), supplier payments,
+  stock movements (`reason: CORRECTION` only — DAMAGE voids are rejections).
+- Double-void prevented by a unique `(targetType, targetId)` constraint plus a
+  repository-level `assertNotVoided` (P2002 → 409 Conflict).
+- D18.4: a sale with an active linked credit payment cannot be voided;
+  new payments to a voided sale are rejected.
+- D18.5 (Option A): voiding a sale re-derives the product `costPrice` from
+  surviving non-voided purchases via the shared `recalculateCostPrice` helper.
+- D18.10: wallet origin FKs (`purchaseId`, `supplierPaymentId`) replace the old
+  note-matching; void reversals are linked by FK, not note text.
+- D18.8: reports exclude voided records — `salesReport`, `purchasesReport`,
+  `stockReport` filter out reason `VOID` movements and voided origin FKs;
+  `customersReport`, `suppliersReport`, `walletReport` exclude `VOID` wallet
+  sources and voided origin FKs. Report totals stay read-only derivations.
+- D18.9: status exposure — `Sale`, `Purchase`, `CreditPayment`,
+  `SupplierPayment`, `StockMovement` now carry `voidInfo`
+  (`status: ACTIVE | VOIDED`, `voidedAt`, `voidReason`) on findById/list/list
+  paginated responses via `toXxxApi` mappers; `GET /api/stock/movements`
+  maps through `toStockMovementApi`.
+- Payments to voided sales are blocked (D18.4); `tests/helpers/db.ts`
+  `reconcile()` is void-aware: voided origins excluded from D3/D4 + wallet
+  ledger, original rows + VOID reversals cancel exactly.
+- D18.11 hardening (post-review fix): `voidSale` and `createCustomerPayment`
+  both lock the `sales` row with `SELECT ... FOR UPDATE` (shared helper
+  `lib/locks.ts`) before reading void/linked-payment state, closing the
+  void + payment race under READ COMMITTED (an active CreditPayment could
+  otherwise be created on a sale being voided; the ledger invariants still held
+  in that state, so the race was a semantic gap, not corruption).
+
+**Verified**
+
+- `tsc --noEmit` green; `npm run lint` green; `git diff --check` clean.
+- `tests/integration/voids.test.ts` — 18 tests: sale/purchase/credit-payment/
+  supplier-payment/stock-movement voids, reversal rows, D18.4/5/8/9, 404/409,
+  insufficient-stock, double-void, report exclusion, status exposure.
+- `tests/http/voids-http.test.ts` — 11 tests: OWNER-only 403 for CASHIER, 401
+  unauthenticated, 400 malformed body, status exposure in GET/list responses,
+  409 double-void, D18.8 reports over HTTP, isolated CORRECTION-movement void.
+- Full gate passes: unit 173/173, integration 91/91, concurrency 6/6, HTTP
+  error 12/12, HTTP bounds 11/11, HTTP smoke 15/15, auth 17/17, pagination
+  32/32 (+ voids suites). `test:http:voids` added to `test:all`.
+- `tests/concurrency/void-payment.test.ts` — F-08 D18.11 race: concurrent
+  `voidSale` + linked `createCustomerPayment` (12× per run); exactly one wins,
+  the loser rejects with the expected business rule, no payment ever lands on
+  a voided sale, `reconcile()` clean. Proven to catch the bug: with the
+  `FOR UPDATE` locks removed, the suite fails immediately (both succeed).
+- D18.1–D18.11 recorded in `docs/business-decisions.md` (D18.11 documents the
+  row-lock strategy and its verification).

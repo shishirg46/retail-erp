@@ -1,4 +1,5 @@
 import { BusinessRuleError, NotFoundError } from "../../lib/errors";
+import { lockSaleRow } from "../../lib/locks";
 import { prisma } from "../../lib/prisma";
 import { PrismaCustomerRepository } from "../customers/customer.repository";
 import { PrismaSaleRepository } from "../sales/sale.repository";
@@ -29,7 +30,8 @@ export class CustomerPaymentService {
       }
 
       // 2. Optional sale link: sale must exist, belong to this customer,
-      //    and be a CREDIT sale (D5 + non-credit-sale rule).
+      //    be a CREDIT sale (D5 + non-credit-sale rule), and not be voided
+      //    (D18.4/D18.11 — a voided sale cannot accept new payments).
       const saleId: string | null = input.saleId ?? null;
 
       if (input.saleId) {
@@ -37,6 +39,21 @@ export class CustomerPaymentService {
 
         if (!sale) {
           throw new NotFoundError(`Sale '${input.saleId}' not found`);
+        }
+
+        // D18.11 — serialize with concurrent voiding of this sale. The
+        // exclusive lock on the sales row guarantees the voided-check below
+        // sees whatever the void operation committed.
+        await lockSaleRow(tx, sale.id);
+
+        const voided = await tx.voidRecord.findUnique({
+          where: {
+            targetType_targetId: { targetType: "SALE", targetId: sale.id },
+          },
+        });
+
+        if (voided) {
+          throw new BusinessRuleError("cannot link a payment to a voided sale");
         }
 
         if (sale.customerId !== input.customerId) {

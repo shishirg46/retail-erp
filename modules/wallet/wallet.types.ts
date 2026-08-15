@@ -9,7 +9,8 @@ export type WalletTxnSource =
   | "OWNER_WITHDRAWAL"
   | "EXPENSE"
   | "BANK_DEPOSIT"
-  | "OTHER";
+  | "OTHER"
+  | "VOID";
 
 export interface WalletTransaction {
   id: string;
@@ -19,7 +20,9 @@ export interface WalletTransaction {
   date: Date;
   note: string | null;
   saleId: string | null;
+  purchaseId: string | null;
   creditPaymentId: string | null;
+  supplierPaymentId: string | null;
 }
 
 export interface CreateWalletTransactionInput {
@@ -28,7 +31,9 @@ export interface CreateWalletTransactionInput {
   amount: number; // paisa
   note?: string;
   saleId?: string;
+  purchaseId?: string;
   creditPaymentId?: string;
+  supplierPaymentId?: string;
 }
 
 export interface WalletRepository {
