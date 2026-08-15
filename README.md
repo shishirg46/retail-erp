@@ -87,6 +87,7 @@ repositories. Historical prices are frozen (`SaleItem.pricePerUnit`,
 | Customer payments (credit) | `POST/GET /api/customer-payments`, `POST /api/customer-payments/[id]/void` |
 | Stock adjustments | `POST /api/stock/adjustments`, `GET /api/stock/movements`, `POST /api/stock/movements/[id]/void` |
 | Reports (read-only) | `GET /api/reports/{sales,purchases,stock,customers,suppliers,wallet}` |
+| Exports (read-only, M20) | `GET /api/exports/{sales,purchases,stock,customers,suppliers,wallet}?format=csv\|json&from&to` |
 | Auth (Better Auth) | `/api/auth/*` (sign-in/out, get-session) |
 | Users (OWNER only) | `GET/POST /api/users`, `GET/PATCH/DELETE /api/users/[id]`, `POST /api/users/[id]/{ban,unban,reset-password}` |
 
@@ -120,6 +121,14 @@ Security hardening (M19):
   a process-local async mutex so two concurrent operations can never leave
   zero active OWNERs (D7).
 
+Data exports (M20): the six reports can be downloaded as CSV (UTF-8 BOM,
+RFC-4180, Excel-ready) or JSON via `/api/exports/{name}?format=csv|json`,
+with the same `from`/`to` range semantics as the report endpoints. Exports are
+a pure serialization of the D7 report payload (never recomputed, never
+truncated at the 50-row pagination cap), are streamed chunk-by-chunk, honor the
+D9.6 report visibility matrix (CASHIER: sales + stock only), and exclude
+voided activity exactly like the reports (D18.8). See D20.
+
 ## Setup
 
 ```bash
@@ -141,15 +150,16 @@ npm run dev
 ## Verification workflow
 
 - `npx tsc --noEmit` and `npm run lint` must stay green.
-- `npm run test:all` runs the full D1–D12 regression gate — 25 test
-  files / 338 tests (Vitest) — exclusively against the dedicated `erp_retail_test`
+- `npm run test:all` runs the full D1–D20 regression gate — 36 test files / 419
+  tests (Vitest) — exclusively against the dedicated `erp_retail_test`
   database (`TEST_DATABASE_URL` in `.env`); every suite refuses to run against
   any other database. It covers unit (product validation, error mapping,
   pricing, D1–D7 validators, input bounds, auth config, user management, money,
-  timezone), integration (sales, purchases, customer-payments, supplier-payments, stock
-  adjustments, rollback, ledger, reports, db-hardening), HTTP (error contract,
-  input bounds, full D1–D7 API smoke, F-10 auth flow), and concurrency (stock
-  never goes negative).
+  timezone, export serializers), integration (sales, purchases,
+  customer-payments, supplier-payments, stock adjustments, rollback, ledger,
+  reports, db-hardening, voids), HTTP (error contract, input bounds, full D1–D7
+  API smoke, F-10 auth flow, rate limits, security headers, pagination, voids,
+  exports), and concurrency (stock never goes negative, last-OWNER race).
 - `node scripts/verify-dev-db.mjs` proves the gate could not have touched the
   development database: it snapshots every `erp_retail` table row count plus a
   product digest and fails non-zero on any difference from the baseline
@@ -181,6 +191,12 @@ npm run dev
   - `npm run test:http:pagination` — D12 HTTP suite: backward-compat raw arrays,
     paginated envelope, cursor traversal, filter behavior, invalid params (400),
     limit clamping, deterministic ordering.
+  - `npm run test:http:voids` — M18 HTTP suite: voided sale/purchase/payment/
+    movement flows over real HTTP, reports exclude voided records.
+  - `npm run test:http:exports` — M20 HTTP suite: CSV/JSON exports over real
+    HTTP (BOM, content-type/filename, D9.6 role gating, 400 on bad format,
+    range echo, void exclusion, JSON ≡ report, >50-row completeness, no
+    rate-limit on GET).
   - All HTTP suites refuse to run if `TEST_DATABASE_URL` is not
     `erp_retail_test` or a dev server is already running for the project.
   - Seed a fresh database: `node scripts/seed-owner.mjs` (idempotent OWNER
@@ -194,7 +210,7 @@ npm run dev
 
 ## Documentation
 
-- [`docs/business-decisions.md`](docs/business-decisions.md) — D1–D12 business
+- [`docs/business-decisions.md`](docs/business-decisions.md) — D1–D20 business
   and architecture decisions
 - [`docs/implementation-log.md`](docs/implementation-log.md) — milestone log
 - [`docs/project-progress.md`](docs/project-progress.md) — current status,

@@ -1265,3 +1265,77 @@ concurrency; the mutex closes the race without weakening the guard.
 races cross-demotions, cross-bans, and cross-deletions by two OWNERs with
 `Promise.allSettled`, asserting exactly one succeeds and exactly one active
 OWNER remains (and one user for the deletion scenario).
+
+---
+
+## D20 — Data export as a serialization of the D7 report layer (M20)
+
+**Status:** Accepted — 15 Aug 2026
+
+**Current behavior (before)**
+The six reports exist only as JSON over `GET /api/reports/*`. The shop has no
+way to hand daily sales/purchase/supplier/customer/wallet data to the
+accountant or to archive it as files.
+
+**Proposed behavior**
+Six read-only export endpoints, one per report:
+
+| Export | Route | Roles (D20.3) |
+| ------ | ----- | ------------- |
+| Sales | `GET /api/exports/sales` | OWNER, CASHIER |
+| Stock | `GET /api/exports/stock` | OWNER, CASHIER |
+| Purchases | `GET /api/exports/purchases` | OWNER |
+| Customers | `GET /api/exports/customers` | OWNER |
+| Suppliers | `GET /api/exports/suppliers` | OWNER |
+| Wallet | `GET /api/exports/wallet` | OWNER |
+
+An export is a **serialization of the exact D7 report payload** the matching
+`/api/reports/{name}` endpoint returns — the export module never computes its
+own figures and never touches the database, so the D7 derivation and the D18.8
+void exclusion stay byte-identical to the report endpoints. Query params:
+`from`/`to` use the same D10 report range semantics (coerced naive dates,
+shop-local parsing, range echo), and `format=csv|json` selects the file format
+(default `csv`).
+
+**D20.1 — CSV format.** Comma separator, RFC-4180 double-quote escaping, CRLF
+row terminator, UTF-8 with a byte-order mark so Excel renders non-ASCII values
+(Nepali names, ₹ symbols) correctly. JSON exports are UTF-8 without a BOM.
+CSV document layout (deterministic): a metadata block (`Report`, `From`, `To` —
+the D10 range echo) followed by one table per report section; each table is a
+single-cell title row, a header row, then data rows. Money and quantities are
+plain numbers (rupees, D11). A text-only CSV-injection guard prefixes cells
+that begin with a formula-trigger character (`=`, `+`, `-`, `@`, tab, CR) with a
+single quote; numeric cells are always emitted bare, so negative balances
+(e.g. -120 prepaid credit) are never mangled.
+
+**D20.2 — Full-range, streamed exports.** Exports include **every record
+matching the requested filters/range**, independent of the normal 50-row API
+pagination cap — exports are never truncated at page size. Response bodies are
+streamed (one chunk per CSV row / JSON element) rather than materialized as a
+single in-memory string; no artificial row cap is applied. The only in-memory
+form is the report payload the report service already builds (inherent to the
+D7 derivation).
+
+**D20.3 — Authorization reuses the D9.6 report rules.** CASHIER may export
+exactly the report types they are already permitted to view (sales, stock);
+OWNER retains full export access. There is no separate ADMIN role or export
+permission matrix. Existing controls apply consistently: exports are `GET`
+requests and are never rate-limited (F-08), the `requireRole` guards run the
+DB-backed session check (D9.8) and the same-origin gate (D9.9) is unchanged.
+
+**Reason**
+The accountant-facing need is "the same numbers the reports show, as a file".
+Deriving exports from the report layer (D7) makes drift impossible, needs no
+schema change, and keeps every ledger/stock invariant untouched. Excluding
+voided activity is inherited from the reports (D18.8).
+
+**Database impact:** none.
+**API impact:** six new read-only routes under `/api/exports/*`; no schema,
+migration, or report behavior change.
+**Existing feature impact:** none (exports are additive and read-only).
+**Testing impact:** `tests/unit/exports.test.ts` (RFC-4180 quoting, BOM,
+injection guard, JSON byte-identity, document layout, `format` validation);
+`tests/http/exports-http.test.ts` (headers/filename, BOM bytes, CASHIER 403 on
+the four OWNER-only exports, 401, 400 on bad format, range echo, void
+exclusion, JSON ≡ report endpoint, >50-row completeness beyond the pagination
+cap, and GET reads never rate-limited).

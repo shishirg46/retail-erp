@@ -901,23 +901,67 @@ into the gate).
   documents the rate-limit knobs; `docs/architecture-audit.md` re-audited at
   HEAD `c314953`.
 
+## M20 — Data export (D20.1–D20.3) — COMPLETE — 15 Aug 2026
+
+**What shipped**
+Six read-only export endpoints, one per D7 report, at
+`GET /api/exports/{sales,purchases,stock,customers,suppliers,wallet}` with
+`format=csv|json` (default csv) and the same `from`/`to` report range params:
+
+- `modules/exports/` — `export.types.ts`, `export.validation.ts`
+  (`format` param), `export.definitions.ts` (report → CSV document layout),
+  `csv.ts` (RFC-4180 encoder, UTF-8 BOM, CRLF, text-only formula-injection
+  guard), `json.ts` (piecewise JSON encoder), `export.service.ts`
+  (streaming body + `Content-Disposition`).
+- Six route files under `app/api/exports/`, reusing `ReportService` +
+  `PrismaReportRepository` verbatim. D20.3 reuses the D9.6 role matrix:
+  sales/stock are OWNER+CASHIER; purchases/customers/suppliers/wallet are
+  OWNER-only.
+
+**Design decisions (D20.1–D20.3)**
+An export is a pure serialization of the report payload — no own computation,
+no DB access, no schema change. CSV = metadata block (report name + D10 range
+echo) then one table per report section; numbers stay bare (so negative
+balances survive), text cells with formula-trigger leading chars get an
+injection guard. D20.2: full range, never truncated at the 50-row pagination
+cap, bodies streamed chunk-per-row/element. D20.3: no separate export
+permission matrix; exports are GET reads, so F-08 never rate-limits them.
+
+**Verification**
+- `tests/unit/exports.test.ts` (14): RFC-4180 quoting, BOM prefix, injection
+  guard incl. bare negative money, CRLF rows, JSON byte-identical to
+  `JSON.stringify`, document layout, `format` validation.
+- `tests/http/exports-http.test.ts` (11) over a real dev server:
+  content-type + `Content-Disposition` filenames, BOM bytes, CASHIER 200 on
+  sales/stock and 403 on the four OWNER-only exports, unauthenticated 401,
+  bad format 400, range echo in CSV metadata matches the JSON `range`,
+  voided sale excluded (D18.8), JSON export ≡ `/api/reports/sales` payload,
+  62-product stock export complete while `GET /api/products?limit=50` returns
+  50 (D20.2), and a 12-request export burst never rate-limited (F-08).
+- Full gate: `npm run test:all` — **unit 203 (incl. exports 14), integration 91,
+  concurrency 9, HTTP 17, HTTP bounds 13, HTTP smoke 15, auth 17, pagination 32,
+  voids 11, exports HTTP 11 — 419/419**, exit 0, no leftover dev
+  servers, no stale lock. `npx tsc --noEmit` and `npm run lint` green.
+- D20.1–D20.3 recorded in `docs/business-decisions.md`; README route table +
+  export note updated.
+
 ## Current state (15 Aug 2026)
 
-- **Done through M19:** Products/Pricing, Sales, Purchasing, Suppliers +
+- **Done through M20:** Products/Pricing, Sales, Purchasing, Suppliers +
   Supplier Payments, Customers + Credit Payments, Stock Adjustments, Reporting,
   and audit fixes F-01 (product validation), F-02 (stock concurrency),
   F-03 (error privacy), F-04 (input upper bounds), F-05 (DB hardening),
   F-06/F-09 (integer-paisa money + shop-local timezone), F-07
   (pagination/search/filtering), F-08 (rate limiting), F-10 (auth & roles),
   F-11 (security headers + no-CORS), F-15 (automated regression gate), plus
-  M18 transaction void/correction (D18.1–D18.11) and M19 security hardening
-  (D19.1–D19.4).
-- **Test gate:** `npm run test:all` — unit 189, integration 91, concurrency 9,
-  HTTP 17, HTTP bounds 13, HTTP smoke 15, auth 17, pagination 32, voids 11 =
-  **394 tests, all green**, against `erp_retail_test`. No leftover dev servers
-  or stale lock files after the run.
-- **Open / PM review:** ERP-007 (F-10) and ERP-008 (F-06/F-09) evidence are
-  still awaiting PM review; ERP-009 (M18 voids) evidence is on this log. No
-  new functional milestone is planned to start after M19.
-- **Next:** PM review and closure of ERP-007 / ERP-008 / ERP-009; deployment +
-  load-testing remain the last open audit items.
+  M18 transaction void/correction (D18.1–D18.11), M19 security hardening
+  (D19.1–D19.4), and M20 data export (D20.1–D20.3).
+- **Test gate:** `npm run test:all` — unit 203 (incl. exports 14), integration
+  91, concurrency 9, HTTP 17, HTTP bounds 13, HTTP smoke 15, auth 17,
+  pagination 32, voids 11, exports HTTP 11 = **419 tests, all green**, against
+  `erp_retail_test`. No leftover dev servers or stale lock files after the run.
+- **PM review:** ERP-007 (F-10), ERP-008 (F-06/F-09), and ERP-009 (M18 voids)
+  closed COMPLETE by PM on 15 Aug 2026; M19 and M20 complete. No further
+  functional milestone is planned after M20 until the PM approves one.
+- **Next:** deployment + load-testing remain the last open operational audit
+  items (backups/observability documented as remaining).
