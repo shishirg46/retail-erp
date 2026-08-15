@@ -1,7 +1,7 @@
 import { prisma } from "../../lib/prisma";
 import { paisaFromDecimal, paisaToRupees } from "../../lib/money";
 
-import type { Supplier, SupplierRepository, CreateSupplierInput } from "./supplier.types";
+import type { Supplier, SupplierRepository, CreateSupplierInput, ListSuppliersInput } from "./supplier.types";
 
 type Db = {
   supplier: typeof prisma.supplier;
@@ -53,6 +53,30 @@ export class PrismaSupplierRepository implements SupplierRepository {
 
   async list(): Promise<Supplier[]> {
     const raw = await this.db.supplier.findMany({ orderBy: { createdAt: "desc" } });
+
+    return raw.map(toSupplier);
+  }
+
+  async listPaginated(input: ListSuppliersInput): Promise<Supplier[]> {
+    const { search, cursor, limit } = input;
+
+    const where: Record<string, unknown> = {};
+
+    if (search) {
+      where.name = { contains: search, mode: "insensitive" };
+    }
+
+    const raw = await this.db.supplier.findMany({
+      where,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      ...(cursor
+        ? {
+            cursor: { id: cursor.id },
+            skip: 1,
+          }
+        : {}),
+      take: limit + 1,
+    });
 
     return raw.map(toSupplier);
   }

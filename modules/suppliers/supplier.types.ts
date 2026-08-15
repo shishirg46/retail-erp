@@ -13,10 +13,17 @@ export interface CreateSupplierInput {
   contact?: string;
 }
 
+export interface ListSuppliersInput {
+  search?: string;
+  cursor?: { date: Date; id: string };
+  limit: number;
+}
+
 export interface SupplierRepository {
   create(input: CreateSupplierInput): Promise<Supplier>;
   findById(id: string): Promise<Supplier | null>;
   list(): Promise<Supplier[]>;
+  listPaginated(input: ListSuppliersInput): Promise<Supplier[]>;
   // amountChange is signed and in paisa: positive = the shop owes more,
   // negative = money paid toward what the shop owes.
   updateBalance(id: string, amountChange: number): Promise<Supplier>;

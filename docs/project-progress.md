@@ -47,17 +47,20 @@ read-only reporting layer.
 | Audit fix — F-05 DB hardening | COMPLETE (Milestone 13) — 17 CHECK constraints + 9 report indexes (migration `20260814034336_db_hardening_f05`); pre-migration validator green on both DBs; `tests/integration/db-hardening.test.ts` 24/24 (constraints/indexes exist, raw-SQL rejections, signed semantics preserved). Gate now 18 suites / 221 tests. **CLOSED (PM-approved) — ERP-006** |
 | Audit fix — F-10 auth & roles | COMPLETE (Milestone 14) — Better Auth (local username+password, no sign-up), OWNER/CASHIER role matrix (D9.3), every ERP route guarded, OWNER user management; `app/api/users`, `modules/users/`, seed script. Gate now 21 suites / 259 tests. Evidence on ERP-007, left open for PM review |
 | Audit fix — F-06/F-09 money & timezone | COMPLETE (Milestone 15) — D11 integer-paisa domain money (`lib/money.ts`; validators/ services/repositories/routes converted, rupees in/out at the API unchanged, Postgres DECIMAL rupees unchanged — no migration) + D10 shop-local timezone (`lib/timezone.ts`, `ERP_TIMEZONE`, default `Asia/Kathmandu`; shop-local naive report params, offset-string range echo). Robustness ride-along: `lib/auth/session-cookie.ts` shared cookie gate + `requireUser` cookie short-circuit. Gate now 23 test files / 283 tests. Evidence on ERP-008, left open for PM review |
-| Production readiness | NOT YET COMPLETE — F-10 auth implemented (ERP-007 pending PM review) and F-06/F-09 done (ERP-008 pending PM review); remaining audit fixes F-07/08/11, deployment, and load testing still open |
+| Audit fix — F-07 pagination/search/filtering | COMPLETE (Milestone 16) — D12 cursor-based pagination on all 8 list endpoints; backward-compatible (no params → raw array, any param → `{ data, paging }` envelope); default 50, max 500; `search`, `paymentType`, `category`, `supplierId`, `customerId`, `productId`, `reason` filters; `lib/pagination.ts` shared library; 23 unit + 32 HTTP tests. Gate now 25 test files / 315 tests |
+| Production readiness | NOT YET COMPLETE — F-10 auth implemented (ERP-007 pending PM review) and F-06/F-09 done (ERP-008 pending PM review); F-07 pagination complete; remaining audit fixes F-08/11, deployment, and load testing still open |
 
 Evidence:
 
 - **Branch:** `main`
 - **Base commit:** `b62eff9` (F-10 evidence) — Milestone 15 commits on top.
 - **Milestone/feature commits:** verifiable via `git rev-list --count 9065199..HEAD`.
-- **Working tree:** clean after the Milestone 15 commit (`git status -s` empty),
+- **Working tree:** clean after the Milestone 16 commit (`git status -s` empty),
   pushed to sync with `origin/main`.
 - **Typecheck / lint:** currently pass — `npx tsc --noEmit` OK, `npm run lint`
   OK.
+- **Test gate:** 25 test files / 338 tests (`npm run test:all` green) — includes
+  D12 pagination tests (23 unit + 32 HTTP).
 
 ## 3. Completed Milestones
 
@@ -99,6 +102,7 @@ recorded, not reinterpreted.
 | D9 | Authentication & roles (F-10): Better Auth (local username+password, no OAuth/MFA/sign-up); exactly two roles OWNER/CASHIER; permission matrix D9.3 (CASHIER = sales, customers view/create, customer payments, stock adjustments, stock movements, sales+stock reports); coarse proxy gate + authoritative DB-backed check (D9.8); same-origin enforcement on state-changing requests (D9.9); derived internal email `<username>@erp.local` never exposed (D9.10); reset-password revokes sessions (D9.5) | Locked — implemented |
 | D10 | Shop-local timezone (F-09): `ERP_TIMEZONE` env (default `Asia/Kathmandu`, read at runtime — no schema change); naive `YYYY-MM-DD` report params interpreted as shop-local wall clock via Intl-offset technique; explicit-zone ISO strings parse as-is; report `range` echo is a shop-local offset string, never `.toISOString()`; impossible dates rejected 400 | Locked — implemented |
 | D11 | Integer-paisa domain money (F-06): all app-domain money arithmetic in whole paisa; validators convert rupees→paisa once (round-half-up, exactly once); repositories read/write rupees `DECIMAL` via `paisaFromDecimal`/`paisaToRupees` (no migration); routes return rupees via `to*Api` mappers; API/report JSON shape and denomination unchanged; caps `MAX_AMOUNT`/`MAX_ITEM_QUANTITY`/`MAX_ITEMS_PER_DOCUMENT` preserved + new `MAX_AMOUNT_PAISA` | Locked — implemented |
+| D12 | Cursor-based pagination, search, and filtering (F-07): optional cursor params on all 8 list endpoints; backward-compatible (no params → raw array, any param → `{ data, paging }` envelope); default 50, max 500; cursor = base64url(`date|id`); ordering: `date DESC, id DESC` (transactional) / `createdAt DESC, id DESC` (master-data); filters: search (name ILIKE), paymentType, category, supplierId, customerId, productId, reason; `lib/pagination.ts` shared library | Locked — implemented |
 
 ## 5. Architecture Currently Implemented
 

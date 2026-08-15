@@ -82,9 +82,9 @@ repositories. Historical prices are frozen (`SaleItem.pricePerUnit`,
 | Sales (CASH/ECASH/CREDIT) | `POST/GET /api/sales`, `GET /api/sales/[id]` |
 | Suppliers | `POST/GET /api/suppliers`, `GET /api/suppliers/[id]` |
 | Purchases (CASH/CREDIT) | `POST/GET /api/purchases`, `GET /api/purchases/[id]` |
-| Supplier payments | `POST /api/supplier-payments` |
+| Supplier payments | `POST/GET /api/supplier-payments` |
 | Customers | `POST/GET /api/customers`, `GET /api/customers/[id]` |
-| Customer payments (credit) | `POST /api/customer-payments` |
+| Customer payments (credit) | `POST/GET /api/customer-payments` |
 | Stock adjustments | `POST /api/stock/adjustments`, `GET /api/stock/movements` |
 | Reports (read-only) | `GET /api/reports/{sales,purchases,stock,customers,suppliers,wallet}` |
 | Auth (Better Auth) | `/api/auth/*` (sign-in/out, get-session) |
@@ -121,8 +121,8 @@ npm run dev
 ## Verification workflow
 
 - `npx tsc --noEmit` and `npm run lint` must stay green.
-- `npm run test:all` runs the full D1–D11 + F-10 regression gate — 23 test
-  files / 283 tests (Vitest) — exclusively against the dedicated `erp_retail_test`
+- `npm run test:all` runs the full D1–D12 regression gate — 25 test
+  files / 338 tests (Vitest) — exclusively against the dedicated `erp_retail_test`
   database (`TEST_DATABASE_URL` in `.env`); every suite refuses to run against
   any other database. It covers unit (product validation, error mapping,
   pricing, D1–D7 validators, input bounds, auth config, user management, money,

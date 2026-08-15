@@ -50,4 +50,11 @@ export class SupplierPaymentService {
     const repository = new PrismaSupplierPaymentRepository(this.db);
     return repository.list();
   }
+
+  async listSupplierPaymentsPaginated(
+    input: import("./supplier-payment.types").ListSupplierPaymentsInput
+  ): Promise<SupplierPayment[]> {
+    const repository = new PrismaSupplierPaymentRepository(this.db);
+    return repository.listPaginated(input);
+  }
 }

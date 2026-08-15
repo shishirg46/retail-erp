@@ -93,4 +93,9 @@ export class PurchaseService {
     const repository = new PrismaPurchaseRepository(this.db);
     return repository.list();
   }
+
+  async listPurchasesPaginated(input: import("./purchase.types").ListPurchasesInput): Promise<Purchase[]> {
+    const repository = new PrismaPurchaseRepository(this.db);
+    return repository.listPaginated(input);
+  }
 }

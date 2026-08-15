@@ -7,6 +7,7 @@ import type {
   Product,
   ProductRepository,
   CreateProductInput,
+  ListProductsInput,
 } from "./product.types";
 
 type Db = {
@@ -85,6 +86,36 @@ export class PrismaProductRepository implements ProductRepository {
 
   async list(): Promise<Product[]> {
     const raw = await this.db.product.findMany(withPriceTiers);
+
+    return raw.map(toProduct);
+  }
+
+  async listPaginated(input: ListProductsInput): Promise<Product[]> {
+    const { search, category, cursor, limit } = input;
+
+    const where: Record<string, unknown> = {};
+
+    if (search) {
+      where.name = { contains: search, mode: "insensitive" };
+    }
+
+    if (category) {
+      where.category = category;
+    }
+
+    // Fetch limit + 1 to detect whether there is a next page.
+    const raw = await this.db.product.findMany({
+      where,
+      include: { priceTiers: true },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      ...(cursor
+        ? {
+            cursor: { id: cursor.id },
+            skip: 1, // skip the cursor row itself
+          }
+        : {}),
+      take: limit + 1,
+    });
 
     return raw.map(toProduct);
   }

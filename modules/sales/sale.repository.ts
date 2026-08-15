@@ -6,6 +6,7 @@ import type {
   Sale,
   SaleRepository,
   CreateSaleRepositoryInput,
+  ListSalesInput,
 } from "./sale.types";
 
 type Db = {
@@ -48,6 +49,31 @@ export class PrismaSaleRepository implements SaleRepository {
     const raw = await this.db.sale.findMany({
       include: { items: true },
       orderBy: { date: "desc" },
+    });
+
+    return raw.map(toSale);
+  }
+
+  async listPaginated(input: ListSalesInput): Promise<Sale[]> {
+    const { paymentType, cursor, limit } = input;
+
+    const where: Record<string, unknown> = {};
+
+    if (paymentType) {
+      where.paymentType = paymentType;
+    }
+
+    const raw = await this.db.sale.findMany({
+      where,
+      include: { items: true },
+      orderBy: [{ date: "desc" }, { id: "desc" }],
+      ...(cursor
+        ? {
+            cursor: { id: cursor.id },
+            skip: 1,
+          }
+        : {}),
+      take: limit + 1,
     });
 
     return raw.map(toSale);

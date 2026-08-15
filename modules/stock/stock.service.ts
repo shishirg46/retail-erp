@@ -91,4 +91,11 @@ export class StockService {
 
     return repository.list();
   }
+
+  async listMovementsPaginated(
+    input: import("./stock.types").ListStockMovementsInput
+  ): Promise<StockMovement[]> {
+    const repository = new PrismaStockRepository(this.db);
+    return repository.listPaginated(input);
+  }
 }

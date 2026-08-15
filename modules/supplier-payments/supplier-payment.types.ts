@@ -12,7 +12,14 @@ export interface CreateSupplierPaymentInput {
   amount: number; // paisa
 }
 
+export interface ListSupplierPaymentsInput {
+  supplierId?: string;
+  cursor?: { date: Date; id: string };
+  limit: number;
+}
+
 export interface SupplierPaymentRepository {
   create(input: CreateSupplierPaymentInput): Promise<SupplierPayment>;
   list(): Promise<SupplierPayment[]>;
+  listPaginated(input: ListSupplierPaymentsInput): Promise<SupplierPayment[]>;
 }

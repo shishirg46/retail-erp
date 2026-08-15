@@ -152,4 +152,9 @@ export class SaleService {
     const repository = new PrismaSaleRepository(this.db);
     return repository.list();
   }
+
+  async listSalesPaginated(input: import("./sale.types").ListSalesInput): Promise<Sale[]> {
+    const repository = new PrismaSaleRepository(this.db);
+    return repository.listPaginated(input);
+  }
 }

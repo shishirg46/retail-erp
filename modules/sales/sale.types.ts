@@ -51,8 +51,15 @@ export interface CreateSaleRepositoryInput {
   }[];
 }
 
+export interface ListSalesInput {
+  paymentType?: PaymentType;
+  cursor?: { date: Date; id: string };
+  limit: number;
+}
+
 export interface SaleRepository {
   create(input: CreateSaleRepositoryInput): Promise<Sale>;
   findById(id: string): Promise<Sale | null>;
   list(): Promise<Sale[]>;
+  listPaginated(input: ListSalesInput): Promise<Sale[]>;
 }

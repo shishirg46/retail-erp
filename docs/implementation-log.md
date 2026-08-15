@@ -685,3 +685,46 @@ into the gate).
 - **Next:** PM review of **ERP-007** (F-10 evidence) and **ERP-008** (F-06/F-09
   evidence); remaining audit fixes F-07/08/11 require their own business
   decisions before code.
+
+---
+
+## Milestone 16 — Cursor-based pagination, search, and filtering (D12 / F-07) (15 Aug 2026)
+
+**Shipped**
+
+- `lib/pagination.ts` — shared pagination library: cursor encode/decode
+  (`date|id` → base64url), query param parsing (`cursor`, `limit`, per-endpoint
+  filters), response types (`PaginatedResponse<T>`, `PagingMeta`), validation
+  (max 500, invalid cursor → 400), `buildPaginatedResponse` helper.
+- **8 list endpoints** updated with optional cursor-based pagination:
+  - `GET /api/products` — `search` (name), `category` filter, `createdAt DESC, id DESC`
+  - `GET /api/customers` — `search` (name), `createdAt DESC, id DESC`
+  - `GET /api/suppliers` — `search` (name), `createdAt DESC, id DESC`
+  - `GET /api/sales` — `paymentType` filter, `date DESC, id DESC`
+  - `GET /api/purchases` — `paymentType`, `supplierId` filters, `date DESC, id DESC`
+  - `GET /api/supplier-payments` — `supplierId` filter, `date DESC, id DESC`
+  - `GET /api/customer-payments` — `customerId` filter, `date DESC, id DESC`
+  - `GET /api/stock/movements` — `productId` (existing), `reason` filter, `date DESC, id DESC`
+- **Backward compatible:** no pagination params → existing raw-array response;
+  any pagination param present → `{ data, paging }` envelope.
+- Default page size: 50. Maximum: 500. Cursor ordering: `date DESC, id DESC`.
+- Master-data ordering: `createdAt DESC, id DESC`.
+- `Product` type now exposes `createdAt` (was already in the DB, previously
+  omitted from the domain type).
+- Repository `listPaginated()` methods added to all 8 repositories.
+- Service `listXxxPaginated()` methods added where services were the route entry
+  point (sales, purchases, supplier-payments, customer-payments, stock).
+
+**Verified**
+
+- `tsc --noEmit` green; `npm run lint` green.
+- `tests/unit/pagination.test.ts` — 23 tests: cursor round-trip, base64url
+  format, identical-timestamp tiebreaker, invalid cursor rejection, param
+  parsing, filter parsing, `buildPaginatedResponse` edge cases, constants.
+- `tests/http/pagination.test.ts` — 32 tests: backward-compat raw arrays for
+  all 8 endpoints, paginated envelope for all 8, cursor traversal, filter
+  behavior (search, category, paymentType, supplierId, productId, reason),
+  invalid query params (400), limit clamping, deterministic ordering.
+- All existing unit tests (173/173) and HTTP tests (d1-d7-smoke 15/15,
+  input-bounds 11/11) pass. `error-handling.test.ts` passes in isolation
+  (pre-existing parallel port-collision issue).

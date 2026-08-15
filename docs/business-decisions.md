@@ -586,3 +586,89 @@ whole-paisa sums converted to rupees once at payload construction.
 **Testing impact:** `tests/unit/money.test.ts` (12 tests); integration/unit
 suites assert paisa domain values where they call services/repositories, while
 HTTP and report rupee expectations are unchanged (verified over real HTTP).
+
+---
+
+## D12 — Cursor-based pagination, search, and filtering (F-07)
+
+**Status:** Accepted — 15 Aug 2026
+
+**Current behavior (before)**
+All `GET /api/*` list endpoints return full unbounded JSON arrays. As data grows,
+response sizes scale linearly with row count, there is no search or filtering
+capability, and clients have no way to page through results.
+
+**Proposed behavior**
+Every list endpoint gains **optional** cursor-based pagination, text search, and
+attribute filtering via query parameters. The change is fully backward compatible:
+
+**Option A — backward compatibility.**
+- No pagination params → existing raw-array response (unchanged shape).
+- Any pagination param present → `{ data: T[], paging: PagingMeta }` envelope.
+
+**Cursor design.**
+- Cursor encodes `(date, id)` as a base64url string: `date_iso|uuid`.
+- Ordering: `date DESC, id DESC` for date-ordered endpoints; `createdAt DESC, id DESC`
+  for master-data endpoints (products, customers, suppliers).
+- The `(date, id)` pair ensures deterministic ordering even when multiple rows
+  share the same timestamp.
+
+**Query parameters (all optional).**
+
+| Param | Type | Default | Max | Description |
+| ----- | ---- | ------- | --- | ----------- |
+| `cursor` | string | — | — | Opaque cursor from previous response's `paging.next` |
+| `limit` | integer | 50 | 500 | Page size |
+| `search` | string | — | — | Case-insensitive substring match on `name` (master-data) or `id` prefix (transactional) |
+| `paymentType` | string | — | — | Filter by payment type (sales, purchases) |
+| `categoryId` | string | — | — | Filter by product category |
+| `supplierId` | string | — | — | Filter by supplier (purchases, supplier-payments) |
+| `customerId` | string | — | — | Filter by customer (customer-payments) |
+| `productId` | string | — | — | Filter by product (stock-movements) |
+| `reason` | string | — | — | Filter by stock reason (stock-movements) |
+
+**Response envelope (when pagination params present).**
+```json
+{
+  "data": [...],
+  "paging": {
+    "next": "base64url_cursor | null",
+    "hasMore": true | false
+  }
+}
+```
+
+`next` is `null` when `hasMore` is `false` (last page).
+
+**Filtering rules.**
+- Filters are AND-combined.
+- `search` is a case-insensitive `ILIKE %term%` on the relevant name column.
+- Invalid query parameters (non-integer limit, unknown params) → `400`.
+- `limit` below 1 or above 500 → clamped to bounds.
+
+**Reason**
+Unbounded list responses will not scale; the shop needs to browse products,
+customers, and transaction history without loading entire tables. Cursor-based
+pagination avoids the N+1 and offset-drift problems of offset pagination, and
+the backward-compatible envelope lets existing (and future) API consumers
+opt in incrementally.
+
+**Database impact:** none — no schema migration, no new indexes. Pagination uses
+the existing `(date, id)` and `(createdAt, id)` column combinations already
+covered by primary keys and existing indexes. Performance analysis is a
+separate step.
+
+**API impact:** `GET /api/products`, `GET /api/sales`, `GET /api/purchases`,
+`GET /api/suppliers`, `GET /api/customers`, `GET /api/supplier-payments`,
+`GET /api/customer-payments`, `GET /api/stock/movements` all gain optional
+pagination/search/filter query params. No params = same raw-array shape.
+
+**Existing feature impact:** none — existing clients that do not send pagination
+params see the exact same response. No service business logic, no transactional
+code, no report logic is changed.
+
+**Testing impact:** `tests/unit/pagination.test.ts` (cursor encoding/decoding,
+identical-timestamp tiebreaker, page boundaries, invalid params, filter
+combinations); `tests/http/pagination.test.ts` (backward-compat raw arrays,
+envelope shape, cursor traversal, filter behavior over real HTTP); existing
+test suites unchanged and green.

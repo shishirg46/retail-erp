@@ -3,6 +3,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole, OWNER } from "@/lib/auth/authorize";
 import { prisma } from "@/lib/prisma";
 import { toHttpResponse } from "@/lib/response";
+import {
+  parsePaginationParams,
+  parseStringFilter,
+  encodeCursor,
+  buildPaginatedResponse,
+} from "@/lib/pagination";
 import { SupplierPaymentService } from "@/modules/supplier-payments/supplier-payment.service";
 import { toSupplierPaymentApi } from "@/modules/supplier-payments/supplier-payment.repository";
 import { validateCreateSupplierPaymentInput } from "@/modules/supplier-payments/supplier-payment.validation";
@@ -33,9 +39,38 @@ export async function POST(req: NextRequest) {
 export async function GET(req: NextRequest) {
   try {
     await requireRole(req, [OWNER]);
-    const payments = await new SupplierPaymentService(prisma).listSupplierPayments();
+    const { searchParams } = req.nextUrl;
+    const service = new SupplierPaymentService(prisma);
 
-    return NextResponse.json(payments.map(toSupplierPaymentApi));
+    const hasPaginationParam =
+      searchParams.has("cursor") ||
+      searchParams.has("limit") ||
+      searchParams.has("supplierId");
+
+    if (!hasPaginationParam) {
+      const payments = await service.listSupplierPayments();
+      return NextResponse.json(payments.map(toSupplierPaymentApi));
+    }
+
+    const { cursor, limit } = parsePaginationParams(searchParams);
+    const supplierId = parseStringFilter(searchParams, "supplierId");
+
+    const payments = await service.listSupplierPaymentsPaginated({
+      supplierId,
+      cursor: cursor ?? undefined,
+      limit,
+    });
+
+    const response = buildPaginatedResponse(
+      payments,
+      limit,
+      (item) => encodeCursor(item.date, item.id)
+    );
+
+    return NextResponse.json({
+      data: response.data.map(toSupplierPaymentApi),
+      paging: response.paging,
+    });
   } catch (error) {
     return toHttpResponse(error);
   }

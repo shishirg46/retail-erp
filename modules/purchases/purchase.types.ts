@@ -42,8 +42,16 @@ export interface CreatePurchaseRepositoryInput {
   }[];
 }
 
+export interface ListPurchasesInput {
+  paymentType?: PurchasePaymentType;
+  supplierId?: string;
+  cursor?: { date: Date; id: string };
+  limit: number;
+}
+
 export interface PurchaseRepository {
   create(input: CreatePurchaseRepositoryInput): Promise<Purchase>;
   findById(id: string): Promise<Purchase | null>;
   list(): Promise<Purchase[]>;
+  listPaginated(input: ListPurchasesInput): Promise<Purchase[]>;
 }

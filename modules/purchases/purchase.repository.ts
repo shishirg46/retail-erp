@@ -6,6 +6,7 @@ import type {
   Purchase,
   PurchaseRepository,
   CreatePurchaseRepositoryInput,
+  ListPurchasesInput,
 } from "./purchase.types";
 
 type Db = {
@@ -48,6 +49,35 @@ export class PrismaPurchaseRepository implements PurchaseRepository {
     const raw = await this.db.purchase.findMany({
       include: { items: true },
       orderBy: { date: "desc" },
+    });
+
+    return raw.map(toPurchase);
+  }
+
+  async listPaginated(input: ListPurchasesInput): Promise<Purchase[]> {
+    const { paymentType, supplierId, cursor, limit } = input;
+
+    const where: Record<string, unknown> = {};
+
+    if (paymentType) {
+      where.paymentType = paymentType;
+    }
+
+    if (supplierId) {
+      where.supplierId = supplierId;
+    }
+
+    const raw = await this.db.purchase.findMany({
+      where,
+      include: { items: true },
+      orderBy: [{ date: "desc" }, { id: "desc" }],
+      ...(cursor
+        ? {
+            cursor: { id: cursor.id },
+            skip: 1,
+          }
+        : {}),
+      take: limit + 1,
     });
 
     return raw.map(toPurchase);

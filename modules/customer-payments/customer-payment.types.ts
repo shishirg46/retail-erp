@@ -22,7 +22,14 @@ export interface CreateCreditPaymentRepositoryInput {
   saleId: string | null;
 }
 
+export interface ListCreditPaymentsInput {
+  customerId?: string;
+  cursor?: { date: Date; id: string };
+  limit: number;
+}
+
 export interface CreditPaymentRepository {
   create(input: CreateCreditPaymentRepositoryInput): Promise<CreditPayment>;
   list(): Promise<CreditPayment[]>;
+  listPaginated(input: ListCreditPaymentsInput): Promise<CreditPayment[]>;
 }

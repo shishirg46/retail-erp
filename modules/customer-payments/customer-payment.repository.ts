@@ -5,6 +5,7 @@ import type {
   CreditPayment,
   CreditPaymentRepository,
   CreateCreditPaymentRepositoryInput,
+  ListCreditPaymentsInput,
 } from "./customer-payment.types";
 
 type Db = {
@@ -53,6 +54,30 @@ export class PrismaCreditPaymentRepository implements CreditPaymentRepository {
   async list(): Promise<CreditPayment[]> {
     const raw = await this.db.creditPayment.findMany({
       orderBy: { date: "desc" },
+    });
+
+    return raw.map(toCreditPayment);
+  }
+
+  async listPaginated(input: ListCreditPaymentsInput): Promise<CreditPayment[]> {
+    const { customerId, cursor, limit } = input;
+
+    const where: Record<string, unknown> = {};
+
+    if (customerId) {
+      where.customerId = customerId;
+    }
+
+    const raw = await this.db.creditPayment.findMany({
+      where,
+      orderBy: [{ date: "desc" }, { id: "desc" }],
+      ...(cursor
+        ? {
+            cursor: { id: cursor.id },
+            skip: 1,
+          }
+        : {}),
+      take: limit + 1,
     });
 
     return raw.map(toCreditPayment);

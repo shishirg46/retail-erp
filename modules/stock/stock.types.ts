@@ -33,8 +33,16 @@ export interface AdjustStockResult {
   movement: StockMovement;
 }
 
+export interface ListStockMovementsInput {
+  productId?: string;
+  reason?: StockReason;
+  cursor?: { date: Date; id: string };
+  limit: number;
+}
+
 export interface StockRepository {
   createMovement(input: CreateStockMovementInput): Promise<StockMovement>;
   listByProduct(productId: string): Promise<StockMovement[]>;
   list(): Promise<StockMovement[]>;
+  listPaginated(input: ListStockMovementsInput): Promise<StockMovement[]>;
 }

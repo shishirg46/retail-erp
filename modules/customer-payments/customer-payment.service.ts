@@ -78,4 +78,11 @@ export class CustomerPaymentService {
     const repository = new PrismaCreditPaymentRepository(this.db);
     return repository.list();
   }
+
+  async listCustomerPaymentsPaginated(
+    input: import("./customer-payment.types").ListCreditPaymentsInput
+  ): Promise<CreditPayment[]> {
+    const repository = new PrismaCreditPaymentRepository(this.db);
+    return repository.listPaginated(input);
+  }
 }

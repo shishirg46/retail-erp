@@ -18,7 +18,8 @@
     "test:integration": "vitest run tests/integration",
     "test:http:smoke": "vitest run tests/http/d1-d7-smoke.test.ts",
     "test:auth": "vitest run tests/http/auth-flow.test.ts",
-    "test:all": "npm run test:unit && npm run test:integration && npm run test:concurrency && npm run test:http && npm run test:http:bounds && npm run test:http:smoke && npm run test:auth"
+    "test:http:pagination": "vitest run tests/http/pagination.test.ts",
+    "test:all": "npm run test:unit && npm run test:integration && npm run test:concurrency && npm run test:http && npm run test:http:bounds && npm run test:http:smoke && npm run test:auth && npm run test:http:pagination"
   },
   "dependencies": {
     "@better-auth/prisma-adapter": "^1.6.28",

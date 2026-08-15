@@ -18,6 +18,7 @@ export interface Product {
   currentPrice: number; // paisa
   stockQty: number;
   priceTiers: PriceTier[];
+  createdAt: Date;
 }
 
 
@@ -30,10 +31,18 @@ export interface CreateProductInput {
   priceTiers?: PriceTier[];
 }
 
+export interface ListProductsInput {
+  search?: string;
+  category?: string;
+  cursor?: { date: Date; id: string };
+  limit: number;
+}
+
 export interface ProductRepository {
   create(input: CreateProductInput): Promise<Product>;
   findById(id: string): Promise<Product | null>;
   list(): Promise<Product[]>;
+  listPaginated(input: ListProductsInput): Promise<Product[]>;
   updateStock(id: string, qtyChange: number): Promise<Product>;
   // Atomically decrement stock if sufficient quantity is available (F-02).
   // Returns the updated product on success, or null when stockQty < qty.

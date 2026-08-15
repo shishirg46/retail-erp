@@ -2,7 +2,7 @@ import { prisma } from "../../lib/prisma";
 import { paisaToRupees } from "../../lib/money";
 
 import { toCustomer } from "./customer.mapper";
-import type { Customer, CustomerRepository, CreateCustomerInput } from "./customer.types";
+import type { Customer, CustomerRepository, CreateCustomerInput, ListCustomersInput } from "./customer.types";
 
 type Db = {
   customer: typeof prisma.customer;
@@ -30,6 +30,30 @@ export class PrismaCustomerRepository implements CustomerRepository {
 
   async list(): Promise<Customer[]> {
     const raw = await this.db.customer.findMany({ orderBy: { createdAt: "desc" } });
+
+    return raw.map(toCustomer);
+  }
+
+  async listPaginated(input: ListCustomersInput): Promise<Customer[]> {
+    const { search, cursor, limit } = input;
+
+    const where: Record<string, unknown> = {};
+
+    if (search) {
+      where.name = { contains: search, mode: "insensitive" };
+    }
+
+    const raw = await this.db.customer.findMany({
+      where,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      ...(cursor
+        ? {
+            cursor: { id: cursor.id },
+            skip: 1,
+          }
+        : {}),
+      take: limit + 1,
+    });
 
     return raw.map(toCustomer);
   }

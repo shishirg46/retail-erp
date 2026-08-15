@@ -5,6 +5,7 @@ import type {
   SupplierPayment,
   SupplierPaymentRepository,
   CreateSupplierPaymentInput,
+  ListSupplierPaymentsInput,
 } from "./supplier-payment.types";
 
 type Db = {
@@ -50,6 +51,30 @@ export class PrismaSupplierPaymentRepository implements SupplierPaymentRepositor
   async list(): Promise<SupplierPayment[]> {
     const raw = await this.db.supplierPayment.findMany({
       orderBy: { date: "desc" },
+    });
+
+    return raw.map(toSupplierPayment);
+  }
+
+  async listPaginated(input: ListSupplierPaymentsInput): Promise<SupplierPayment[]> {
+    const { supplierId, cursor, limit } = input;
+
+    const where: Record<string, unknown> = {};
+
+    if (supplierId) {
+      where.supplierId = supplierId;
+    }
+
+    const raw = await this.db.supplierPayment.findMany({
+      where,
+      orderBy: [{ date: "desc" }, { id: "desc" }],
+      ...(cursor
+        ? {
+            cursor: { id: cursor.id },
+            skip: 1,
+          }
+        : {}),
+      take: limit + 1,
     });
 
     return raw.map(toSupplierPayment);

@@ -4,6 +4,7 @@ import type {
   StockMovement,
   StockRepository,
   CreateStockMovementInput,
+  ListStockMovementsInput,
 } from "./stock.types";
 
 type Db = {
@@ -51,6 +52,34 @@ export class PrismaStockRepository implements StockRepository {
   async list(): Promise<StockMovement[]> {
     const raw = await this.db.stockMovement.findMany({
       orderBy: { date: "desc" },
+    });
+
+    return raw.map(toStockMovement);
+  }
+
+  async listPaginated(input: ListStockMovementsInput): Promise<StockMovement[]> {
+    const { productId, reason, cursor, limit } = input;
+
+    const where: Record<string, unknown> = {};
+
+    if (productId) {
+      where.productId = productId;
+    }
+
+    if (reason) {
+      where.reason = reason;
+    }
+
+    const raw = await this.db.stockMovement.findMany({
+      where,
+      orderBy: [{ date: "desc" }, { id: "desc" }],
+      ...(cursor
+        ? {
+            cursor: { id: cursor.id },
+            skip: 1,
+          }
+        : {}),
+      take: limit + 1,
     });
 
     return raw.map(toStockMovement);

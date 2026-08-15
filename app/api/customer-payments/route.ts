@@ -3,6 +3,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole, CASHIER, OWNER } from "@/lib/auth/authorize";
 import { prisma } from "@/lib/prisma";
 import { toHttpResponse } from "@/lib/response";
+import {
+  parsePaginationParams,
+  parseStringFilter,
+  encodeCursor,
+  buildPaginatedResponse,
+} from "@/lib/pagination";
 import { CustomerPaymentService } from "@/modules/customer-payments/customer-payment.service";
 import { toCreditPaymentApi } from "@/modules/customer-payments/customer-payment.repository";
 import { validateCreateCustomerPaymentInput } from "@/modules/customer-payments/customer-payment.validation";
@@ -33,9 +39,38 @@ export async function POST(req: NextRequest) {
 export async function GET(req: NextRequest) {
   try {
     await requireRole(req, [OWNER, CASHIER]);
-    const payments = await new CustomerPaymentService(prisma).listCustomerPayments();
+    const { searchParams } = req.nextUrl;
+    const service = new CustomerPaymentService(prisma);
 
-    return NextResponse.json(payments.map(toCreditPaymentApi));
+    const hasPaginationParam =
+      searchParams.has("cursor") ||
+      searchParams.has("limit") ||
+      searchParams.has("customerId");
+
+    if (!hasPaginationParam) {
+      const payments = await service.listCustomerPayments();
+      return NextResponse.json(payments.map(toCreditPaymentApi));
+    }
+
+    const { cursor, limit } = parsePaginationParams(searchParams);
+    const customerId = parseStringFilter(searchParams, "customerId");
+
+    const payments = await service.listCustomerPaymentsPaginated({
+      customerId,
+      cursor: cursor ?? undefined,
+      limit,
+    });
+
+    const response = buildPaginatedResponse(
+      payments,
+      limit,
+      (item) => encodeCursor(item.date, item.id)
+    );
+
+    return NextResponse.json({
+      data: response.data.map(toCreditPaymentApi),
+      paging: response.paging,
+    });
   } catch (error) {
     return toHttpResponse(error);
   }
