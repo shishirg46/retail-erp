@@ -945,6 +945,54 @@ permission matrix; exports are GET reads, so F-08 never rate-limits them.
 - D20.1–D20.3 recorded in `docs/business-decisions.md`; README route table +
   export note updated.
 
+## M21 — Responsive mobile-first frontend — PLANNED (kickoff package) — 15 Aug 2026
+
+**Status: planning only — no frontend implementation yet.**
+
+What was prepared (the M21 kickoff package):
+
+- `docs/frontend-plan.md` — complete responsive information architecture
+  (sitemap, per-breakpoint navigation model, D9.3 role matrix applied to the
+  shell) and a page-by-page wireframe specification for desktop, tablet, and
+  mobile (mobile-first): sign-in, home, fast sales entry (centerpiece), sales
+  list/detail + void, products, stock movements + adjustment, customers +
+  receive payment, suppliers + pay, purchases, reports hub + 6 report pages +
+  exports, users, settings.
+- D21.1–D21.8 recorded in `docs/business-decisions.md`: same-origin Next.js
+  App Router frontend consuming only the existing `/api/*` endpoints (no new
+  data plane, no CORS change, UI-page CSP added); mobile-first breakpoints
+  (mobile <768 / tablet 768–1199 / desktop ≥1200) with bottom tab bar →
+  icon rail → sidebar; touch targets ≥ 44 px; fast sales entry; responsive
+  table → card → grid → table transformation rules; simple stock/customer/
+  payment workflows; role-adaptive menu; explicit error/loading/empty states
+  and double-submit prevention.
+
+**PM scope resolutions (15 Aug 2026, recorded in `docs/frontend-plan.md` §14):**
+
+1. **Wallet manual entries — deferred to backend backlog.** Wallet read-only
+   in M21 (balance via `GET /api/reports/wallet`). No `POST /api/wallet`, no
+   schema change.
+2. **Customer-filtered sales — deferred to backend backlog.** M21 does not
+   touch `GET /api/sales`. Customer detail = signed balance (D4) + payment
+   history; no per-customer CREDIT-sale list.
+3. **Low-stock alert — removed from M21.** No hardcoded threshold; products
+   always show plain `stockQty`. Per-product reorder point recorded for the
+   backend roadmap.
+4. **Report date presets — approved, frontend-only.** Today (default) / 7d /
+   30d / This month / Custom, computed shop-local from the report's echoed
+   `range` (never browser timezone). Home "Today" tile uses the same
+   shop-local day.
+5. **Close of day — deferred entirely to backlog.** Home shows a live Today
+   summary only; no day-close button, snapshot, or cash-count in M21.
+
+Backlog (not M21): `POST /api/wallet`, `customerId` filter on sales,
+per-product reorder/low-stock threshold, `POST /api/day-close` daily snapshot.
+
+**Verification:** `npx tsc --noEmit`, `npm run lint`, `git diff --check` green;
+backend gate untouched (419/419). No frontend code written.
+
+---
+
 ## Current state (15 Aug 2026)
 
 - **Done through M20:** Products/Pricing, Sales, Purchasing, Suppliers +
@@ -961,7 +1009,10 @@ permission matrix; exports are GET reads, so F-08 never rate-limits them.
   pagination 32, voids 11, exports HTTP 11 = **419 tests, all green**, against
   `erp_retail_test`. No leftover dev servers or stale lock files after the run.
 - **PM review:** ERP-007 (F-10), ERP-008 (F-06/F-09), and ERP-009 (M18 voids)
-  closed COMPLETE by PM on 15 Aug 2026; M19 and M20 complete. No further
-  functional milestone is planned after M20 until the PM approves one.
-- **Next:** deployment + load-testing remain the last open operational audit
-  items (backups/observability documented as remaining).
+  closed COMPLETE by PM on 15 Aug 2026; M19 and M20 complete and committed
+  (`4fc1913`, `11bd68e`); `main == origin/main`, working tree clean.
+- **Next:** M21 responsive mobile-first frontend — kickoff package prepared
+  (information architecture, page-by-page wireframe spec, D21 decisions in
+  `docs/business-decisions.md`, plan in `docs/frontend-plan.md`); implementation
+  awaits PM approval. Then deployment + load-testing remain the last open
+  operational audit items (backups/observability documented as remaining).

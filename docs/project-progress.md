@@ -28,7 +28,8 @@ read-only reporting layer.
 - **Tech stack (from the repository):** Next.js (App Router) API routes,
   TypeScript (strict, `tsc --noEmit` green), PostgreSQL, Prisma ORM (`PrismaPg`
   adapter, generated client in `generated/prisma`), Tailwind CSS (scaffold
-  only). No UI beyond the API surface.
+  only). No UI beyond the API surface — the M21 frontend is planned
+  (see `docs/frontend-plan.md`) but not yet implemented.
 
 ## 2. Current Overall Status
 
@@ -56,12 +57,11 @@ read-only reporting layer.
 Evidence:
 
 - **Branch:** `main`
-- **Base commit:** `4fc1913` (M19) — M20 export changes are in the working
-  tree, **uncommitted, awaiting PM approval**.
-- **Milestone/feature commits:** verifiable via `git rev-list --count 9065199..HEAD`.
-- **Working tree:** holds M20 (data export) + doc updates; `git status` shows
-  the new `modules/exports/` files, 6 new route files under `app/api/exports/`,
-  2 new test files, and the doc updates.
+- **Base commit:** `11bd68e` (M20) — data export shipped and pushed; working
+  tree clean (`main == origin/main`).
+- **Milestone/feature commits:** verifiable via `git rev-list --count 9065199..HEAD` (35 commits).
+- **Working tree:** clean — all M20 files committed (`modules/exports/`,
+  `app/api/exports/`, 2 test files, docs, `package.json`).
 - **Typecheck / lint:** currently pass — `npx tsc --noEmit` OK, `npm run lint`
   OK, `git diff --check` clean.
 - **Test gate:** 36 test files / 419 tests (`npm run test:all` green) — unit
@@ -96,6 +96,7 @@ verified live).
 | 18 | Audit Fix | Transaction void/correction (F-07 remaining, ERP-009) | COMPLETE | `modules/voids/`, 5 void endpoints, `lib/locks.ts`, VoidRecord model | D18.1–D18.11; immutable originals + reversal rows; FOR UPDATE race closure; 18 integration + 11 HTTP + concurrency race tests |
 | 19 | Audit Fix | Security hardening (F-08/F-11/P3/P4) | COMPLETE | `lib/rate-limit.ts`, `lib/validate.ts`, `lib/mutex.ts`, `next.config.ts`, `lib/auth/authorize.ts` | Rate limits (auth per IP / API writes per user), headers + strict CSP + no-CORS, id validation, last-OWNER mutex; D19.1–D19.4; 394-test gate green |
 | 20 | Export | Data export (D20.1–D20.3) | COMPLETE | `modules/exports/`, `app/api/exports/` | Six read-only `/api/exports/*` endpoints serializing the D7 reports as Excel-ready CSV (UTF-8 BOM, RFC-4180, injection-guarded) or JSON; streamed, full-range (never capped at 50); D9.6 roles reused; JSON ≡ report endpoint; 14 unit + 11 HTTP tests; 419-test gate green |
+| 21 | Frontend | Responsive mobile-first UI (M21) | PLANNED | `docs/frontend-plan.md` (kickoff), D21.1–D21.8 | Kickoff package prepared: information architecture, page-by-page wireframe spec (desktop/tablet/mobile), role-adaptive nav (D9.3), fast sales entry, responsive table→card rules; five M21 scope questions resolved by PM (wallet read-only, no customer-filter, no low-stock alert, report presets, no day-close); implementation pending PM approval |
 
 ## 4. Business Decisions Locked
 
@@ -118,6 +119,7 @@ recorded, not reinterpreted.
 | D18 | Transaction void/correction (F-07 remaining): immutable originals, offsetting reversal rows, unique `(targetType, targetId)`, `SELECT ... FOR UPDATE` race closure, report exclusion, status exposure. D18.1–D18.11 | Locked — implemented |
 | D19 | Security hardening: D19.1 process-local rate limiting (F-08 — auth per IP, API writes per user, 429, env-configurable), D19.2 security headers + strict CSP + no-CORS (F-11), D19.3 route id format validation (P3 — `assertUuid`/`assertUserId` → 400), D19.4 last-active-OWNER async mutex (P4). All document the single-process deployment model | Locked — implemented |
 | D20 | Data export (M20): six read-only `/api/exports/*` endpoints that serialize the exact D7 report payload (no own computation, no DB writes). D20.1 CSV = comma + RFC-4180 quoting + CRLF + UTF-8 BOM, deterministic metadata + table sections, bare numeric cells (negative balances preserved), text-only formula-injection guard; JSON = UTF-8, no BOM. D20.2 full-range exports, never truncated at the 50-row pagination cap, streamed chunk-per-row/element. D20.3 authorization reuses D9.6 (CASHIER: sales + stock only; no separate export role matrix); exports are GET reads and are never rate-limited (F-08) | Locked — implemented |
+| D21 | Responsive mobile-first frontend (M21): same-origin Next.js App Router app consuming only the existing `/api/*` endpoints (no new data plane, no CORS change, UI-page CSP). D21.2 mobile-first breakpoints + navigation (bottom tabs <768 / icon rail 768–1199 / sidebar ≥1200); D21.3 touch targets ≥44 px + double-submit prevention; D21.4 fast sales entry centerpiece; D21.5 tables→cards transform, never shrink; D21.6 simple stock/customer/payment workflows; D21.7 role-adaptive menu (D9.3); D21.8 explicit error/loading/empty states. M21 scope resolved by PM: wallet read-only, no customer-filter on sales, no low-stock alert, report presets Today/7d/30d/month/custom (shop-local), no day-close | Locked — planned (plan finalized 15 Aug 2026; implementation pending PM approval) |
 
 ## 5. Architecture Currently Implemented
 
@@ -302,9 +304,9 @@ SQL.
   Evidence commented; left open for PM review.
 - Next audit fix pending PM decision: F-10 (ERP-007), F-06/F-09 (ERP-008) and
   M18 voids (ERP-009) evidence reviewed by PM — **all CLOSED COMPLETE**; M19
-  (F-08/F-11/P3/P4) shipped and committed; M20 (data export) shipped, working
-  tree uncommitted awaiting PM approval.
-- **M20 data export is COMPLETE (working tree, uncommitted)** — six read-only
+  (F-08/F-11/P3/P4) shipped and committed; M20 (data export) shipped, PM-approved,
+  committed at `11bd68e` and pushed.
+- **M20 data export is COMPLETE and committed** — six read-only
   endpoints at `/api/exports/{sales,purchases,stock,customers,suppliers,wallet}`
   serialize the D7 reports as CSV (UTF-8 BOM, RFC-4180, formula-injection
   guard, metadata + table sections) or JSON (byte-identical to the report
@@ -314,9 +316,6 @@ SQL.
   `tests/unit/exports.test.ts` (14) + `tests/http/exports-http.test.ts` (11).
 
 **WHAT HAS NOT BEEN STARTED**
-- Transaction correction/update/void capability (F-07 remaining) — **COMPLETE
-  (M18)**; F-08 rate limiting and F-11 headers/CORS — **COMPLETE (M19)**;
-  data export — **COMPLETE (M20, uncommitted)**.
 - Frontend UI; dashboards; advanced reporting; audit logs.
 - Deployment, backups, observability, load testing.
 
@@ -379,12 +378,29 @@ Remaining: concurrency verification by load test, deployment.
 ### Medium Term
 Features/modules that logically follow: a dashboard, advanced reporting,
 audit logs, backups, observability, deployment. **Data export — DONE (M20)**
-as a serialization of the D7 report layer (D20).
+as a serialization of the D7 report layer (D20). **Responsive mobile-first
+frontend — PLANNED (M21)** — kickoff package prepared: information
+architecture, page-by-page wireframe spec (desktop/tablet/mobile), and D21
+frontend decisions; the five M21 scope questions resolved by PM (15 Aug 2026)
+and recorded in `docs/frontend-plan.md` §14; implementation pending PM
+approval of the finalized plan.
+
+### Backend backlog (recorded from the M21 scope resolutions — NOT M21)
+- Manual wallet entries (`POST /api/wallet`, OWNER-only, sources
+  `OWNER_WITHDRAWAL|EXPENSE|BANK_DEPOSIT|OTHER`, keeps the D6 balance
+  invariant).
+- Customer-specific sales history (`customerId` filter on `GET /api/sales` +
+  tests; then extend customer detail UI with that customer's CREDIT sales).
+- Per-product reorder point / low-stock threshold (product-specific, no global
+  constant; surfaced on product create/update + as a real low-stock signal).
+- Day close / daily reconciliation (`POST /api/day-close` + immutable snapshot
+  keyed by shop-local date, payment-type totals, wallet balance, optional cash
+  count, notes, already-closed guard).
 
 ### Long Term
-Potential ERP features not yet implemented: frontend/UI, barcode support,
-multi-shop support, advanced inventory valuation / COGS / profit (requires a
-costing method decision per D2), accounting integrations.
+Potential ERP features not yet implemented: barcode support, multi-shop
+support, advanced inventory valuation / COGS / profit (requires a costing
+method decision per D2), accounting integrations.
 
 All items above are **FUTURE / NOT YET DECIDED** unless the repository or spec
 commits to them. Nothing in this section is committed.
@@ -412,7 +428,8 @@ Derived from actual repository inspection. Issues are honest and verifiable.
 | -------- | ------------------- |
 | `README.md` | Project overview, architecture, module/route table, setup & verification workflow |
 | `AGENTS.md` | Engineering conventions for agents (layering, money rule, invariants, log updates) |
-| `docs/business-decisions.md` | WHAT was decided and WHY (D1–D7, change-management format) |
+| `docs/business-decisions.md` | WHAT was decided and WHY (D1–D21, change-management format) |
+| `docs/frontend-plan.md` | M21 frontend kickoff package — information architecture + page-by-page wireframes (desktop/tablet/mobile), D21 decisions |
 | `docs/implementation-log.md` | Detailed technical history — what shipped per milestone + verification evidence |
 | `docs/project-progress.md` | WHERE WE ARE / WHERE WE GO NEXT (this file) |
 | `docs/architecture-audit.md` | The full ERP architecture audit — findings F-01…F-16, fix order P0–P3, next milestones |
@@ -444,8 +461,8 @@ From `git log --oneline` (hashes are actual):
 | `ab9f07a` | Cursor-based pagination/search/filtering (D12 / F-07, Milestone 16) | Merged into history |
 | `049fee2` | Documentation reconciliation after D12 | Merged into history |
 | `c314953` | Transaction void/correction (M18 / ERP-009) | Merged into history |
-| `4fc1913` | Security hardening (M19 / F-08/F-11/P3/P4) + doc reconciliation | HEAD |
-| working tree | M20 data export (D20.1–D20.3) + doc updates | UNCOMMITTED — awaiting PM approval |
+| `4fc1913` | Security hardening (M19 / F-08/F-11/P3/P4) + doc reconciliation | Merged into history |
+| `11bd68e` | Data export (M20 / D20.1–D20.3) + docs + gate wiring | HEAD — pushed |
 
 Branch `main`, tracked at `origin/main` (`github.com/shishirg46/retail-erp`).
 `8a28c10` was 1 commit ahead of `origin/main` until the documentation
@@ -541,12 +558,13 @@ SECURITY (M19):   COMPLETE — F-08 rate limiting (auth attempts per IP, 20/15mi
                   CORP same-origin on /api, no-CORS as policy; P3 route id
                   validation (assertUuid/assertUserId → 400); P4 last-OWNER
                   async mutex. D19.1–D19.4 recorded
-CURRENT TASK:     M20 data export complete — docs reconciled, gate 419/419
-                  green, no leftover dev servers/lock. Working tree holds the
-                  M20 changes + doc updates, UNCOMMITTED
-NEXT TASK:        PM approval of M20; then deployment, backups/observability,
-                  and load testing (operational readiness, kept separate from
-                  functional milestones)
+CURRENT TASK:     M20 data export complete, PM-approved, committed (`11bd68e`)
+                  and pushed; docs reconciled; gate 419/419 green; tree clean.
+                  M21 frontend kickoff package (IA + wireframes + D21) prepared
+                  and the five M21 scope questions resolved by PM (15 Aug 2026)
+NEXT TASK:        PM approval of the finalized M21 plan; then M21 responsive
+                  mobile-first frontend implementation; then deployment,
+                  backups/observability, and load testing
 PRODUCTION READY: NO — deployment, backups/observability, and load testing
                   remain; all audit findings (F-01…F-15) are implemented
 ```

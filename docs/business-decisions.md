@@ -1339,3 +1339,110 @@ injection guard, JSON byte-identity, document layout, `format` validation);
 the four OWNER-only exports, 401, 400 on bad format, range echo, void
 exclusion, JSON ≡ report endpoint, >50-row completeness beyond the pagination
 cap, and GET reads never rate-limited).
+
+---
+
+## D21 — Responsive, mobile-first frontend as a same-origin web app (M21)
+
+**Status:** Accepted — 15 Aug 2026 (kickoff package in `docs/frontend-plan.md`).
+PM resolutions on the five M21 scope questions (15 Aug 2026, recorded in
+`docs/frontend-plan.md` §14): wallet stays read-only (manual entries deferred
+to backend backlog); no per-customer sales filter (deferred); no low-stock
+alert with hardcoded thresholds (per-product reorder point deferred to backend
+roadmap); report date presets = Today (default)/7d/30d/This month/Custom,
+frontend-computed in shop-local time from the report's echoed `range`; no
+day-close (live Today summary only, deferred to backend backlog).
+
+**Current behavior (before)**
+The system is an API-only backend. The frontend is the create-next-app scaffold
+(`app/page.tsx`, `app/layout.tsx`) with no screens; every operation happens
+through `curl`/Postman. The shop owner must reach the ERP from the shop floor,
+typically a smartphone.
+
+**Proposed behavior**
+A **responsive website, designed mobile-first**, served same-origin from the
+same Next.js app (no separate SPA, no CORS — the API already emits no
+`Access-Control-Allow-*` and enforces same-origin, F-11/D9.9). The primary
+real-world user is a **shop owner on a smartphone**: large touch targets,
+thumb-reachable navigation, and workflows that never force a desktop.
+
+**D21.1 — Platform & deployment shape.** Next.js App Router pages (Server
+Components for reads, minimal client islands) inside this same app, so the
+existing session cookie, proxy gate, role guards, rate limits, and headers all
+apply unchanged. Data is fetched through the existing `/api/*` endpoints only —
+the frontend adds no second data plane and never reads the database directly.
+Same-origin keeps `SameSite=Lax` cookies flowing and the no-CORS policy
+intact. A nonce-based CSP for the UI pages is introduced (the scaffold today
+ships baseline headers only; see `next.config.ts` note).
+
+**D21.2 — Mobile-first breakpoints & navigation.** One responsive layout with
+three tiers: **mobile** (< 768 px, bottom tab bar with 5 primary destinations +
+"More" sheet), **tablet** (768–1199 px, left rail of icons + labels or compact
+sidebar), **desktop** (≥ 1200 px, persistent left sidebar + top bar). The shop
+owner's four everyday actions — **record a sale, check stock, take a customer
+payment, adjust stock** — are reachable from the home tab and the bottom bar
+without scrolling.
+
+**D21.3 — Touch & legibility standards.** Interactive targets ≥ 44×44 px
+(minimum, 48 px preferred); primary CTAs are full-width bottom-anchored on
+mobile; text ≥ 14 px body with 16 px default; contrast ≥ WCAG AA; active
+"pending" states disable double-submit (a double-tap on "Save sale" must never
+create two transactions).
+
+**D21.4 — Fast sales entry.** The sales screen is the centerpiece: type-ahead
+product search with the current price + stock shown inline, a large numeric
+keypad quantity stepper, tap-to-add rows, a running total that updates
+immediately, and a one-tap CASH / ECASH / CREDIT choice. CREDIT forces a
+customer picker; CASH/ECASH keep the "walk-in" default. On narrow screens the
+product picker and the cart are stacked so the whole flow fits under one thumb.
+
+**D21.5 — Tables & reports transform responsively, they are never shrunk.**
+Any dense table (products, sales, stock movements, report sections) renders as
+**cards on mobile** (one record = one card, key fields first, tap to open),
+a **two-column card grid on tablet**, and a **full table with sticky header on
+desktop** (≥ 1200 px). Reports keep their backend shape but are presented as:
+summary stat tiles on top (large, touch-friendly), then section tables that
+collapse on mobile. Long IDs/UUIDs are never shown; money is always shown in
+rupees (the API's wire format, D11) with thousands separators; negative
+balances render with sign + color per D4.
+
+**D21.6 — Simple stock / customer / payment workflows.** Stock: one
+"Adjust stock" screen choosing DAMAGE or CORRECTION, a product search, a
+numeric quantity, an optional note, and a preview of the resulting stock level
+before save. Customer: a detail screen showing the signed balance (owed vs
+prepaid, D4), with one "Receive payment" action (optional `saleId`) and a
+visible "New sale (CREDIT)" shortcut. Supplier: the mirror flow (balance owed,
+"Pay supplier", "New purchase") — OWNER-only per D9.3.
+
+**D21.7 — Role-adaptive UI.** The navigation and action buttons reflect D9.3
+exactly: CASHIER sees sales, customers, stock, and sales/stock reports;
+OWNER additionally sees purchases, suppliers, supplier payments, wallet/all
+reports, and user management. CASHIER never sees a disabled shell of OWNER
+screens — the menu is built from the session role. Void actions appear only to
+OWNER; voided records show a visible VOIDED badge everywhere (D18.9).
+
+**D21.8 — Error, loading, and empty states.** Every screen has explicit
+loading, error (the sanitized API message), and empty states. Validation
+failures surface field-level inline messages copied from the API's
+`{ message }` contract. Actions that mutate ledger/stock show a confirmation
+step (and for voids, the irreversibility warning) before sending.
+
+**Reason**
+The shop's real workflow happens at the counter and on the move — a desktop-only
+UI would not be used. Mobile-first, same-origin, API-only data access keeps the
+frontend thin and reuses every security and consistency control already built
+(F-10/F-11/D9/D19), so the invariants that protect the ledger are untouched by
+adding a UI.
+
+**Database impact:** none. No new tables, no migrations.
+**API impact:** none (the frontend consumes existing endpoints; no new routes
+required for M21). Deferred to the backend backlog (not M21): wallet
+deposit/withdrawal (`POST /api/wallet`), `customerId` filter on
+`GET /api/sales`, per-product reorder/low-stock threshold, and day-close
+snapshot (`POST /api/day-close`).
+**Existing feature impact:** `app/layout.tsx`/`app/page.tsx` scaffold replaced;
+`next.config.ts` gains a UI-page CSP (API CSP unchanged); no API behavior
+change; the backend gate stays green.
+**Testing impact:** new unit tests for formatting/validation helpers and new
+frontend integration tests (mobile breakpoints, sales-entry flow, role-adaptive
+menu) run by the same gate; backend suites unchanged.

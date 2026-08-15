@@ -212,6 +212,9 @@ npm run dev
 
 - [`docs/business-decisions.md`](docs/business-decisions.md) — D1–D20 business
   and architecture decisions
+- [`docs/frontend-plan.md`](docs/frontend-plan.md) — M21 responsive mobile-first
+  frontend kickoff package (information architecture + page-by-page wireframes,
+  D21) — planning only, no implementation yet
 - [`docs/implementation-log.md`](docs/implementation-log.md) — milestone log
 - [`docs/project-progress.md`](docs/project-progress.md) — current status,
   roadmap, and known risks

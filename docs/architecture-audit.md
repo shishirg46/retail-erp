@@ -2,7 +2,7 @@
 
 **Date:** 13 Aug 2026 (re-audited 15 Aug 2026)
 **Audited commit:** `cd3458e` (`docs: reconcile README and project-progress with repository state`)
-**Re-audit commit:** `c314953` (`feat: add transaction void and correction capability (M18 / ERP-009)`) — M19 security hardening is in the uncommitted working tree
+**Re-audit commit:** `11bd68e` (`feat: add read-only CSV/JSON exports for all reports (M20)`) — full gate green at HEAD, working tree clean
 **Scope:** `main` branch, full transactional backend (products, sales, purchasing, suppliers,
 customer credit, stock, wallet, reporting, voids), Prisma schema + migrations, all API routes, lib/,
 error taxonomy, git state.
@@ -74,9 +74,9 @@ ERP-008, and ERP-009 evidence. No further functional audit findings remain open.
 | Inventory consistency | Identity `stockQty == Σ qtyChange` holds; negative stock impossible (F-02 + D18.6 reversal guards) |
 | Business rules D1–D19 | All implemented; D6 400-vs-409 nuance documented; void rules D18.1–D18.11, security D19.1–D19.4 recorded |
 | Reporting | Genuinely read-only; aggregates match SQL re-derivation; voided records excluded (D18.8) |
-| Testing | Full Vitest gate — 34 files / 394 tests (`npm run test:all`), incl. unit, integration, concurrency (stock, void+payment, last-OWNER), HTTP error/rate-limit/headers/bounds/smoke/auth/pagination/voids |
-| Documentation | Accurate and current — reconciled at HEAD `c314953` + M19 working tree (15 Aug 2026) |
-| Git hygiene | 33 commits on `main`; M19 changes uncommitted awaiting PM approval; secrets untracked; generated client ignored |
+| Testing | Full Vitest gate — 36 files / 419 tests (`npm run test:all`), incl. unit, integration, concurrency (stock, void+payment, last-OWNER), HTTP error/rate-limit/headers/bounds/smoke/auth/pagination/voids/exports |
+| Documentation | Accurate and current — reconciled at HEAD `11bd68e` (15 Aug 2026) |
+| Git hygiene | 35 commits on `main`; tree clean (`main == origin/main`); secrets untracked; generated client ignored |
 
 ---
 
@@ -479,19 +479,19 @@ This was the **largest operational risk** in the original audit. **FIXED by Mile
 ## 15. Documentation
 
 Audit confirms the five files are **accurate and internally consistent** at the original
-audit commit `cd3458e`, and again at the re-audit (`c314953` + M19 working tree):
+audit commit `cd3458e`, and again at the re-audit (`11bd68e`, after M19 + M20):
 
-- `README.md` — correct stack, layering, route table (incl. void endpoints), setup
+- `README.md` — correct stack, layering, route table (incl. void + export endpoints), setup
   (`.env.example` documents `ERP_RATE_LIMIT_*`), invariants, security notes (F-08/F-11). ✓
 - `AGENTS.md` — conventions match implementation. Read before writing code (Next 16 breaking
   changes note). ✓
-- `docs/business-decisions.md` — D1–D19 record the exact implemented behavior. ✓
+- `docs/business-decisions.md` — D1–D20 record the exact implemented behavior. ✓
 - `docs/implementation-log.md` — milestones and verification evidence match repository state. ✓
 - `docs/project-progress.md` — current status/HEAD/roadmap/risks truthful at the re-audit. ✓
 
-No documentation corrections were required by the re-audit; the M19 doc reconciliation
-(M19 milestone entry, D19 decisions, audit re-run, README/progress updates) is in the
-uncommitted working tree.
+No documentation corrections were required by the re-audit; the M19 + M20 doc reconciliation
+(M19/M20 milestone entries, D19/D20 decisions, audit re-run, README/progress updates) is in
+commits `4fc1913` and `11bd68e`.
 
 ---
 
@@ -500,8 +500,8 @@ uncommitted working tree.
 | Check | Result |
 | ----- | ------ |
 | Branch | `main` |
-| Working tree | **M19 changes uncommitted** (code + tests + docs + index-drop migration, per `git status`) awaiting PM approval; clean apart from that |
-| Origin sync | `main == origin/main` (`c314953760cc41889c9b40d176f3470ecdee5f1a`) — M19 changes are uncommitted on top |
+| Working tree | Clean at `11bd68e` — M19 + M20 fully committed and pushed |
+| Origin sync | `main == origin/main` (`11bd68e`) |
 | Secrets tracked | **None.** `.env` gitignored + untracked; no key material in tracked files |
 | Generated files | `generated/prisma/` gitignored (correct); `*.tsbuildinfo`, `next-env.d.ts`, `.next/` ignored |
 | Editor/agent dirs | `.agents/`, `.claude/`, `.windsurf/`, `skills-lock.json` ignored; `CLAUDE.md` tracked (one-line import of AGENTS.md) |
@@ -673,11 +673,14 @@ ERP-007/ERP-008/ERP-009 remain separate PM-review items.
     `SELECT ... FOR UPDATE` race closure (D18.11), report exclusion (D18.8), status
     exposure (D18.9). D18.1–D18.11 recorded. 18 integration + 11 HTTP + concurrency
     race tests. Evidence left open for PM review.
-14. **Milestone 19 — Security hardening (F-08/F-11/P3/P4) — DONE (working tree, uncommitted).**
+14. **Milestone 19 — Security hardening (F-08/F-11/P3/P4) — DONE.**
     Rate limiting (`lib/rate-limit.ts`, 429), headers + strict CSP + no-CORS
     (`next.config.ts`), route id validation (`lib/validate.ts`), last-OWNER async mutex
     (`lib/mutex.ts`); P6 cleanup (duplicated void helper + redundant index). D19.1–D19.4
     recorded. Full gate 394/394.
+15. **Milestone 20 — Data export (D20.1–D20.3) — DONE.** Six read-only
+    `/api/exports/*` endpoints serializing the D7 reports as CSV/JSON; full-range,
+    streamed, D9.6 roles reused, never rate-limited. Full gate 419/419.
 
 ---
 
