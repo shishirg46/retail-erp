@@ -100,23 +100,19 @@ with a foreign `Origin` are rejected (D9.9).
 ## Setup
 
 ```bash
-# Create .env with your DATABASE_URL, a BETTER_AUTH_SECRET, and optionally
-# ERP_TIMEZONE (no .env.example is shipped yet — see note)
-printf 'DATABASE_URL=postgresql://USER:PASS@localhost:5432/erp_retail\n' > .env
-printf 'BETTER_AUTH_SECRET=generate-a-long-random-secret\n' >> .env
-printf 'ERP_TIMEZONE=Asia/Kathmandu\n' >> .env   # optional; default Asia/Kathmandu
+# Create .env from the example (or copy manually):
+cp .env.example .env
+# Edit .env with your database credentials and auth secret.
 npm install
 npx prisma migrate dev
 node scripts/seed-owner.mjs   # creates the initial OWNER (owner / ownerpass123)
 npm run dev
 ```
 
-> **Note:** `.env.example` does not currently exist in the repository (tracked as
-> a known gap for the upcoming audit). Provide `DATABASE_URL` and
-> `BETTER_AUTH_SECRET` in `.env` before running Prisma; `ERP_TIMEZONE` (IANA
-> name) controls shop-local report date handling and defaults to
-> `Asia/Kathmandu` when absent. The seed script accepts `OWNER_USERNAME` /
-> `OWNER_PASSWORD` overrides.
+> **Note:** Provide `DATABASE_URL` and `BETTER_AUTH_SECRET` in `.env` before
+> running Prisma; `ERP_TIMEZONE` (IANA name) controls shop-local report date
+> handling and defaults to `Asia/Kathmandu` when absent. The seed script accepts
+> `OWNER_USERNAME` / `OWNER_PASSWORD` overrides.
 
 ## Verification workflow
 
@@ -158,6 +154,9 @@ npm run dev
   - `npm run test:auth` — F-10 HTTP suite: sign-in lifecycle, proxy gate,
     forged-cookie 401, CASHIER 403 matrix, cross-origin rejection, OWNER user
     management (create/role/ban/unban/reset/delete, last-OWNER invariant).
+  - `npm run test:http:pagination` — D12 HTTP suite: backward-compat raw arrays,
+    paginated envelope, cursor traversal, filter behavior, invalid params (400),
+    limit clamping, deterministic ordering.
   - All HTTP suites refuse to run if `TEST_DATABASE_URL` is not
     `erp_retail_test` or a dev server is already running for the project.
   - Seed a fresh database: `node scripts/seed-owner.mjs` (idempotent OWNER
@@ -171,7 +170,7 @@ npm run dev
 
 ## Documentation
 
-- [`docs/business-decisions.md`](docs/business-decisions.md) — D1–D11 business
+- [`docs/business-decisions.md`](docs/business-decisions.md) — D1–D12 business
   and architecture decisions
 - [`docs/implementation-log.md`](docs/implementation-log.md) — milestone log
 - [`docs/project-progress.md`](docs/project-progress.md) — current status,

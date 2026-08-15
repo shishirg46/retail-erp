@@ -446,8 +446,8 @@ automated suite, and no `test` script in `package.json`**. Verification was manu
 Postman collection (58 requests) + live SQL reconciliation against a local Postgres, per
 implementation-log.
 
-Current state after Milestones 11-15: the project uses Vitest as the automated gate.
-`npm run test:all` runs 23 test files / 283 tests against the dedicated
+Current state after Milestones 11-16: the project uses Vitest as the automated gate.
+`npm run test:all` runs 25 test files / 338 tests against the dedicated
 `erp_retail_test` database only, with `fileParallelism: false` for DB-touching suites.
 
 | Consideration | Assessment |
@@ -511,7 +511,7 @@ No hygiene action required (beyond the audit commit itself).
 | **F-04** | **MEDIUM** | Security/DoS | Unbounded sale quantity → `new Array(qty + 1)` allocation server-side | `product.service.ts:16`; `sale.validation.ts` has no upper bound | Unauthenticated large `quantity` → memory exhaustion | **FIXED (Milestone 10):** shared caps in `lib/bounds.ts` (`MAX_ITEM_QUANTITY=100000`, `MAX_ITEMS_PER_DOCUMENT=100`, `MAX_AMOUNT=10000000`) wired into all six validators; over-limit → 400 before allocation. `tests/unit/input-bounds.ts` (28/28) + `tests/http/input-bounds.ts` (11/11) incl. the documented `quantity: 1e8` payload rejected < 15 s | NO | YES | FIXED |
 | **F-05** | **MEDIUM** | Database | No CHECK constraints (notably `stock_qty >= 0`) and no secondary indexes on report/FK columns | `schema.prisma`; `prisma/migrations/*` | Negative stock physically storable; report joins scan as tables grow | **FIXED (Milestone 13):** migration `20260814034336_db_hardening_f05` adds 17 CHECK constraints (restating service rules at the DB layer; signed semantics preserved — no constraint on customer/supplier balances or CORRECTION) and 9 report indexes. Pre-migration validator `scripts/validate-f05-preconditions.mjs` green on both DBs. `tests/integration/db-hardening.test.ts` (24/24) proves constraints/indexes exist in the catalog, raw SQL cannot write invalid rows, and legitimate signed/special values still work | YES | YES | FIXED |
 | **F-06** | **MEDIUM** | Money | Float money arithmetic in services (running `grandTotal`, `qty × costPerUnit`) with rounding only for `pricePerUnit` | purchase.sale/purchase/service grand-total sums; no paisa-wide rounding helper | Float noise can enter stored Decimals beyond the documented D1 drift | **FIXED (Milestone 15 / D11):** integer-paisa domain money via `lib/money.ts`; validators convert rupees→paisa once, services/reports do whole-paisa math, repositories read/write rupee `DECIMAL`, API remains rupee-based | NO | YES | FIXED |
-| **F-07** | **MEDIUM** | API | No pagination / search / filtering on any list endpoint; no update/void capability | `app/api/*` GET handlers return full tables; no PATCH/PUT/DELETE | Unbounded responses + no correction path for entry mistakes | Add pagination + search after P0/P1 fixes (roadmap already lists this) | NO | YES | OPEN |
+| **F-07** | **MEDIUM** | API | No pagination / search / filtering on any list endpoint; no update/void capability | `app/api/*` GET handlers return full tables; no PATCH/PUT/DELETE | Unbounded responses + no correction path for entry mistakes | **PARTIALLY FIXED (Milestone 16 / D12):** cursor-based pagination, search, and filtering implemented on all 8 list endpoints (default 50, max 500, backward-compatible). Transaction correction/update/void capability remains outstanding — planned for M18. | NO | YES | PARTIALLY FIXED |
 | **F-08** | LOW | Validation | No upper bounds / max lengths on string fields; no explicit ID validation | validators check type/non-empty only | Trivially: oversized strings; low real-world impact | Add sane length caps when touching validation | NO | YES | OPEN |
 | **F-09** | LOW | Reporting/Timezone | Date coercion is server-local; Postgres timestamps are naive `TIMESTAMP(3)` | `report.validation.ts:47-71`; migration DDL | Day boundaries shift with server TZ; fine single-host, needs a decision for shared hosting/multi-region | **FIXED (Milestone 15 / D10):** `ERP_TIMEZONE` default `Asia/Kathmandu`; naive report params interpreted as shop-local wall clock; range echo uses shop-local offset strings; no schema migration | NO | YES | FIXED |
 | **F-11** | LOW | Security | No CORS config, security headers, or rate limiting | `next.config.ts` empty; no middleware | Hardens against casual abuse once exposed; low urgency pre-auth | Add headers/limits as part of production hardening | NO | YES | OPEN |
@@ -578,7 +578,9 @@ milestone log. ERP-007 remains a separate PM-review item.
 ### P2 — Important Quality Improvements
 8. **F-06 — FIXED (Milestone 15 / D11).** Integer-paisa domain money; rupee API and
    Postgres `DECIMAL` storage preserved.
-9. **F-07** — pagination/search on list endpoints; error-correction (void) capability design.
+9. **F-07 — PARTIALLY FIXED (Milestone 16 / D12).** Pagination, search, and
+   filtering on all 8 list endpoints. Error-correction (void) capability remains
+   outstanding — planned for M18.
 10. **F-09 — FIXED (Milestone 15 / D10).** Shop-local report day-boundaries via
     `ERP_TIMEZONE`, default `Asia/Kathmandu`.
 
@@ -629,10 +631,17 @@ milestone log. ERP-007 remains a separate PM-review item.
    `scripts/validate-f05-preconditions.mjs` green on both DBs;
    `tests/integration/db-hardening.test.ts` (24/24). Full gate now 18 suites /
    221 tests. Tracking: GitHub issue ERP-006 (left open for PM review).
-8. **Milestone 14 — Auth design + implementation** (F-10) — requires a business decision
-   (roles/permissions) before code.
-9. Continue with previously planned roadmap (pagination/search, dashboard, advanced
-   reporting, production readiness).
+8. **Milestone 14 — Auth design + implementation** (F-10) — DONE. Better Auth,
+   OWNER/CASHIER role matrix, guarded ERP routes, OWNER user management.
+   Tracking: GitHub issue ERP-007 (left open for PM review).
+9. **Milestone 15 — Integer-paisa money + shop-local timezone** (F-06/F-09) — DONE.
+   `lib/money.ts` domain money, `lib/timezone.ts` ERP_TIMEZONE.
+   Tracking: GitHub issue ERP-008 (left open for PM review).
+10. **Milestone 16 — Cursor-based pagination, search, and filtering** (F-07/D12) — DONE.
+    All 8 list endpoints gain optional cursor-based pagination with `search`,
+    `paymentType`, `category`, `supplierId`, `customerId`, `productId`, `reason`
+    filters. Backward-compatible. 23 unit + 32 HTTP tests.
+11. Transaction correction/update/void capability (F-07 remaining) — planned for M18.
 
 ---
 

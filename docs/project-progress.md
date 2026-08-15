@@ -47,8 +47,8 @@ read-only reporting layer.
 | Audit fix — F-05 DB hardening | COMPLETE (Milestone 13) — 17 CHECK constraints + 9 report indexes (migration `20260814034336_db_hardening_f05`); pre-migration validator green on both DBs; `tests/integration/db-hardening.test.ts` 24/24 (constraints/indexes exist, raw-SQL rejections, signed semantics preserved). Gate now 18 suites / 221 tests. **CLOSED (PM-approved) — ERP-006** |
 | Audit fix — F-10 auth & roles | COMPLETE (Milestone 14) — Better Auth (local username+password, no sign-up), OWNER/CASHIER role matrix (D9.3), every ERP route guarded, OWNER user management; `app/api/users`, `modules/users/`, seed script. Gate now 21 suites / 259 tests. Evidence on ERP-007, left open for PM review |
 | Audit fix — F-06/F-09 money & timezone | COMPLETE (Milestone 15) — D11 integer-paisa domain money (`lib/money.ts`; validators/ services/repositories/routes converted, rupees in/out at the API unchanged, Postgres DECIMAL rupees unchanged — no migration) + D10 shop-local timezone (`lib/timezone.ts`, `ERP_TIMEZONE`, default `Asia/Kathmandu`; shop-local naive report params, offset-string range echo). Robustness ride-along: `lib/auth/session-cookie.ts` shared cookie gate + `requireUser` cookie short-circuit. Gate now 23 test files / 283 tests. Evidence on ERP-008, left open for PM review |
-| Audit fix — F-07 pagination/search/filtering | COMPLETE (Milestone 16) — D12 cursor-based pagination on all 8 list endpoints; backward-compatible (no params → raw array, any param → `{ data, paging }` envelope); default 50, max 500; `search`, `paymentType`, `category`, `supplierId`, `customerId`, `productId`, `reason` filters; `lib/pagination.ts` shared library; 23 unit + 32 HTTP tests. Gate now 25 test files / 315 tests |
-| Production readiness | NOT YET COMPLETE — F-10 auth implemented (ERP-007 pending PM review) and F-06/F-09 done (ERP-008 pending PM review); F-07 pagination complete; remaining audit fixes F-08/11, deployment, and load testing still open |
+| Audit fix — F-07 pagination/search/filtering | COMPLETE (Milestone 16) — D12 cursor-based pagination on all 8 list endpoints; backward-compatible (no params → raw array, any param → `{ data, paging }` envelope); default 50, max 500; `search`, `paymentType`, `category`, `supplierId`, `customerId`, `productId`, `reason` filters; `lib/pagination.ts` shared library; 23 unit + 32 HTTP tests. Gate now 25 test files / 338 tests |
+| Production readiness | NOT YET COMPLETE — F-10 auth implemented (ERP-007 pending PM review) and F-06/F-09 done (ERP-008 pending PM review); F-07 pagination/search/filtering complete; transaction correction/update/void (F-07 remaining, M18 planned); F-08/11, deployment, and load testing still open |
 
 Evidence:
 
@@ -288,13 +288,11 @@ SQL.
   code.
 
 **WHAT HAS NOT BEEN STARTED**
-- Remaining fixes from the audit (see [`docs/architecture-audit.md`](architecture-audit.md)
-  "Recommended Fix Order"): P2/P3 findings F-07, F-08, F-11 still need their own
-  business decisions before code. F-05 (M13), F-10 (M14), and F-06/F-09 (M15)
-  are **implemented**; ERP-006 is closed PM-approved, ERP-007/ERP-008 await PM
-  review.
-- Frontend UI; dashboards; advanced reporting; exports; pagination/search.
-- Deployment, backups, observability.
+- Transaction correction/update/void capability (F-07 remaining, planned for M18).
+- F-08 (string length caps / ID validation), F-11 (CORS / security headers / rate
+  limiting) still need their own business decisions before code.
+- Frontend UI; dashboards; advanced reporting; exports.
+- Deployment, backups, observability, load testing.
 
 **WHAT SHOULD NOT BE CHANGED WITHOUT A BUSINESS DECISION**
 - The stock baseline invariant (D6) — products start at 0, opening stock only
@@ -321,7 +319,8 @@ route; invalid payloads → 400; `tests/unit/product.validation.ts` 30/30).
 
 ### Step 2 — Fix Remaining HIGH/Selected Findings
 P1 (per audit): auth/roles decision (F-10) — DONE, automated test framework
-(F-15) — DONE, DB CHECK + indexes (F-05) — DONE.
+(F-15) — DONE, DB CHECK + indexes (F-05) — DONE. Pagination/search/filtering
+(F-07/D12) — DONE (Milestone 16).
 
 ### Step 3 — Regression Testing
 Run the complete existing feature suite after fixes (Postman folders + SQL
@@ -337,15 +336,17 @@ Required to make the backend robust, per
 [`docs/architecture-audit.md`](architecture-audit.md) recommended fix order:
 **atomic stock / concurrency hardening (F-02) — DONE**; **products validation
 (F-01) — DONE**; **error privacy (F-03) — DONE**; **input upper bounds
-(F-04) — DONE**; automated tests for the existing flows (F-15), DB CHECK +
-indexes (F-05) — DONE,
-`.env.example`, pagination / search / filtering on list endpoints, concurrency
-verification by load test.
+(F-04) — DONE**; automated tests for the existing flows (F-15) — DONE;
+DB CHECK + indexes (F-05) — DONE; **pagination / search / filtering on list
+endpoints (F-07/D12) — DONE**. `.env.example` — DONE.
+Remaining: transaction correction/update/void capability (F-07, M18 planned),
+concurrency verification by load test.
 
 ### Medium Term
-Features/modules that logically follow: authentication/authorization and
-roles/permissions, a dashboard, advanced reporting, export, audit logs,
-backups, deployment, observability.
+Features/modules that logically follow: transaction correction/update/void
+capability (F-07 remaining, M18), CORS / security headers / rate limiting
+(F-11), a dashboard, advanced reporting, export, audit logs, backups,
+deployment, observability.
 
 ### Long Term
 Potential ERP features not yet implemented: frontend/UI, barcode support,
@@ -367,7 +368,7 @@ Derived from actual repository inspection. Issues are honest and verifiable.
 | Concurrency not formally verified | Medium | Concurrent stock/sales ops never load-tested; `stockQty` updates rely on `increment` within transactions | **RESOLVED (Milestone 7)** — SALE + DAMAGE use atomic conditional decrement (`reserveStock`); `tests/concurrency/stock.ts` proves no oversell and D6 holds | VERIFIED |
 | CORRECTION with a negative target is a 400 (validation) rather than the 409 of D6 | Low | Validation rejects negative integers before the service's `InsufficientStockError`; 409 effectively reachable only via DAMAGE | Document or align semantics in the audit (behavior is safe) | KNOWN, DOCUMENTED |
 | Per-product sales `amount` carries the D1 ≤ 3 paisa drift | Low | `productQuantities.amount = Σ qty × pricePerUnit` (e.g. 340.06 vs 340) | Keep informational; document in report docs | KNOWN, ACCEPTED (D1) |
-| No pagination / search / filtering on list endpoints | Low | `GET /api/*` return full lists | Add after near-term hardening | OPEN |
+| No pagination / search / filtering on list endpoints | Low | `GET /api/*` return full lists | **RESOLVED (Milestone 16 / D12)** — cursor-based pagination on all 8 list endpoints; backward-compatible; default 50, max 500; search + filters | RESOLVED |
 | No auth / authorization anywhere | High (for production) | No auth middleware or user model in schema | Decide as part of production readiness | FUTURE |
 | `tests/unit/` empty directory — untracked intent only | Low | Empty dir present on disk; `git ls-files tests/` shows nothing (git does not track empty directories) | Fill with tests or remove | OPEN |
 
@@ -448,16 +449,17 @@ REPORTING:        COMPLETE — 6 read-only reports, SQL-verified, no stored tota
 DOCUMENTATION:    COMPLETE — README, AGENTS.md, business-decisions (D1–D11),
                   implementation-log, project-progress, architecture-audit,
                   postman suite
-TESTING:          COMPLETE — full D1–D7 + F-10 + money/timezone gate
-                  (`npm run test:all`, 23 test files, 283 tests, 0 failures,
-                  Vitest) against erp_retail_test only: unit 150/150
+TESTING:          COMPLETE — full D1–D7 + F-10 + money/timezone + D12 gate
+                  (`npm run test:all`, 25 test files, 338 tests, 0 failures,
+                  Vitest) against erp_retail_test only: unit 173/173
                   (validation 30, error 11, pricing 6, validators 30, bounds
                   28, auth-config 10, user-management 11, money 12, timezone
-                  new), integration 73/73 (sales 10, purchases 6,
+                  12, pagination 23), integration 73/73 (sales 10, purchases 6,
                   customer-payments 8, supplier-payments 5, stock 8, rollback
                   8, ledger 2, reports 2, db-hardening 24), concurrency 5/5,
                   HTTP error 12/12, HTTP bounds 11/11, HTTP D1–D7 smoke 15/15,
-                  F-10 auth-flow 17/17 (F-15 M11+M12 / F-10 M14 / F-06+F-09 M15)
+                  F-10 auth-flow 17/17, HTTP pagination 32/32
+                  (F-15 M11+M12 / F-10 M14 / F-06+F-09 M15 / D12 M16)
 DB HARDENING:     COMPLETE — 17 CHECK constraints + 9 report indexes (F-05,
                   M13): constraints/indexes proven in pg_catalog, raw SQL
                   cannot write invalid rows (signed semantics preserved: no
@@ -482,14 +484,17 @@ TIMEZONE (F-09, M15): COMPLETE — shop-local timezone (D10): ERP_TIMEZONE env
                   (default Asia/Kathmandu), naive report params parsed as
                   shop-local wall clock (Intl-offset), explicit-zone ISO as-is,
                   range echo as shop-local offset strings, no schema change
-CURRENT TASK:     P0+P1 audit fixes through F-10 + F-06/F-09 — F-02 (M7,
-                  closed), F-01 (M8, closed), F-03 (M9, closed), F-04 (M10,
-                  closed), F-15 (M11 tsx → M12 Vitest, closed PM-approved),
-                  F-05 (M13, ERP-006, closed PM-approved), F-10 (M14, ERP-007,
-                  evidence commented, left open for PM review), F-06/F-09
-                  (M15, ERP-008, evidence commented, left open for PM review)
-NEXT TASK:        PM review of ERP-007 (F-10) + ERP-008 (F-06/F-09); then P2/P3
-                  findings F-07/08/11 each need their own business decisions
-PRODUCTION READY: NO — P2/P3 audit findings (F-07/08/11), deployment
-                  decisions, and load testing remain
+CURRENT TASK:     P0+P1 audit fixes through F-10 + F-06/F-09 + F-07/D12 —
+                  F-02 (M7, closed), F-01 (M8, closed), F-03 (M9, closed),
+                  F-04 (M10, closed), F-15 (M11 tsx → M12 Vitest, closed
+                  PM-approved), F-05 (M13, ERP-006, closed PM-approved),
+                  F-10 (M14, ERP-007, evidence commented, left open for PM
+                  review), F-06/F-09 (M15, ERP-008, evidence commented, left
+                  open for PM review), F-07/D12 (M16, pagination/search/
+                  filtering complete; correction/update/void planned for M18)
+NEXT TASK:        PM review of ERP-007 (F-10) + ERP-008 (F-06/F-09); then M18
+                  (transaction correction/update/void, F-07 remaining),
+                  F-08 (string caps), F-11 (CORS/headers/rate-limiting)
+PRODUCTION READY: NO — transaction correction/update/void (F-07, M18),
+                  F-08/11, deployment decisions, and load testing remain
 ```
