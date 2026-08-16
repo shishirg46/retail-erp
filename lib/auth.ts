@@ -7,6 +7,7 @@ import { betterAuth } from "better-auth";
 import { prismaAdapter } from "@better-auth/prisma-adapter";
 import { admin, createAccessControl, username } from "better-auth/plugins";
 import { prisma } from "./prisma";
+import { resolveAuthBaseURL } from "./auth/base-url";
 
 const secret = process.env.BETTER_AUTH_SECRET;
 if (!secret) {
@@ -31,7 +32,7 @@ const ownerRole = ac.newRole({
 const cashierRole = ac.newRole({ user: [], session: [] });
 
 export const auth = betterAuth({
-  baseURL: process.env.BETTER_AUTH_URL ?? "http://localhost:3000",
+  baseURL: resolveAuthBaseURL(),
   secret,
   database: prismaAdapter(prisma, { provider: "postgresql" }),
   emailAndPassword: {

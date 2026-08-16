@@ -1051,3 +1051,188 @@ tree has the D22 + §16 doc updates uncommitted.
   `docs/business-decisions.md`, plan in `docs/frontend-plan.md`); implementation
   awaits PM approval. Then deployment + load-testing remain the last open
   operational audit items (backups/observability documented as remaining).
+
+## M21 — Phase A: frontend foundation (D22) — 16 Aug 2026
+
+**Status: PM-approved (16 Aug 2026) and committed as the clean M21 frontend foundation. Phase B (pages) not started.**
+
+PM visual/UX review of the live Vercel Preview passed (owner / Preview!2026).
+Temporary preview access was revoked after the review; protection state
+restored (`ssoProtection: all_except_custom_domains`, `gitForkProtection: true`,
+no active bypass token).
+
+Frontend-only milestone per the D21/D22 package. No backend API, Prisma schema,
+or business-logic changes; the `/api/*` security headers and proxy API gate
+(D9.8, `/api/auth/*` exemption) are untouched.
+
+**Shipped**
+
+- **Dependencies** (runtime): TanStack Query 5, Zustand 5, React Hook Form +
+  Zod 4 (`@hookform/resolvers` zod subpath), shadcn/ui (curated) + `radix-ui`
+  unified + lucide-react + Sonner + next-themes + cva/clsx/tailwind-merge +
+  tw-animate-css. Dev: jsdom + Testing Library + jest-dom. npm `overrides`
+  pin `@typeschema/{zod,core}` to `$zod` to clear the zod3-only peer conflict.
+  `npm audit fix` applied (prisma 7.9.0→7.9.1, valibot 1.4.2); 3 high remain —
+  sharp via next@16.2.11 libvips CVEs, fix needs next@16.3.1 (outside range).
+- **shadcn init** (`-b radix -p nova`) → `components.json`, `lib/utils.ts`,
+  rewritten `app/globals.css` (font stacks, `--breakpoint-tablet: 768px` /
+  `--breakpoint-desktop: 1200px`, `@utility` pb-safe/pt-safe/min-touch/
+  min-touch-desktop). UI components added: button, input, label, card,
+  dropdown-menu, avatar, separator, badge, sonner, sheet. **`form` registry
+  item is broken upstream** (empty radix-nova entry; classic has `files: null`)
+  → `components/ui/form.tsx` written manually from the classic source, adapted
+  to the unified `radix-ui` namespace (`Label.Root`, `Slot.Root`).
+- **Typography**: `app/layout.tsx` + Geist/Geist_Mono with Noto Sans +
+  Noto Sans Devanagari (latin + Devanagari coverage); `--font-noto-sans`,
+  `--font-noto-devanagari` vars.
+- **Auth**: `lib/auth-client.ts` (`createAuthClient` + username + admin
+  plugins), `lib/auth/session.ts` (`getSession`/`requireSession`/`requireRole`,
+  SessionUser, nullish-safe name/username, role default CASHIER). Sign-in page
+  (public RSC redirect if session exists) + RHF/Zod form with inline server
+  error (D21.8), password eye toggle (44 px target), double-submit guard,
+  toast only on success → `push("/")` + refresh. Workspace route group
+  `app/(workspace)/` gated by `requireSession()`.
+- **Shell** (D21.2/D21.7): mobile <768 bottom tab bar (5 tabs, safe-area),
+  tablet 768–1199 icon rail, desktop ≥1200 sidebar (240 px) — driven by
+  `components/layout/nav-items.ts` (7 sections, OWNER-only Purchases/Users,
+  More sheet role-filtered); sticky header + UserMenu (avatar initials,
+  sign-out). `app/page.tsx` moved into the workspace group.
+- **Data**: `lib/api/client.ts` (typed `api.get/post`, `ApiError`,
+  `isAuthLostError` 401 / `isRateLimitedError` 429), `lib/api/query-keys.ts`,
+  `lib/query-client.ts` (30 s stale, no window-focus refetch, retry 1);
+  `stores/cart.ts` (Zustand POS cart, CREDIT reset keeps customer).
+- **Formatting (Q4/D11)**: `lib/format/money.ts` — rupees are the wire unit,
+  `formatRupees` (Intl en-IN `₹`), `formatRupeesFromPaisa` (/100),
+  `formatSignedRupees` (D4 prepaid), compact k/L/Cr. `lib/format/dates.ts` —
+  shop-local day/range from the report's echoed `range` (parseOffsetMinutes),
+  `reportPresetRange` today/7d/30d/month/custom emitting naive YYYY-MM-DD.
+  `lib/validate/sign-in.ts` mirrors the auth rules (password ≥ 8).
+- **CSP (D21.1)**: `proxy.ts` now also serves a nonce-based UI-page CSP
+  (`x-nonce` request header → Next auto-attaches to scripts; `strict-dynamic`,
+  `style-src 'unsafe-inline'` for Radix inline styles + Sonner `<style>`,
+  dev `unsafe-eval` + ws:). Static assets, image optimization, and prefetch
+  requests excluded. `/api/*` keeps its strict `default-src 'none'` policy.
+- **Tests**: `test:frontend` added to the gate (Vitest jsdom, `tests/frontend/`,
+  excluded from the backend config). 6 suites / 45 tests: money, dates,
+  sign-in validation, cart store, nav-items, sign-in form (RTL + user-event).
+
+**Verified**
+
+- `npx tsc --noEmit` green (after fixing: stale `.next` route types from the
+  deleted `app/page.tsx` — regenerated via `npx next typegen`; `radix-ui`
+  `Slot` = submodule namespace → `Slot.Root`; `FormControl` Slot id must land
+  on the input, so the password eye-toggle wrapper moved *outside*
+  `FormControl`; session `name`/`username` nullish fallbacks).
+- `npm run lint` clean; `git diff --check` clean.
+- `npm run test:frontend` — 45/45 green.
+- Backend gate intentionally not rerun (frontend-only milestone; no backend
+  files touched beyond the 4 previously-reported config changes).
+
+**Notes / risks for Phase B**
+
+- shadcn `form` component is registry-broken — manual file must be maintained.
+- 3 high npm audit findings (sharp libvips via next 16.2.11) accepted until
+  Next 16.3.x is adopted.
+- `moreDestinations` in nav-items vs the inline role-filter in more-sheet are
+  intentionally duplicated (small, self-contained) — revisit in Phase B if the
+  More sheet gains sections.
+
+### 2026-08-16 — pre-review fix: client bundle leaked the Prisma/pg graph (dev smoke)
+
+First live render of `/sign-in` returned 500. Dev log showed the whole
+`pg`/`@prisma` tree (`net`/`tls`/`dns`/`fs`/`util/types` + `node:module` chunk
+error) being bundled into the **client** graph: `nav-items.ts` imported the
+value `OWNER` from `lib/auth/authorize.ts`, which statically imports
+`lib/prisma.ts` → `@prisma/adapter-pg`. Since `app-shell.tsx` is a client
+component (uses `usePathname` for the header title), the entire auth/Prisma
+graph was dragged into the browser bundle and failed to build.
+
+**Fix (frontend-only, no behavior change):** extracted the role constants to a
+new dependency-free `lib/auth/roles.ts` (`OWNER`/`CASHIER`/`Role`); the rest of
+`lib/auth/authorize.ts` re-exports them unchanged, so every backend route import
+still works. `nav-items.ts` now imports `OWNER`/`Role` from `./roles`. The other
+layout components import `Role` via `import type` (erased at build — no runtime
+dependency).
+
+**Verified:** `npx tsc --noEmit`, `npm run lint`, `npm run test:frontend`
+(45/45) green; `/sign-in` 200 with expected content; `/` 307 → `/sign-in` when
+logged out; no new errors in the dev log (the recorded pg errors are all
+pre-fix timestamps). Backend gate not rerun (no backend-affecting change).
+
+### 2026-08-16 — currency locale corrected: Indian ₹ → Nepali NPR (रू)
+
+The ERP is for Nepal, but the frontend money presentation used the Indian
+rupee (₹ / INR / en-IN). Corrected to the Nepali rupee while keeping the D11
+backend/domain money model and the paisa ↔ rupee wire contract untouched:
+
+- `lib/constants.ts`: `CURRENCY_CODE` `INR → NPR`, `CURRENCY_LOCALE`
+  `en-IN → ne-NP`, new `CURRENCY_SYMBOL = "रू"`.
+- `lib/format/money.ts`: all formatters now render `रू` (e.g. "रू 12,340.50",
+  "रू 1,23,456.50", "रू 1.5L"); `Intl.NumberFormat` pinned to
+  `numberingSystem: "latn"` so the ne-NP locale emits Latin digits while
+  keeping the South Asian lakh/crore grouping the shop uses.
+- `components/layout/rail.tsx`: the tablet-rail brand mark `₹` → `CURRENCY_SYMBOL`.
+- `app/layout.tsx` / `app/globals.css`: font-coverage comments updated to the
+  Nepali rupee (Devanagari रू, covered by Noto Sans Devanagari).
+- `tests/frontend/format/money.test.ts`: assertions updated to `रू`.
+
+A sweep of the whole frontend (`app/`, `components/`, `lib/`, `stores/`,
+`tests/frontend/`, `next.config.ts`, `proxy.ts`) confirms zero remaining
+`₹` / `INR` / `en-IN` / India-specific currency references. Backend
+`modules/**`, `lib/money.ts`, and backend tests untouched ("rupees" is the unit
+name, not India-specific).
+
+**Verified:** `npx tsc --noEmit`, `npm run lint`, `npm run test:frontend`
+(45/45) green, `git diff --check` clean. Backend gate not rerun
+(frontend-only, per review instruction).
+### 2026-08-16 — Vercel Preview environment (deployment/build config, auth base URL, Neon DB)
+
+Deployment infrastructure for a Vercel Preview environment, PM-approved.
+No Prisma schema/migration/backend-logic changes.
+
+**Shipped**
+
+- `package.json`: added `"prebuild": "prisma generate"` so a clean Vercel
+  checkout generates Prisma Client before `next build` (build/deploy config
+  only; the generated client stays gitignored).
+- `lib/auth/base-url.ts` + `lib/auth.ts`: Better Auth base URL now resolves
+  dynamically instead of a hardcoded localhost. `resolveAuthBaseURL()` returns
+  an explicit `BETTER_AUTH_URL` when set, otherwise a Better Auth
+  `BaseURLConfig` (`protocol: "auto"`, `allowedHosts: [localhost, 127.0.0.1,
+  *.vercel.app]`, fallback localhost). Verified against the installed
+  `better-auth` source: host is derived per-request and validated against the
+  allowlist (wildcard `*.vercel.app` supported), protocol auto-selects `https`
+  off-loopback, and trusted origins are derived from the allowlist — origin
+  checks are not weakened. `env` param typed `Record<string, string | undefined>`
+  (Next 16 makes `NodeJS.ProcessEnv.NODE_ENV` required, which broke the test
+  literals).
+- `tests/unit/auth-base-url.test.ts`: focused F-10 tests (explicit URL wins,
+  localhost fallback, wildcard preview coverage, never a hardcoded preview
+  host).
+- `.env.example`: documented the dynamic base URL behavior.
+- Vercel Preview infra (CLI/API, no committed secrets):
+  - Git repo `shishirg46/retail-erp` already connected to project `erp-retail`.
+  - Dedicated Neon Postgres `erp-retail-preview-db` provisioned and connected
+    to the project (Preview scope only).
+  - Preview env vars: `DATABASE_URL` (+ Neon host/port/user/password vars),
+    `BETTER_AUTH_SECRET` (Sensitive), `ERP_TIMEZONE=Asia/Kathmandu`.
+    No Production/Development env vars exist.
+  - `prisma migrate deploy` applied all 6 existing migrations to the Neon
+    Preview DB after verifying `DATABASE_URL` points at the Neon host.
+  - `scripts/seed-owner.mjs` seeded one demo OWNER login into the Preview DB
+    (idempotent; verified host before seeding).
+
+**Verified**
+
+- `npx tsc --noEmit` clean, `npm run lint` clean, `npm run build` green
+  (prebuild → prisma generate → next build), `npm run test:frontend` 45/45.
+- End-to-end sign-in against the Neon Preview DB (local production build with
+  Preview DB + strong secret): POST /api/auth/sign-in/username → 200, user
+  `owner` role `OWNER`; session row persisted in Preview DB; GET
+  /api/auth/get-session round-trip OK.
+- Preview deployment Ready:
+  `https://erp-retail-rfvvopbui-shishirg46s-projects.vercel.app`
+  (behind Vercel SSO deployment protection).
+- Caveat: the first `vercel deploy` of a fresh project auto-assigned to
+  Production (no production env vars exist, so it is inert). Flagged to PM;
+  not addressed (out of scope, pending PM decision).

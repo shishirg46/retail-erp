@@ -1,7 +1,7 @@
 # M21 — Responsive Mobile-First Frontend: Kickoff Package
 
-**Milestone:** M21 (frontend) — **planning stage, no implementation yet**
-**Date:** 15 Aug 2026
+**Milestone:** M21 (frontend) — **implementation in progress (Phase A foundation done 16 Aug 2026, Phase B pages pending)**
+**Date:** 15 Aug 2026 (updated 16 Aug 2026)
 **Companion decision record:** [`business-decisions.md`](business-decisions.md) → D21
 **Consumed backend:** all endpoints listed in [`README.md`](../README.md) (D1–D20)
 **Primary user:** a shop owner operating from a smartphone on the shop floor

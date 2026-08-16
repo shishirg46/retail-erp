@@ -8,12 +8,10 @@ import { auth } from "../auth";
 import { ForbiddenError, UnauthorizedError } from "../errors";
 import { prisma } from "../prisma";
 import { consumeApiRequest } from "../rate-limit";
+import type { Role } from "./roles";
 import { hasSessionCookie } from "./session-cookie";
 
-export const OWNER = "OWNER" as const;
-export const CASHIER = "CASHIER" as const;
-
-export type Role = typeof OWNER | typeof CASHIER;
+export { CASHIER, OWNER, type Role } from "./roles";
 
 export type SessionContext = NonNullable<Awaited<ReturnType<typeof auth.api.getSession>>>;
 

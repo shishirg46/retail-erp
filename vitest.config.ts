@@ -24,6 +24,7 @@ export default defineConfig({
     pool: "forks",
     fileParallelism: false,
     include: ["tests/**/*.test.ts"],
+    exclude: ["tests/frontend/**"],
     setupFiles: ["tests/setup.ts"],
     testTimeout: 300_000,
     hookTimeout: 300_000,

@@ -4,8 +4,8 @@ import type { NextConfig } from "next";
 //
 // Baseline security headers are applied to every response. The API is a
 // JSON-only backend with no embedded content, so its CSP is maximally strict.
-// The placeholder UI scaffold keeps the baseline headers only — a real
-// frontend should ship with a nonce-based CSP that allows its own scripts.
+// UI pages ship a nonce-based CSP (scripts) from proxy.ts (D21.1/D22); this
+// file only adds the baseline headers + the API's strict CSP.
 //
 // CORS: this is a single-shop ERP with no cross-origin frontend requirement.
 // No Access-Control-Allow-* headers are emitted at all, so browsers enforce
