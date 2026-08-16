@@ -5,6 +5,7 @@ import {
 } from "../../lib/bounds";
 import { ValidationError } from "../../lib/errors";
 import { rupeesToPaisa } from "../../lib/money";
+import { hasAtMostTwoDecimals, quantityToUnits } from "../../lib/quantity";
 
 import type {
   CreatePurchaseInput,
@@ -32,12 +33,17 @@ function validatePurchaseItem(value: unknown, index: number): PurchaseItemInput 
     throw new ValidationError(`items[${index}].productId must be a non-empty string`);
   }
 
+  // D25.2: quantity accepts up to 2 dp. The unit precision rule (pcs
+  // integers) needs the product, so it is enforced in PurchaseService where
+  // the product is known (D25.1).
   if (
     typeof item.quantity !== "number" ||
-    !Number.isInteger(item.quantity) ||
-    item.quantity < 1
+    !hasAtMostTwoDecimals(item.quantity) ||
+    item.quantity <= 0
   ) {
-    throw new ValidationError(`items[${index}].quantity must be a positive integer`);
+    throw new ValidationError(
+      `items[${index}].quantity must be a positive number with at most 2 decimal places`
+    );
   }
 
   if (item.quantity > MAX_ITEM_QUANTITY) {
@@ -62,7 +68,7 @@ function validatePurchaseItem(value: unknown, index: number): PurchaseItemInput 
 
   return {
     productId: item.productId,
-    quantity: item.quantity,
+    quantity: quantityToUnits(item.quantity),
     costPerUnit: rupeesToPaisa(item.costPerUnit),
   };
 }

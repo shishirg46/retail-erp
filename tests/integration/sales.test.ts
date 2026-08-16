@@ -20,10 +20,11 @@ import {
   ValidationError,
 } from "../../lib/errors";
 import { paisaFromDecimal } from "../../lib/money";
+import { quantityFromDecimal } from "../../lib/quantity";
 import { PrismaProductRepository } from "../../modules/products/product.repository";
 import { SaleService } from "../../modules/sales/sale.service";
 import { createTestPrisma, truncateAll, reconcile } from "../helpers/db";
-import { createProduct, createCustomer, seedStock } from "../helpers/seed";
+import { createProduct, createCustomer, seedStock, units } from "../helpers/seed";
 
 const prisma = createTestPrisma();
 const saleService = new SaleService(prisma);
@@ -79,7 +80,7 @@ describe("sales (D1)", () => {
 
     const sale = await saleService.createSale({
       paymentType: "CASH",
-      items: [{ productId: product.id, quantity: 2 }],
+      items: [{ productId: product.id, quantity: units(2) }],
     });
 
     expect(sale.total).toBe(4000);
@@ -88,7 +89,7 @@ describe("sales (D1)", () => {
     expect(sale.customerId).toBeNull();
 
     const fresh = await productRepository.findById(product.id);
-    expect(fresh!.stockQty).toBe(8);
+    expect(fresh!.stockQty).toBe(units(8));
 
     const deposits = await prisma.walletTransaction.findMany({
       where: { source: "SALE", saleId: sale.id },
@@ -104,7 +105,7 @@ describe("sales (D1)", () => {
 
     const sale = await saleService.createSale({
       paymentType: "ECASH",
-      items: [{ productId: product.id, quantity: 1 }],
+      items: [{ productId: product.id, quantity: units(1) }],
     });
 
     expect(sale.total).toBe(1000);
@@ -120,7 +121,7 @@ describe("sales (D1)", () => {
     const sale = await saleService.createSale({
       paymentType: "CREDIT",
       customerId,
-      items: [{ productId: product.id, quantity: 2 }],
+      items: [{ productId: product.id, quantity: units(2) }],
     });
 
     expect(sale.total).toBe(3000);
@@ -137,13 +138,13 @@ describe("sales (D1)", () => {
       unit: "liter",
       costPrice: 9000,
       currentPrice: 3000,
-      priceTiers: [{ minQty: 3, price: 8000 }],
+      priceTiers: [{ minQty: units(3), price: 8000 }],
     });
     await seedStock(prisma, product.id, 10);
 
     const sale = await saleService.createSale({
       paymentType: "CASH",
-      items: [{ productId: product.id, quantity: 7 }],
+      items: [{ productId: product.id, quantity: units(7) }],
     });
 
     // 7 liters: two 3-liter bundles (8000+8000) + one unit (3000) = 19000.
@@ -152,7 +153,7 @@ describe("sales (D1)", () => {
     expect(await walletDeposits(sale.id)).toBe(19000);
 
     const fresh = await productRepository.findById(product.id);
-    expect(fresh!.stockQty).toBe(3);
+    expect(fresh!.stockQty).toBe(units(3));
   });
 
   it("S5 multi-item sale: one movement each, wallet sums all lines", async () => {
@@ -164,8 +165,8 @@ describe("sales (D1)", () => {
     const sale = await saleService.createSale({
       paymentType: "CASH",
       items: [
-        { productId: a.id, quantity: 3 }, // 6000
-        { productId: b.id, quantity: 2 }, // 2400
+        { productId: a.id, quantity: units(3) }, // 6000
+        { productId: b.id, quantity: units(2) }, // 2400
       ],
     });
 
@@ -175,14 +176,16 @@ describe("sales (D1)", () => {
 
     const stockA = await productRepository.findById(a.id);
     const stockB = await productRepository.findById(b.id);
-    expect(stockA!.stockQty).toBe(7);
-    expect(stockB!.stockQty).toBe(8);
+    expect(stockA!.stockQty).toBe(units(7));
+    expect(stockB!.stockQty).toBe(units(8));
 
     const movements = await prisma.stockMovement.findMany({ where: { reason: "SALE" } });
     expect(movements.length).toBe(2);
     expect(
-      movements.map((m) => m.qtyChange).sort((a, b) => a - b)
-    ).toEqual([-3, -2]);
+      movements
+        .map((m) => quantityFromDecimal(m.qtyChange))
+        .sort((a, b) => a - b)
+    ).toEqual([units(-3), units(-2)]);
   });
 
   // ── Failure paths ──────────────────────────────────────────────────────────
@@ -191,7 +194,7 @@ describe("sales (D1)", () => {
       () =>
         saleService.createSale({
           paymentType: "CASH",
-          items: [{ productId: "00000000-0000-0000-0000-000000000000", quantity: 1 }],
+          items: [{ productId: "00000000-0000-0000-0000-000000000000", quantity: units(1) }],
         }),
       NotFoundError,
       /not found/
@@ -208,14 +211,14 @@ describe("sales (D1)", () => {
       () =>
         saleService.createSale({
           paymentType: "CASH",
-          items: [{ productId: product.id, quantity: 5 }],
+          items: [{ productId: product.id, quantity: units(5) }],
         }),
       InsufficientStockError,
       /stock/
     );
 
     const fresh = await productRepository.findById(product.id);
-    expect(fresh!.stockQty).toBe(2);
+    expect(fresh!.stockQty).toBe(units(2));
     expect(await rowCounts()).toEqual(before);
   });
 
@@ -228,7 +231,7 @@ describe("sales (D1)", () => {
       () =>
         saleService.createSale({
           paymentType: "CREDIT",
-          items: [{ productId: product.id, quantity: 1 }],
+          items: [{ productId: product.id, quantity: units(1) }],
         }),
       ValidationError,
       /customerId is required/
@@ -246,7 +249,7 @@ describe("sales (D1)", () => {
         saleService.createSale({
           paymentType: "CREDIT",
           customerId: "00000000-0000-0000-0000-000000000000",
-          items: [{ productId: product.id, quantity: 1 }],
+          items: [{ productId: product.id, quantity: units(1) }],
         }),
       NotFoundError,
       /Customer/
@@ -262,13 +265,13 @@ describe("sales (D1)", () => {
     await saleService.createSale({
       paymentType: "CREDIT",
       customerId,
-      items: [{ productId: product.id, quantity: 2 }], // balance += 1000
+      items: [{ productId: product.id, quantity: units(2) }], // balance += 1000
     });
 
     const cashSale = await saleService.createSale({
       paymentType: "CASH",
       customerId,
-      items: [{ productId: product.id, quantity: 1 }], // should NOT touch the balance
+      items: [{ productId: product.id, quantity: units(1) }], // should NOT touch the balance
     });
 
     expect(cashSale.total).toBe(500);

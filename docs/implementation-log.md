@@ -11,6 +11,31 @@ seeded entirely through the HTTP API.
 
 ---
 
+## Milestone M22 — D25 fractional quantity domain and tier-first pricing (16 Aug 2026)
+
+**Shipped**
+
+- Quantity columns widened to `DECIMAL(18,2)` for `products.stock_qty`,
+  `price_tiers.min_qty`, `sale_items.qty`, `purchase_items.qty`, and
+  `stock_movements.qty_change`.
+- Supported units are frozen to `pcs`, `kg`, `g`, `liter`, and `ml` at the DB and
+  service/validator layers; `pcs` remains integer-only while measurable units allow
+  up to 2 decimal places.
+- Business-facing quantity caps are kept human-readable at `1000.00` and never
+  surfaced as scaled-unit values.
+- Tier pricing keeps the shop's largest-tier-first + remainder behavior with
+  integer-hundredth scaling at the domain boundary for exact arithmetic.
+
+**Verified**
+
+- Fractional quantities `0.25`, `0.50`, `1.50`, `2.25`, and `2.50` are accepted
+  for measurable units and rejected beyond 2 dp.
+- `pcs` items reject fractional quantities.
+- Fractional tier thresholds and remainder pricing behave as expected.
+- `npx tsc --noEmit`, `npm run lint`, and the relevant unit verification suite are green.
+
+---
+
 ## Milestone 1 — Products & Tier Pricing (13 Aug 2026)
 
 **Shipped**
@@ -1054,7 +1079,7 @@ tree has the D22 + §16 doc updates uncommitted.
 
 ## M21 — Phase A: frontend foundation (D22) — 16 Aug 2026
 
-**Status: PM-approved (16 Aug 2026) and committed as the clean M21 frontend foundation. Phase B (pages) not started.**
+**Status: PM-approved (16 Aug 2026) and committed as the clean M21 frontend foundation. Phase B in progress — B.1 POS (`/sales/new`) shipped 16 Aug 2026, awaiting visual review.**
 
 PM visual/UX review of the live Vercel Preview passed (owner / Preview!2026).
 Temporary preview access was revoked after the review; protection state
@@ -1236,3 +1261,174 @@ No Prisma schema/migration/backend-logic changes.
 - Caveat: the first `vercel deploy` of a fresh project auto-assigned to
   Production (no production env vars exist, so it is inert). Flagged to PM;
   not addressed (out of scope, pending PM decision).
+
+## M21 — Phase A follow-up: design language, typography & color tokens (D23) — 16 Aug 2026
+
+**Status: design language locked before Phase B screens. Phase B (pages) not started.**
+
+PM direction before Phase B: move the generic Phase A shell (Geist + neutral
+grey shadcn palette) to a restrained, professional ERP look — approved
+typography (Plus Jakarta Sans + Noto Sans Devanagari) and a coherent color-token
+system documented before/while building the first Phase B screen. Recorded as
+D23 in `docs/business-decisions.md`; full reference in `docs/frontend-plan.md` §6.
+
+**Shipped**
+
+- **Typography (D23.1):** `app/layout.tsx` now loads Plus Jakarta Sans (Latin
+  UI/brand) + Noto Sans Devanagari (Nepali data + rupee रू); Geist/Geist_Mono
+  and the Noto Sans Latin fallback removed. `@theme` stacks in `globals.css`:
+  `--font-sans`/`--font-heading` = Plus Jakarta Sans → Noto Sans Devanagari →
+  system; `--font-nepali` = Noto Sans Devanagari; `--font-mono` = system
+  `ui-monospace` stack (technical IDs only).
+- **Color tokens (D23.2):** `globals.css` `:root` + `.dark` rewritten to the
+  single-source token palette. One primary brand/action blue `#2869d9`
+  (light) / `#5d87d7` (dark); cool-neutral surfaces (hue 260); semantic
+  `--success`/`--warning`/`--destructive` pairs (+ `*-foreground`); neutral
+  navigation with a subtle primary-tinted active state (`--sidebar-accent`).
+  `@theme` gains `--color-success`, `--color-success-foreground`,
+  `--color-warning`, `--color-warning-foreground` so Tailwind emits
+  `bg-success` / `text-warning-foreground`, etc. All Phase A components render
+  through existing token classes, so no component code changes were needed.
+- **D23.2 primary adjustment (PM review):** PM requested `#3080f0`
+  (hover `#2569d1`, tint `#eaf3ff`, fg `#ffffff`) but `#3080f0` fails WCAG AA
+  (white 3.84:1, on-tint 3.43:1); PM approved the one-step-darker **`#2869d9`**
+  (`oklch(0.5447 0.1844 260.6)`, hover `oklch(0.538 0.1746 259.2)`,
+  tint `oklch(0.9609 0.0188 255.5)`, fg `oklch(1 0 0)`). `globals.css`
+  `@theme` + `:root` + `.dark` updated (`--primary-hover` added; dark tokens
+  otherwise unchanged, `--primary-hover` `oklch(0.69 0.12 262)`). Hover-opacity
+  classes replaced with the explicit token: `hover:bg-primary/80` →
+  `hover:bg-primary-hover` in `components/ui/button.tsx`,
+  `components/ui/badge.tsx`, and `hover:bg-primary/90` in
+  `app/(workspace)/page.tsx`. Docs (`frontend-plan.md` §6, D23.2/D23.3) updated
+  with the final values and AA rationale.
+- **Docs:** `frontend-plan.md` §6 — typography table, full OKLCh + hex token
+  table for both themes, D23.3 usage rules (primary reserved for CTA/active
+  nav/focus/links; cards neutral; semantic color for status only), and the
+  WCAG AA contrast report. Plan §6 money examples corrected from `₹` to
+  `रू` (leftover INR reference). `business-decisions.md` gains D23.1–D23.3.
+
+**Verified**
+
+- WCAG AA contrast computed from the OKLCh token values (all key text pairs
+  ≥4.5:1; input/ring UI boundaries ≥3:1; light input border tuned to 3.16:1,
+  dark warning/destructive pairs tuned to 6.47:1 / 4.66:1). After the D23.2
+  primary adjustment, light pairs re-verified: white-on-primary 5.11:1,
+  white-on-hover 5.22:1, primary-on-tint 4.56:1, sidebar-accent pair 4.56:1,
+  ring-vs-bg 4.89:1; dark primary 5.56:1, hover 7.04:1 — all AA. Report in
+  `frontend-plan.md` §6; tokens must be re-verified whenever they change.
+- No INR/₹ references remain in `app/`, `components/`, `lib/`, `stores/`, or
+  the plan (grep clean; the `adminRoles` "INR" match is a false positive).
+- `npx tsc --noEmit` clean, `npm run lint` clean, `npm run test:frontend`
+  45/45 green, `npm run build` green (next/font/google resolves Plus Jakarta
+  Sans at build). Backend `test:all` not rerun (no backend change).
+
+## M21 — Phase B.1: POS new-sale screen (`/sales/new`) — 16 Aug 2026
+
+**Status: implemented; awaiting PM visual review. `/sales` list and `/sales/[id]` detail not started.**
+
+Frontend-only. Consumes only existing backend contracts: `GET /api/products`
+(`?search&category&limit`, paginated `{ data, paging }` — D12), `GET
+/api/customers` (`?search&limit`), `POST /api/sales` (rupees, `CASH|ECASH|
+CREDIT`, CREDIT requires `customerId`). No backend, Prisma, or schema changes.
+
+**Shipped**
+
+- **Route:** `app/(workspace)/sales/new/page.tsx` (session-gated by the
+  `(workspace)` layout; D9.3 — CASHIER and OWNER both sell). Renders the POS
+  inside `<Suspense>`.
+- **`components/sales/new-sale.tsx`** — product picker: debounced (250 ms)
+  `useProductFilters` syncing `?search&category` via `router.replace`
+  (searchParams = source of truth; TanStack Query keyed on the URL), category
+  chips ("All" + derived from loaded products), Enter-in-search adds the first
+  match, product grid 2-col mobile / 3-col desktop, sticky cart panel on
+  desktop/tablet, and on mobile a fixed bottom cart bar (hidden when empty)
+  opening a bottom `Sheet` with the same panel.
+- **`components/sales/product-card.tsx`** — single-tap add tile; shows stock
+  `stockQty` + cheapest active-tier hint (preview only — server recomputes
+  totals/tiers at POST, D1/D22.2); stock-0 products disabled ("Out of stock").
+- **`components/sales/cart-panel.tsx`** (`CartPanel` + `CartLineRow`) — quantity
+  −/＋ steppers (44 px) + numeric input (blur/Enter commit, capped at
+  `stockQty` else `MAX_ITEM_QUANTITY`), line removal, active-tier hint, payment
+  type segmented control (`aria-pressed`), CREDIT opens `CustomerPicker`
+  (required before save), preview total only (`formattedRupees` — never
+  authoritative), Save with `submittingRef` double-submit guard +
+  `mutation.isPending`, inline `[role=alert]` `ApiError.message`, success →
+  `toast.success` + cart reset + `products.all`/`sales.all`/`reports.all`
+  invalidation.
+- **`components/sales/customer-picker.tsx`** — CREDIT customer search/select
+  (50-item cap) with signed `balanceOwed` (`formatSignedRupees`), plus an
+  inline **new-customer form** (`POST /api/customers`, OWNER + CASHIER) so a
+  credit sale can proceed without a pre-existing customer (PM review, 16 Aug
+  2026). Just-created customer is selected immediately (local pick fallback
+  until the list refetch lands); name pre-fills from the current search.
+- **Zustand cart extension** (`stores/cart.ts`) — `CartLine` gains optional
+  `stockQty`/`tiers`; `addItem` accepts the whole line object (fixed a
+  ReferenceError in the Phase A signature).
+- **Validation** `lib/validate/sale.ts` — `newSaleSchema` mirrors
+  `modules/sales/sale.validation.ts` bounds (`MAX_ITEM_QUANTITY` 100000,
+  `MAX_ITEMS_PER_DOCUMENT` 100, empty-item / missing-pricing checks) with a
+  CREDIT-requires-customer `superRefine`; `lib/api/types.ts` adds `Paginated<T>`.
+- **Tier hints** `lib/format/tiers.ts` — `cheapestTier`/`activeTier`/`tierHint`
+  (UX preview only, never authoritative).
+- **Tests** — `tests/frontend/sales/new-sale.test.tsx` (7, `vi.hoisted` mocks
+  for next/navigation + api client + sonner; includes the on-the-spot credit
+  customer creation), `tests/frontend/validate/
+  sale.test.ts` (7), `tests/frontend/format/tiers.test.ts` (5), cart store
+  extended (8). Frontend suite now **65/65** (9 files).
+
+**Verified**
+
+- `npx tsc --noEmit` clean; `npm run lint` clean (final `useProductFilters`
+  refactor removed the last `react-hooks/set-state-in-effect` +
+  `react-hooks/refs` warnings); `git diff --check` clean (one pre-existing
+  trailing space in the D23 entry removed); `npm run test:frontend` 65/65
+  green. Backend `test:all` not rerun (frontend-only change).
+
+**Notes**
+
+- Working tree was not clean at start: uncommitted D23 design-language work
+  (globals.css/layout fonts/colors, button/badge/page hovers, business-
+  decisions D23, frontend-plan §6, implementation-log D23) sits on top of
+  `257328f`; the Phase B.1 changes are layered on that uncommitted state and
+  nothing was overwritten or committed.
+- Awaiting PM visual review of `/sales/new` before Phase B.2 (`/sales`) and
+  B.3 (`/sales/[id]`).
+
+## 2026-08-16 — Dev-only LAN Better Auth trusted-origin exception (D24) + LAN mobile verification
+
+**Status: LAN mobile test successful end-to-end from the phone.**
+
+**Context.** The LAN mobile test (phone at `http://192.168.1.123:3000`, dev
+server `next dev -- --hostname 0.0.0.0`) hit Better Auth's **internal** origin
+check: `POST /api/auth/sign-out` → `403 Invalid origin` on any cookie-carrying
+state-changing request. Root cause: `trustedOrigins` derived from the base-URL
+allowlist carries no port and `matchesOriginPattern` requires an exact origin,
+so the LAN origin never matched. Sign-in passed because it had no session cookie
+yet. Recorded as D24 in `docs/business-decisions.md`.
+
+**Shipped**
+
+- `lib/auth/base-url.ts`: `DEV_LAN_TRUSTED_ORIGINS = ["http://192.168.1.123:*"]`
+  + pure helper `devLanTrustedOrigins(env)` returning the list only when
+  `env.NODE_ENV === "development"`, else `[]`.
+- `lib/auth.ts`: `trustedOrigins: devLanTrustedOrigins()` — host-pinned,
+  port-wildcarded, development-only. In production the option is the empty list,
+  so the strict check is untouched; the app-level D9.9 gate (`assertSameOrigin`)
+  is unchanged.
+- `tests/unit/auth-config.test.ts`: 2 new dev-only gate tests (`development` →
+  the LAN entry; `production`/missing `NODE_ENV` → `[]`).
+
+**Verified**
+
+- Live dev server (auto-reloaded on edit): sign-out with a session cookie +
+  `Origin: http://192.168.1.123:3000` → `200 {"success":true}` (was 403);
+  same request with `Origin: http://evil.example` → `403 Invalid origin`
+  (strictness preserved).
+- `npx tsc --noEmit` clean; `npm run lint` clean; unit suites
+  `auth-config` 12/12 + `sign-in-get-guard` 4/4; `npm run test:frontend` 66/66.
+- Backend `test:all` not rerun (no business-logic change; the origin-check path
+  was exercised live).
+- **LAN mobile verification (phone, `http://192.168.1.123:3000`):** sign-in ✓,
+  workspace ✓, products ✓, `/sales/new` ✓, sign-out ✓, credential GET leak
+  fixed ✓ (form `method="post"` + proxy 307 credential-GET guard + Next
+  `allowedDevOrigins`).

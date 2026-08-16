@@ -2,12 +2,16 @@ import type { VoidInfo } from "../voids/void.types";
 
 // Money is whole paisa in the domain (D11). Rupee values convert at the
 // API boundary (validators in, routes out).
+//
+// Quantities are integer hundredths (scaled units) in the domain (D25.6) —
+// the quantity analogue of whole paisa. Human quantities (≤ 2 dp) convert
+// to/from scaled units via lib/quantity.ts at the boundaries.
 export type PurchasePaymentType = "CASH" | "CREDIT";
 
 export interface PurchaseItemInput {
   productId: string;
-  quantity: number;
-  costPerUnit: number; // paisa
+  quantity: number; // scaled units
+  costPerUnit: number; // paisa per human unit
 }
 
 export interface CreatePurchaseInput {
@@ -20,8 +24,8 @@ export interface PurchaseItem {
   id: string;
   purchaseId: string;
   productId: string;
-  qty: number;
-  costPerUnit: number; // paisa
+  qty: number; // scaled units
+  costPerUnit: number; // paisa per human unit
 }
 
 export interface Purchase {
@@ -40,7 +44,7 @@ export interface CreatePurchaseRepositoryInput {
   total: number;
   items: {
     productId: string;
-    qty: number;
+    qty: number; // scaled units
     costPerUnit: number;
   }[];
 }

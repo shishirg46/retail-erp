@@ -1,5 +1,6 @@
 import type { Prisma } from "../../generated/prisma/client";
 import { paisaFromDecimal, paisaToRupees } from "../../lib/money";
+import { quantityFromDecimal, unitsToQuantity } from "../../lib/quantity";
 import type { VoidStatusLabel, VoidStatusOutput } from "../voids/void.types";
 
 import type { Purchase, PurchaseItem } from "./purchase.types";
@@ -15,7 +16,7 @@ export function toPurchaseItem(
     id: raw.id,
     purchaseId: raw.purchaseId,
     productId: raw.productId,
-    qty: raw.qty,
+    qty: quantityFromDecimal(raw.qty),
     costPerUnit: paisaFromDecimal(raw.costPerUnit),
   };
 }
@@ -42,6 +43,7 @@ export function toPurchaseApi(purchase: Purchase): PurchaseApi {
     total: paisaToRupees(purchase.total),
     items: purchase.items.map((item) => ({
       ...item,
+      qty: unitsToQuantity(item.qty),
       costPerUnit: paisaToRupees(item.costPerUnit),
     })),
     status: (purchase.voidInfo.voidedAt ? "VOIDED" : "ACTIVE") as VoidStatusLabel,

@@ -2,6 +2,10 @@ import { prisma } from "../../lib/prisma";
 import { Prisma } from "../../generated/prisma/client";
 import { ValidationError } from "../../lib/errors";
 import { paisaFromDecimal, paisaToRupees } from "../../lib/money";
+import {
+  quantityFromDecimal,
+  unitsToQuantity,
+} from "../../lib/quantity";
 
 import type {
   Product,
@@ -18,26 +22,32 @@ type ProductWithTiers = Prisma.ProductGetPayload<{
   include: { priceTiers: true };
 }>;
 
+// DB (DECIMAL human units) -> domain (whole paisa + scaled units, D11/D25.6).
 function toProduct(raw: ProductWithTiers): Product {
   return {
     ...raw,
     costPrice: paisaFromDecimal(raw.costPrice),
     currentPrice: paisaFromDecimal(raw.currentPrice),
+    stockQty: quantityFromDecimal(raw.stockQty),
     priceTiers: raw.priceTiers.map((tier) => ({
       ...tier,
+      minQty: quantityFromDecimal(tier.minQty),
       price: paisaFromDecimal(tier.price),
     })),
   };
 }
 
-// API output view: whole-paisa domain -> rupee wire representation (D11).
+// API output view: whole-paisa domain -> rupee wire representation (D11), and
+// scaled units -> human quantities (D25.6).
 export function toProductApi(product: Product): Product {
   return {
     ...product,
     costPrice: paisaToRupees(product.costPrice),
     currentPrice: paisaToRupees(product.currentPrice),
+    stockQty: unitsToQuantity(product.stockQty),
     priceTiers: product.priceTiers.map((tier) => ({
       ...tier,
+      minQty: unitsToQuantity(tier.minQty),
       price: paisaToRupees(tier.price),
     })),
   };
@@ -63,7 +73,7 @@ export class PrismaProductRepository implements ProductRepository {
         priceTiers: input.priceTiers?.length
           ? {
               create: input.priceTiers.map((tier) => ({
-                minQty: tier.minQty,
+                minQty: unitsToQuantity(tier.minQty),
                 price: paisaToRupees(tier.price),
               })),
             }
@@ -125,7 +135,7 @@ export class PrismaProductRepository implements ProductRepository {
       where: { id },
       data: {
         stockQty: {
-          increment: qtyChange,
+          increment: unitsToQuantity(qtyChange),
         },
       },
       ...withPriceTiers,
@@ -135,17 +145,19 @@ export class PrismaProductRepository implements ProductRepository {
   }
 
   async reserveStock(id: string, qty: number): Promise<Product | null> {
+    // `qty` is scaled units (D25.6) — always an integer hundredth count.
     if (!Number.isInteger(qty) || qty <= 0) {
       throw new ValidationError("quantity must be a positive integer");
     }
 
     // Atomic conditional decrement: the row is only updated when at least
-    // `qty` remains. Under Postgres READ COMMITTED the UPDATE re-evaluates
-    // the WHERE clause against the latest committed row version, so two
-    // racing transactions cannot both succeed on the last unit.
+    // `qty` (in DECIMAL human units) remains. Under Postgres READ COMMITTED
+    // the UPDATE re-evaluates the WHERE clause against the latest committed
+    // row version, so two racing transactions cannot both succeed on the last
+    // unit.
     const result = await this.db.product.updateMany({
-      where: { id, stockQty: { gte: qty } },
-      data: { stockQty: { decrement: qty } },
+      where: { id, stockQty: { gte: unitsToQuantity(qty) } },
+      data: { stockQty: { decrement: unitsToQuantity(qty) } },
     });
 
     if (result.count === 0) {

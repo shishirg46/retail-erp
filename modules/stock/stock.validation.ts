@@ -1,5 +1,6 @@
 import { MAX_ITEM_QUANTITY } from "../../lib/bounds";
 import { ValidationError } from "../../lib/errors";
+import { hasAtMostTwoDecimals, quantityToUnits } from "../../lib/quantity";
 
 import type {
   AdjustStockInput,
@@ -32,23 +33,29 @@ export function validateAdjustStockInput(body: unknown): AdjustStockInput {
     );
   }
 
-  // DAMAGE counts the amount ruined -> must be a positive integer.
-  // CORRECTION is a target level -> must be a non-negative integer.
+  // D25.2/D25.5: DAMAGE counts the amount ruined -> a positive quantity (up to
+  // 2 dp for measurable units); CORRECTION is a target level -> non-negative.
+  // The unit precision rule (pcs integers) needs the product, so it is
+  // enforced in StockService where the product is known (D25.1).
   if (input.reason === "DAMAGE") {
     if (
       typeof input.quantity !== "number" ||
-      !Number.isInteger(input.quantity) ||
-      input.quantity < 1
+      !hasAtMostTwoDecimals(input.quantity) ||
+      input.quantity <= 0
     ) {
-      throw new ValidationError("quantity must be a positive integer for DAMAGE");
+      throw new ValidationError(
+        "quantity must be a positive number with at most 2 decimal places for DAMAGE"
+      );
     }
   } else {
     if (
       typeof input.quantity !== "number" ||
-      !Number.isInteger(input.quantity) ||
+      !hasAtMostTwoDecimals(input.quantity) ||
       input.quantity < 0
     ) {
-      throw new ValidationError("quantity must be a non-negative integer for CORRECTION");
+      throw new ValidationError(
+        "quantity must be a non-negative number with at most 2 decimal places for CORRECTION"
+      );
     }
   }
 
@@ -63,7 +70,7 @@ export function validateAdjustStockInput(body: unknown): AdjustStockInput {
   return {
     productId: input.productId,
     reason: input.reason,
-    quantity: input.quantity,
+    quantity: quantityToUnits(input.quantity),
     ...(typeof input.note === "string" && input.note.length > 0
       ? { note: input.note }
       : {}),

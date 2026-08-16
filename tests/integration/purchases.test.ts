@@ -11,11 +11,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NotFoundError } from "../../lib/errors";
 import { paisaFromDecimal } from "../../lib/money";
+import { quantityFromDecimal } from "../../lib/quantity";
 import { PrismaProductRepository } from "../../modules/products/product.repository";
 import { PrismaSupplierRepository } from "../../modules/suppliers/supplier.repository";
 import { PurchaseService } from "../../modules/purchases/purchase.service";
 import { createTestPrisma, truncateAll, reconcile } from "../helpers/db";
-import { createProduct, createSupplier } from "../helpers/seed";
+import { createProduct, createSupplier, units } from "../helpers/seed";
 
 const prisma = createTestPrisma();
 const purchaseService = new PurchaseService(prisma);
@@ -68,12 +69,12 @@ describe("purchases (D2/D3)", () => {
     const purchase = await purchaseService.createPurchase({
       supplierId,
       paymentType: "CASH",
-      items: [{ productId: product.id, quantity: 10, costPerUnit: 2000 }],
+      items: [{ productId: product.id, quantity: units(10), costPerUnit: 2000 }],
     });
 
     expect(purchase.total).toBe(20000);
     const fresh = await productRepository.findById(product.id);
-    expect(fresh!.stockQty).toBe(10);
+    expect(fresh!.stockQty).toBe(units(10));
     expect(fresh!.costPrice).toBe(2000);
 
     const supplier = await supplierRepository.findById(supplierId);
@@ -85,7 +86,7 @@ describe("purchases (D2/D3)", () => {
 
     const movement = await prisma.stockMovement.findMany({ where: { reason: "PURCHASE", productId: product.id } });
     expect(movement.length).toBe(1);
-    expect(movement[0].qtyChange).toBe(10);
+    expect(quantityFromDecimal(movement[0].qtyChange)).toBe(units(10));
   });
 
   it("P2 CREDIT purchase: supplier balance += total, NO wallet entry", async () => {
@@ -95,7 +96,7 @@ describe("purchases (D2/D3)", () => {
     const purchase = await purchaseService.createPurchase({
       supplierId,
       paymentType: "CREDIT",
-      items: [{ productId: product.id, quantity: 5, costPerUnit: 3000 }],
+      items: [{ productId: product.id, quantity: units(5), costPerUnit: 3000 }],
     });
 
     expect(purchase.total).toBe(15000);
@@ -104,7 +105,7 @@ describe("purchases (D2/D3)", () => {
 
     expect(await prisma.walletTransaction.count()).toBe(0);
     const fresh = await productRepository.findById(product.id);
-    expect(fresh!.stockQty).toBe(5);
+    expect(fresh!.stockQty).toBe(units(5));
   });
 
   it("P3 D2: costPrice tracks the latest purchase; history frozen", async () => {
@@ -114,17 +115,17 @@ describe("purchases (D2/D3)", () => {
     await purchaseService.createPurchase({
       supplierId,
       paymentType: "CASH",
-      items: [{ productId: product.id, quantity: 100, costPerUnit: 2000 }],
+      items: [{ productId: product.id, quantity: units(100), costPerUnit: 2000 }],
     });
     await purchaseService.createPurchase({
       supplierId,
       paymentType: "CASH",
-      items: [{ productId: product.id, quantity: 50, costPerUnit: 2200 }],
+      items: [{ productId: product.id, quantity: units(50), costPerUnit: 2200 }],
     });
 
     const fresh = await productRepository.findById(product.id);
     expect(fresh!.costPrice).toBe(2200);
-    expect(fresh!.stockQty).toBe(150);
+    expect(fresh!.stockQty).toBe(units(150));
 
     const items = await prisma.purchaseItem.findMany({
       where: { productId: product.id },
@@ -142,7 +143,7 @@ describe("purchases (D2/D3)", () => {
         purchaseService.createPurchase({
           supplierId: "00000000-0000-0000-0000-000000000000",
           paymentType: "CASH",
-          items: [{ productId: product.id, quantity: 1, costPerUnit: 5 }],
+          items: [{ productId: product.id, quantity: units(1), costPerUnit: 5 }],
         }),
       NotFoundError,
       /Supplier/
@@ -162,8 +163,8 @@ describe("purchases (D2/D3)", () => {
           supplierId,
           paymentType: "CASH",
           items: [
-            { productId: product.id, quantity: 2, costPerUnit: 3 }, // valid line
-            { productId: "00000000-0000-0000-0000-000000000000", quantity: 1, costPerUnit: 3 }, // ghost line
+            { productId: product.id, quantity: units(2), costPerUnit: 3 }, // valid line
+            { productId: "00000000-0000-0000-0000-000000000000", quantity: units(1), costPerUnit: 3 }, // ghost line
           ],
         }),
       NotFoundError
@@ -181,17 +182,17 @@ describe("purchases (D2/D3)", () => {
       supplierId,
       paymentType: "CASH",
       items: [
-        { productId: a.id, quantity: 4, costPerUnit: 100 },
+        { productId: a.id, quantity: units(4), costPerUnit: 100 },
       ],
     });
 
     const movements = await prisma.stockMovement.findMany({
       where: { productId: a.id, reason: "PURCHASE" },
     });
-    const sumMovement = movements.reduce((s, m) => s + m.qtyChange, 0);
+    const sumMovement = movements.reduce((s, m) => s + quantityFromDecimal(m.qtyChange), 0);
     const fresh = await productRepository.findById(a.id);
-    expect(fresh!.stockQty).toBe(4);
-    expect(sumMovement).toBe(4);
+    expect(fresh!.stockQty).toBe(units(4));
+    expect(sumMovement).toBe(units(4));
     expect(purchase.total).toBe(400);
   });
 });

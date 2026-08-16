@@ -30,12 +30,12 @@ function expectValidationError(fn: () => unknown, pattern: RegExp): void {
 
 describe("D1–D7 request validators", () => {
   // ── Sales (D1) ─────────────────────────────────────────────────────────────
-  it("sale: valid CASH without customerId", () => {
+  it("sale: valid CASH without customerId (quantity scaled to hundredths)", () => {
     const out = validateCreateSaleInput({
       paymentType: "CASH",
       items: [{ productId: "p1", quantity: 2 }],
     });
-    expect(out).toEqual({ paymentType: "CASH", items: [{ productId: "p1", quantity: 2 }] });
+    expect(out).toEqual({ paymentType: "CASH", items: [{ productId: "p1", quantity: 200 }] });
   });
 
   it("sale: valid CREDIT keeps customerId", () => {
@@ -54,6 +54,25 @@ describe("D1–D7 request validators", () => {
       items: [{ productId: "p1", quantity: 1 }],
     });
     expect(out.paymentType).toBe("ECASH");
+  });
+
+  it("sale: measurable quantities accept the exact 2dp values and scale them exactly (D25.2)", () => {
+    for (const quantity of [0.25, 0.5, 1.5, 2.25, 2.5]) {
+      const out = validateCreateSaleInput({
+        paymentType: "CASH",
+        items: [{ productId: "p1", quantity }],
+      });
+      expect(out.items[0].quantity).toBe(quantity * 100);
+    }
+
+    expectValidationError(
+      () =>
+        validateCreateSaleInput({
+          paymentType: "CASH",
+          items: [{ productId: "p1", quantity: 2.505 }],
+        }),
+      /at most 2 decimal places/
+    );
   });
 
   it("sale: non-object body rejected", () => {
@@ -75,16 +94,16 @@ describe("D1–D7 request validators", () => {
     );
   });
 
-  it("sale: quantity must be a positive integer", () => {
+  it("sale: quantity must be a positive number with at most 2 dp", () => {
     const base = { paymentType: "CASH" as const, items: [{ productId: "p1", quantity: 0 }] };
-    expectValidationError(() => validateCreateSaleInput(base), /positive integer/);
+    expectValidationError(() => validateCreateSaleInput(base), /positive number with at most 2 decimal places/);
     expectValidationError(
       () => validateCreateSaleInput({ ...base, items: [{ productId: "p1", quantity: -1 }] }),
-      /positive integer/
+      /positive number with at most 2 decimal places/
     );
     expectValidationError(
-      () => validateCreateSaleInput({ ...base, items: [{ productId: "p1", quantity: 1.5 }] }),
-      /positive integer/
+      () => validateCreateSaleInput({ ...base, items: [{ productId: "p1", quantity: 1.257 }] }),
+      /at most 2 decimal places/
     );
   });
 
@@ -143,7 +162,7 @@ describe("D1–D7 request validators", () => {
     expect(out).toEqual({
       supplierId: "s1",
       paymentType: "CASH",
-      items: [{ productId: "p1", quantity: 5, costPerUnit: 2000 }],
+      items: [{ productId: "p1", quantity: 500, costPerUnit: 2000 }],
     });
   });
 
@@ -154,6 +173,15 @@ describe("D1–D7 request validators", () => {
       items: [{ productId: "p1", quantity: 2, costPerUnit: 15 }],
     });
     expect(out.paymentType).toBe("CREDIT");
+  });
+
+  it("purchase: fractional quantities accepted and scaled exactly (D25.2)", () => {
+    const out = validateCreatePurchaseInput({
+      supplierId: "s1",
+      paymentType: "CASH",
+      items: [{ productId: "p1", quantity: 1.5, costPerUnit: 20 }],
+    });
+    expect(out.items[0].quantity).toBe(150);
   });
 
   it("purchase: missing supplierId / bad paymentType rejected", () => {
@@ -184,7 +212,16 @@ describe("D1–D7 request validators", () => {
           paymentType: "CASH",
           items: [{ productId: "p1", quantity: 0, costPerUnit: 1 }],
         }),
-      /positive integer/
+      /at most 2 decimal places/
+    );
+    expectValidationError(
+      () =>
+        validateCreatePurchaseInput({
+          supplierId: "s1",
+          paymentType: "CASH",
+          items: [{ productId: "p1", quantity: 1.501, costPerUnit: 1 }],
+        }),
+      /at most 2 decimal places/
     );
     expectValidationError(
       () =>
@@ -231,16 +268,21 @@ describe("D1–D7 request validators", () => {
   });
 
   // ── Stock adjustments (D6) ──────────────────────────────────────────────────
-  it("stock: DAMAGE requires a positive integer quantity", () => {
+  it("stock: DAMAGE requires a positive quantity (scaled to hundredths)", () => {
     const base = { productId: "p1", reason: "DAMAGE" as const };
     expect(validateAdjustStockInput({ ...base, quantity: 3 })).toEqual({
       productId: "p1",
       reason: "DAMAGE",
-      quantity: 3,
+      quantity: 300,
     });
-    expectValidationError(() => validateAdjustStockInput({ ...base, quantity: 0 }), /positive integer/);
-    expectValidationError(() => validateAdjustStockInput({ ...base, quantity: -2 }), /positive integer/);
-    expectValidationError(() => validateAdjustStockInput({ ...base, quantity: 2.5 }), /positive integer/);
+    expect(validateAdjustStockInput({ ...base, quantity: 1.5 })).toEqual({
+      productId: "p1",
+      reason: "DAMAGE",
+      quantity: 150,
+    });
+    expectValidationError(() => validateAdjustStockInput({ ...base, quantity: 0 }), /at most 2 decimal places/);
+    expectValidationError(() => validateAdjustStockInput({ ...base, quantity: -2 }), /at most 2 decimal places/);
+    expectValidationError(() => validateAdjustStockInput({ ...base, quantity: 2.505 }), /at most 2 decimal places/);
   });
 
   it("stock: CORRECTION accepts a zero target (desired final level)", () => {

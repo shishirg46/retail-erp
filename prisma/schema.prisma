@@ -16,10 +16,13 @@ model Product {
   id           String   @id @default(uuid())
   name         String
   category     String?
-  unit         String // e.g. "pcs", "kg", "liter"
+  // Frozen unit set (D25.1): pcs (whole units), kg, g, liter, ml (fractional).
+  unit         String // one of: pcs, kg, g, liter, ml
   costPrice    Decimal  @map("cost_price")
   currentPrice Decimal  @map("current_price")
-  stockQty     Int      @default(0) @map("stock_qty")
+  // Human-readable stock level, DECIMAL(18,2) — fractional for measurable
+  // units, whole for pcs (D25).
+  stockQty     Decimal  @default(0) @db.Decimal(18, 2) @map("stock_qty")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
@@ -38,7 +41,8 @@ model Product {
 model PriceTier {
   id        String  @id @default(uuid())
   productId String  @map("product_id")
-  minQty    Int     @map("min_qty")
+  // Threshold in human-readable quantity, DECIMAL(18,2) (D25.4).
+  minQty    Decimal @db.Decimal(18, 2) @map("min_qty")
   price     Decimal
 
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
@@ -87,7 +91,8 @@ model PurchaseItem {
   id          String  @id @default(uuid())
   purchaseId  String  @map("purchase_id")
   productId   String  @map("product_id")
-  qty         Int
+  // Quantity bought, DECIMAL(18,2) (D25).
+  qty         Decimal @db.Decimal(18, 2)
   costPerUnit Decimal @map("cost_per_unit") // price paid at time of purchase
 
   purchase Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
@@ -166,7 +171,8 @@ model SaleItem {
   id           String  @id @default(uuid())
   saleId       String  @map("sale_id")
   productId    String  @map("product_id")
-  qty          Int
+  // Quantity sold, DECIMAL(18,2) (D25).
+  qty          Decimal @db.Decimal(18, 2)
   pricePerUnit Decimal @map("price_per_unit") // frozen price charged at time of sale
 
   sale    Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
@@ -261,7 +267,9 @@ enum StockReason {
 model StockMovement {
   id         String      @id @default(uuid())
   productId  String      @map("product_id")
-  qtyChange  Int         @map("qty_change") // positive = stock in, negative = stock out
+  // Signed quantity change, DECIMAL(18,2) (D25); positive = stock in,
+  // negative = stock out.
+  qtyChange  Decimal     @db.Decimal(18, 2) @map("qty_change")
   reason     StockReason
   date       DateTime    @default(now())
   note       String?

@@ -1,5 +1,6 @@
 import { prisma } from "../../lib/prisma";
 import { paisaToRupees } from "../../lib/money";
+import { unitsToQuantity } from "../../lib/quantity";
 import { attachVoidStatus } from "../voids/void.repository";
 
 import { toPurchase } from "./purchase.mapper";
@@ -27,7 +28,7 @@ export class PrismaPurchaseRepository implements PurchaseRepository {
         items: {
           create: input.items.map((item) => ({
             productId: item.productId,
-            qty: item.qty,
+            qty: unitsToQuantity(item.qty),
             costPerUnit: paisaToRupees(item.costPerUnit),
           })),
         },

@@ -1,5 +1,10 @@
-import { InsufficientStockError, NotFoundError } from "../../lib/errors";
+import {
+  InsufficientStockError,
+  NotFoundError,
+  ValidationError,
+} from "../../lib/errors";
 import { prisma } from "../../lib/prisma";
+import { unitsToQuantity } from "../../lib/quantity";
 import { PrismaProductRepository } from "../products/product.repository";
 import { PrismaStockRepository } from "./stock.repository";
 
@@ -24,6 +29,13 @@ export class StockService {
         throw new NotFoundError(`Product '${input.productId}' not found`);
       }
 
+      // D25.1: pcs products are whole units only.
+      if (product.unit === "pcs" && input.quantity % 100 !== 0) {
+        throw new ValidationError(
+          `${product.name} is sold per piece — quantity must be a whole number`
+        );
+      }
+
       // DAMAGE: atomic conditional decrement (F-02). The successful atomic
       // update is the authority for availability — a read→check→write race
       // can no longer drive stock below zero.
@@ -35,7 +47,7 @@ export class StockService {
 
         if (!reserved) {
           throw new InsufficientStockError(
-            `${product.name} no longer has ${input.quantity} units to adjust — stock cannot go negative`
+            `${product.name} no longer has ${unitsToQuantity(input.quantity)} units to adjust — stock cannot go negative`
           );
         }
 
@@ -59,7 +71,7 @@ export class StockService {
 
       if (product.stockQty + qtyChange < 0) {
         throw new InsufficientStockError(
-          `adjustment would leave ${product.name} at ${product.stockQty + qtyChange} units — stock cannot go negative`
+          `adjustment would leave ${product.name} at ${unitsToQuantity(product.stockQty + qtyChange)} units — stock cannot go negative`
         );
       }
 

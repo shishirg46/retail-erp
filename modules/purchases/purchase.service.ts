@@ -1,4 +1,5 @@
-import { NotFoundError } from "../../lib/errors";
+import { NotFoundError, ValidationError } from "../../lib/errors";
+import { roundHalfUp } from "../../lib/money";
 import { prisma } from "../../lib/prisma";
 import { PrismaProductRepository } from "../products/product.repository";
 import { PrismaStockRepository } from "../stock/stock.repository";
@@ -27,6 +28,10 @@ export class PurchaseService {
       }
 
       // 2. Every purchased product must exist; accumulate the total.
+      //    Each line total is qty (scaled units) × costPerUnit (paisa per
+      //    human unit) / 100, rounded half-up to whole paisa — the single
+      //    money rounding for purchases (D25.7). For whole-unit quantities the
+      //    product is exact, so the rounding is a no-op.
       const items: { productId: string; qty: number; costPerUnit: number }[] = [];
       let grandTotal = 0;
 
@@ -37,7 +42,14 @@ export class PurchaseService {
           throw new NotFoundError(`Product '${item.productId}' not found`);
         }
 
-        grandTotal += item.quantity * item.costPerUnit;
+        // D25.1: pcs products are whole units only.
+        if (product.unit === "pcs" && item.quantity % 100 !== 0) {
+          throw new ValidationError(
+            `${product.name} is sold per piece — quantity must be a whole number`
+          );
+        }
+
+        grandTotal += roundHalfUp((item.quantity * item.costPerUnit) / 100);
 
         items.push({
           productId: product.id,

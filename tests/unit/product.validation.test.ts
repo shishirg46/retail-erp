@@ -11,7 +11,7 @@ describe("F-01 validateCreateProductInput", () => {
   it("valid full product", () => {
     const input = validateCreateProductInput({
       name: "Biscuit",
-      unit: "pack",
+      unit: "pcs",
       category: "snacks",
       costPrice: 18,
       currentPrice: 20,
@@ -178,16 +178,67 @@ describe("F-01 validateCreateProductInput", () => {
     ).toThrow(ValidationError);
   });
 
-  it("tier fractional minQty", () => {
+  it("tier fractional minQty accepted for measurable units (D25.4)", () => {
+    const input = validateCreateProductInput({
+      name: "A",
+      unit: "kg",
+      costPrice: 1,
+      currentPrice: 2,
+      priceTiers: [{ minQty: 2.5, price: 5 }],
+    });
+    expect(input.priceTiers).toEqual([{ minQty: 250, price: 500 }]);
+  });
+
+  it("tier fractional minQty rejected for pcs (D25.1)", () => {
+    expect(() =>
+      validateCreateProductInput({
+        name: "A",
+        unit: "pcs",
+        costPrice: 1,
+        currentPrice: 2,
+        priceTiers: [{ minQty: 2.5, price: 5 }],
+      })
+    ).toThrow(ValidationError);
+  });
+
+  it("tier minQty with more than 2 decimal places rejected", () => {
     expect(() =>
       validateCreateProductInput({
         name: "A",
         unit: "kg",
         costPrice: 1,
         currentPrice: 2,
-        priceTiers: [{ minQty: 2.5, price: 5 }],
+        priceTiers: [{ minQty: 2.501, price: 5 }],
       })
     ).toThrow(ValidationError);
+  });
+
+  it("unsupported unit rejected (D25.1)", () => {
+    expect(() =>
+      validateCreateProductInput({
+        name: "A",
+        unit: "pack",
+        costPrice: 1,
+        currentPrice: 2,
+      })
+    ).toThrow(ValidationError);
+  });
+
+  it("scaled units are whole numbers after 2 dp conversion (D25.5)", () => {
+    const input = validateCreateProductInput({
+      name: "A",
+      unit: "kg",
+      costPrice: 1,
+      currentPrice: 2,
+      priceTiers: [
+        { minQty: 2.5, price: 5 },
+        { minQty: 0.25, price: 1 },
+      ],
+    });
+    expect(input.priceTiers).toEqual([
+      { minQty: 250, price: 500 },
+      { minQty: 25, price: 100 },
+    ]);
   });
 
   it("tier zero price", () => {
@@ -244,7 +295,7 @@ describe("F-01 validateCreateProductInput", () => {
   it("returned input shape is clean", () => {
     const input = validateCreateProductInput({
       name: "Biscuit",
-      unit: "pack",
+      unit: "pcs",
       category: "snacks",
       costPrice: 18,
       currentPrice: 20,
@@ -252,11 +303,11 @@ describe("F-01 validateCreateProductInput", () => {
       bogus: "ignored",
     });
     expect(input.name).toBe("Biscuit");
-    expect(input.unit).toBe("pack");
+    expect(input.unit).toBe("pcs");
     expect(input.category).toBe("snacks");
     expect(input.costPrice).toBe(1800);
     expect(input.currentPrice).toBe(2000);
-    expect(input.priceTiers).toEqual([{ minQty: 3, price: 5000 }]);
+    expect(input.priceTiers).toEqual([{ minQty: 300, price: 5000 }]);
     expect("bogus" in input).toBe(false);
   });
 

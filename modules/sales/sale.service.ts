@@ -4,6 +4,7 @@ import {
   ValidationError,
 } from "../../lib/errors";
 import { prisma } from "../../lib/prisma";
+import { unitsToQuantity } from "../../lib/quantity";
 import { PrismaProductRepository } from "../products/product.repository";
 import { calculatePrice } from "../products/product.service";
 import { PrismaCustomerRepository } from "../customers/customer.repository";
@@ -16,9 +17,11 @@ import type { CreateSaleInput, Sale, SaleItemDraft } from "./sale.types";
 // Effective per-unit price charged at the time of sale.
 // For tiered products the bundles don't map to a clean unit price, so the
 // effective price is total / quantity, rounded half-up to whole paisa (D11).
-// This is frozen into SaleItem.pricePerUnit for historical accuracy.
+// `quantity` is in scaled units (D25.6), so total / (quantity / 100) — i.e.
+// total × 100 / quantity — recovers the paisa per human unit. This is frozen
+// into SaleItem.pricePerUnit for historical accuracy.
 function effectiveUnitPrice(totalPaisa: number, quantity: number): number {
-  return Math.round(totalPaisa / quantity);
+  return Math.round((totalPaisa * 100) / quantity);
 }
 
 export class SaleService {
@@ -46,12 +49,19 @@ export class SaleService {
 
         names.set(product.id, product.name);
 
+        // D25.1: pcs products are whole units only.
+        if (product.unit === "pcs" && item.quantity % 100 !== 0) {
+          throw new ValidationError(
+            `${product.name} is sold per piece — quantity must be a whole number`
+          );
+        }
+
         // Fast-path availability check for a helpful error message. The
         // authoritative check happens atomically in step 4 (F-02), so this
         // read→check race can no longer oversell stock.
         if (product.stockQty < item.quantity) {
           throw new InsufficientStockError(
-            `${product.name} has only ${product.stockQty} in stock but ${item.quantity} requested`
+            `${product.name} has only ${unitsToQuantity(product.stockQty)} in stock but ${unitsToQuantity(item.quantity)} requested`
           );
         }
 
@@ -110,7 +120,7 @@ export class SaleService {
 
         if (!reserved) {
           throw new InsufficientStockError(
-            `${names.get(draft.productId)} no longer has ${draft.quantity} units in stock`
+            `${names.get(draft.productId)} no longer has ${unitsToQuantity(draft.quantity)} units in stock`
           );
         }
 

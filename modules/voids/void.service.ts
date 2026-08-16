@@ -7,6 +7,7 @@ import {
 import { lockSaleRow } from "../../lib/locks";
 import { prisma } from "../../lib/prisma";
 import { paisaFromDecimal } from "../../lib/money";
+import { unitsToQuantity } from "../../lib/quantity";
 import { PrismaCustomerRepository } from "../customers/customer.repository";
 import { PrismaCreditPaymentRepository } from "../customer-payments/customer-payment.repository";
 import { PrismaProductRepository } from "../products/product.repository";
@@ -196,7 +197,7 @@ export class VoidService {
 
         if (!reserved) {
           throw new InsufficientStockError(
-            `Product no longer has ${item.qty} units to reverse — purchase void would make stock negative`
+            `Product no longer has ${unitsToQuantity(item.qty)} units to reverse — purchase void would make stock negative`
           );
         }
 
@@ -402,7 +403,7 @@ export class VoidService {
 
         if (!reserved) {
           throw new InsufficientStockError(
-            `Product no longer has ${-reversal} units to reverse — stock cannot go negative`
+            `Product no longer has ${unitsToQuantity(-reversal)} units to reverse — stock cannot go negative`
           );
         }
       } else if (reversal > 0) {

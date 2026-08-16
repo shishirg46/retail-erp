@@ -10,8 +10,14 @@ import { PrismaProductRepository } from "../../modules/products/product.reposito
 import { PrismaCustomerRepository } from "../../modules/customers/customer.repository";
 import { PrismaSupplierRepository } from "../../modules/suppliers/supplier.repository";
 import { StockService } from "../../modules/stock/stock.service";
+import { quantityToUnits } from "../../lib/quantity";
 
 import type { CreateProductInput } from "../../modules/products/product.types";
+
+// Human units -> scaled units (the quantity analogue of rupees -> paisa,
+// D25.6). Domain-facing inputs/assertions in the suites go through this so a
+// test that "sells 2 kg" passes quantity units(2) === 200.
+export const units = (n: number): number => quantityToUnits(n);
 
 export async function createProduct(
   prisma: PrismaClient,
@@ -39,6 +45,7 @@ export async function createSupplier(
 
 // Opening stock via CORRECTION (D6): the movement trail stays consistent so
 // the stockQty == Σ movements identity can be asserted against the fixture.
+// `target` is a human-unit final level; it is converted to scaled units here.
 export async function seedStock(
   prisma: PrismaClient,
   productId: string,
@@ -47,7 +54,7 @@ export async function seedStock(
   await new StockService(prisma).adjustStock({
     productId,
     reason: "CORRECTION",
-    quantity: target,
+    quantity: quantityToUnits(target),
     note: "test seed",
   });
 }

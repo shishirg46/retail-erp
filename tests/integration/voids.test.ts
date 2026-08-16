@@ -28,6 +28,7 @@ import {
   NotFoundError,
 } from "../../lib/errors";
 import { paisaFromDecimal } from "../../lib/money";
+import { quantityFromDecimal } from "../../lib/quantity";
 import { CustomerPaymentService } from "../../modules/customer-payments/customer-payment.service";
 import { PrismaCustomerRepository } from "../../modules/customers/customer.repository";
 import { PrismaProductRepository } from "../../modules/products/product.repository";
@@ -46,6 +47,7 @@ import {
   createProduct,
   createSupplier,
   seedStock,
+  units,
 } from "../helpers/seed";
 
 const prisma = createTestPrisma();
@@ -105,9 +107,9 @@ describe("voids (M18/D18)", () => {
 
     const sale = await saleService.createSale({
       paymentType: "CASH",
-      items: [{ productId: product.id, quantity: 3 }],
+      items: [{ productId: product.id, quantity: units(3) }],
     });
-    expect(await productRepository.findById(product.id).then((p) => p!.stockQty)).toBe(7);
+    expect(await productRepository.findById(product.id).then((p) => p!.stockQty)).toBe(units(7));
 
     const result = await voidService.voidSale(sale.id, input);
 
@@ -121,12 +123,12 @@ describe("voids (M18/D18)", () => {
     expect(paisaFromDecimal(kept!.total)).toBe(6000);
 
     // Stock restored; reversal movement references the origin sale.
-    expect(await productRepository.findById(product.id).then((p) => p!.stockQty)).toBe(10);
+    expect(await productRepository.findById(product.id).then((p) => p!.stockQty)).toBe(units(10));
     const reversals = await prisma.stockMovement.findMany({
       where: { reason: "VOID", saleId: sale.id },
     });
     expect(reversals.length).toBe(1);
-    expect(reversals[0].qtyChange).toBe(3);
+    expect(quantityFromDecimal(reversals[0].qtyChange)).toBe(units(3));
 
     // Wallet: DEPOSIT (sale) + WITHDRAWAL (void) cancel.
     expect(await walletRows()).toEqual([
@@ -143,7 +145,7 @@ describe("voids (M18/D18)", () => {
     const sale = await saleService.createSale({
       paymentType: "CREDIT",
       customerId,
-      items: [{ productId: product.id, quantity: 2 }], // +3000
+      items: [{ productId: product.id, quantity: units(2) }], // +3000
     });
     expect(await customerRepository.findById(customerId).then((c) => c!.balanceOwed)).toBe(3000);
 
@@ -151,7 +153,7 @@ describe("voids (M18/D18)", () => {
 
     expect(await customerRepository.findById(customerId).then((c) => c!.balanceOwed)).toBe(0);
     expect(await prisma.walletTransaction.count()).toBe(0);
-    expect(await productRepository.findById(product.id).then((p) => p!.stockQty)).toBe(5);
+    expect(await productRepository.findById(product.id).then((p) => p!.stockQty)).toBe(units(5));
   });
 
   it("V3 sale with active linked credit payment cannot be voided (D18.4)", async () => {
@@ -162,7 +164,7 @@ describe("voids (M18/D18)", () => {
     const sale = await saleService.createSale({
       paymentType: "CREDIT",
       customerId,
-      items: [{ productId: product.id, quantity: 5 }], // +3000
+      items: [{ productId: product.id, quantity: units(5) }], // +3000
     });
     await customerPaymentService.createCustomerPayment({ customerId, amount: 2000, saleId: sale.id });
 
@@ -184,7 +186,7 @@ describe("voids (M18/D18)", () => {
     await seedStock(prisma, product.id, 4);
     const sale = await saleService.createSale({
       paymentType: "CASH",
-      items: [{ productId: product.id, quantity: 1 }],
+      items: [{ productId: product.id, quantity: units(1) }],
     });
 
     await voidService.voidSale(sale.id, input);
@@ -215,9 +217,9 @@ describe("voids (M18/D18)", () => {
     await purchaseService.createPurchase({
       supplierId,
       paymentType: "CASH",
-      items: [{ productId: product.id, quantity: 8, costPerUnit: 500 }],
+      items: [{ productId: product.id, quantity: units(8), costPerUnit: 500 }],
     });
-    expect(await productRepository.findById(product.id).then((p) => p!.stockQty)).toBe(10);
+    expect(await productRepository.findById(product.id).then((p) => p!.stockQty)).toBe(units(10));
     expect(await productRepository.findById(product.id).then((p) => p!.costPrice)).toBe(500);
 
     const purchase = await purchaseService.findPurchaseById(
@@ -226,12 +228,12 @@ describe("voids (M18/D18)", () => {
     await voidService.voidPurchase(purchase!.id, input);
 
     // Stock back to the pre-purchase level; reversal movement references origin.
-    expect(await productRepository.findById(product.id).then((p) => p!.stockQty)).toBe(2);
+    expect(await productRepository.findById(product.id).then((p) => p!.stockQty)).toBe(units(2));
     const reversals = await prisma.stockMovement.findMany({
       where: { reason: "VOID", purchaseId: purchase!.id },
     });
     expect(reversals.length).toBe(1);
-    expect(reversals[0].qtyChange).toBe(-8);
+    expect(quantityFromDecimal(reversals[0].qtyChange)).toBe(units(-8));
 
     // Wallet: WITHDRAWAL (purchase) + DEPOSIT (void) cancel.
     expect(await walletRows()).toEqual([
@@ -246,7 +248,7 @@ describe("voids (M18/D18)", () => {
     await purchaseService.createPurchase({
       supplierId,
       paymentType: "CASH",
-      items: [{ productId: product.id, quantity: 5, costPerUnit: 400 }],
+      items: [{ productId: product.id, quantity: units(5), costPerUnit: 400 }],
     });
     const purchase = await purchaseService.findPurchaseById(
       (await prisma.purchase.findFirst())!.id
@@ -254,7 +256,7 @@ describe("voids (M18/D18)", () => {
     // Consume the purchased stock.
     await saleService.createSale({
       paymentType: "CASH",
-      items: [{ productId: product.id, quantity: 5 }],
+      items: [{ productId: product.id, quantity: units(5) }],
     });
     expect(await productRepository.findById(product.id).then((p) => p!.stockQty)).toBe(0);
 
@@ -276,12 +278,12 @@ describe("voids (M18/D18)", () => {
     await purchaseService.createPurchase({
       supplierId,
       paymentType: "CASH",
-      items: [{ productId: product.id, quantity: 2, costPerUnit: 100 }],
+      items: [{ productId: product.id, quantity: units(2), costPerUnit: 100 }],
     });
     await purchaseService.createPurchase({
       supplierId,
       paymentType: "CASH",
-      items: [{ productId: product.id, quantity: 2, costPerUnit: 200 }],
+      items: [{ productId: product.id, quantity: units(2), costPerUnit: 200 }],
     });
     // UUID ids are not time-sortable, so identify the purchases by their cost.
     const [p1, p2] = (await prisma.purchase.findMany({ include: { items: true } }))
@@ -306,7 +308,7 @@ describe("voids (M18/D18)", () => {
     const purchase = await purchaseService.createPurchase({
       supplierId,
       paymentType: "CREDIT",
-      items: [{ productId: product.id, quantity: 4, costPerUnit: 300 }],
+      items: [{ productId: product.id, quantity: units(4), costPerUnit: 300 }],
     });
     expect(await supplierRepository.findById(supplierId).then((s) => s!.balanceOwed)).toBe(1200);
 
@@ -352,7 +354,7 @@ describe("voids (M18/D18)", () => {
     const sale = await saleService.createSale({
       paymentType: "CREDIT",
       customerId,
-      items: [{ productId: product.id, quantity: 1 }],
+      items: [{ productId: product.id, quantity: units(1) }],
     });
     await voidService.voidSale(sale.id, input);
 
@@ -369,10 +371,10 @@ describe("voids (M18/D18)", () => {
     await stockService.adjustStock({
       productId: product.id,
       reason: "CORRECTION",
-      quantity: 7,
+      quantity: units(7),
       note: "count fix",
     });
-    expect(await productRepository.findById(product.id).then((p) => p!.stockQty)).toBe(7);
+    expect(await productRepository.findById(product.id).then((p) => p!.stockQty)).toBe(units(7));
 
     const movement = (await prisma.stockMovement.findFirst({ where: { reason: "CORRECTION" } }))!;
     await voidService.voidStockMovement(movement.id, input);
@@ -382,7 +384,7 @@ describe("voids (M18/D18)", () => {
       where: { reason: "VOID", note: { contains: movement.id } },
     });
     expect(reversal).not.toBeNull();
-    expect(reversal!.qtyChange).toBe(-7);
+    expect(quantityFromDecimal(reversal!.qtyChange)).toBe(units(-7));
   });
 
   it("V14 void DAMAGE movement: reversal adds the damaged quantity back", async () => {
@@ -391,14 +393,14 @@ describe("voids (M18/D18)", () => {
     await stockService.adjustStock({
       productId: product.id,
       reason: "DAMAGE",
-      quantity: 2,
+      quantity: units(2),
       note: "spilled",
     });
-    expect(await productRepository.findById(product.id).then((p) => p!.stockQty)).toBe(3);
+    expect(await productRepository.findById(product.id).then((p) => p!.stockQty)).toBe(units(3));
 
     const movement = (await prisma.stockMovement.findFirst({ where: { reason: "DAMAGE" } }))!;
     await voidService.voidStockMovement(movement.id, input);
-    expect(await productRepository.findById(product.id).then((p) => p!.stockQty)).toBe(5);
+    expect(await productRepository.findById(product.id).then((p) => p!.stockQty)).toBe(units(5));
   });
 
   it("V15 movement rules: SALE/PURCHASE/VOID movements cannot be voided directly", async () => {
@@ -407,7 +409,7 @@ describe("voids (M18/D18)", () => {
 
     await saleService.createSale({
       paymentType: "CASH",
-      items: [{ productId: product.id, quantity: 1 }],
+      items: [{ productId: product.id, quantity: units(1) }],
     });
     const saleMovement = await prisma.stockMovement.findFirst({ where: { reason: "SALE" } });
     await expectError(
@@ -420,7 +422,7 @@ describe("voids (M18/D18)", () => {
     await purchaseService.createPurchase({
       supplierId,
       paymentType: "CASH",
-      items: [{ productId: product.id, quantity: 2, costPerUnit: 10 }],
+      items: [{ productId: product.id, quantity: units(2), costPerUnit: 10 }],
     });
     const purchaseMovement = await prisma.stockMovement.findFirst({ where: { reason: "PURCHASE" } });
     await expectError(
@@ -432,7 +434,7 @@ describe("voids (M18/D18)", () => {
     const correction = await stockService.adjustStock({
       productId: product.id,
       reason: "CORRECTION",
-      quantity: 5,
+      quantity: units(5),
       note: "fix",
     });
     await voidService.voidStockMovement(correction.movement.id, input);
@@ -453,13 +455,13 @@ describe("voids (M18/D18)", () => {
     await stockService.adjustStock({
       productId: product.id,
       reason: "CORRECTION",
-      quantity: 3,
+      quantity: units(3),
       note: "raise",
     });
     // ...and the stock is sold off before the void.
     await saleService.createSale({
       paymentType: "CASH",
-      items: [{ productId: product.id, quantity: 3 }],
+      items: [{ productId: product.id, quantity: units(3) }],
     });
     expect(await productRepository.findById(product.id).then((p) => p!.stockQty)).toBe(0);
 
@@ -486,21 +488,21 @@ describe("voids (M18/D18)", () => {
     // Build two of everything: one kept, one voided.
     await saleService.createSale({
       paymentType: "CASH",
-      items: [{ productId: product.id, quantity: 1 }], // 1000
+      items: [{ productId: product.id, quantity: units(1) }], // 1000
     });
     const voidedSale = await saleService.createSale({
       paymentType: "CASH",
-      items: [{ productId: product.id, quantity: 2 }], // 2000
+      items: [{ productId: product.id, quantity: units(2) }], // 2000
     });
     await purchaseService.createPurchase({
       supplierId,
       paymentType: "CASH",
-      items: [{ productId: product.id, quantity: 3, costPerUnit: 500 }],
+      items: [{ productId: product.id, quantity: units(3), costPerUnit: 500 }],
     });
     const voidedPurchase = await purchaseService.createPurchase({
       supplierId,
       paymentType: "CASH",
-      items: [{ productId: product.id, quantity: 4, costPerUnit: 500 }],
+      items: [{ productId: product.id, quantity: units(4), costPerUnit: 500 }],
     });
     await customerPaymentService.createCustomerPayment({ customerId, amount: 1000 });
     const voidedPayment = await customerPaymentService.createCustomerPayment({ customerId, amount: 2000 });
@@ -570,7 +572,7 @@ describe("voids (M18/D18)", () => {
 
     const active = await saleService.createSale({
       paymentType: "CASH",
-      items: [{ productId: product.id, quantity: 1 }],
+      items: [{ productId: product.id, quantity: units(1) }],
     });
     const viaRepo = await saleService.findSaleById(active.id);
     expect(viaRepo!.voidInfo.voidedAt).toBeNull();

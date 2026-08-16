@@ -621,7 +621,7 @@ attribute filtering via query parameters. The change is fully backward compatibl
 | `limit` | integer | 50 | 500 | Page size |
 | `search` | string | — | — | Case-insensitive substring match on `name` (master-data) or `id` prefix (transactional) |
 | `paymentType` | string | — | — | Filter by payment type (sales, purchases) |
-| `categoryId` | string | — | — | Filter by product category |
+| `category` | string | — | — | Filter by product category |
 | `supplierId` | string | — | — | Filter by supplier (purchases, supplier-payments) |
 | `customerId` | string | — | — | Filter by customer (customer-payments) |
 | `productId` | string | — | — | Filter by product (stock-movements) |
@@ -1543,3 +1543,250 @@ adds dependencies only where the architecture genuinely needs them.
 unchanged); backend behavior unchanged.
 **Testing impact:** `test:frontend` (Vitest unit + jsdom component) added to the
 gate; backend suites untouched.
+
+**D23 — M21 design language: typography & color tokens (approved 16 Aug 2026).**
+The Phase A shell shipped with a generic near-black/grey shadcn palette and the
+Geist font stack. Before any Phase B screen, the PM directed a restrained,
+professional ERP look: one primary brand/action color, neutral surfaces,
+semantic success/warning/destructive colors, neutral navigation with a subtle
+active-state accent, prominent primary actions, no excessive colored cards,
+consistent tokens across all M21 screens, and WCAG AA contrast. D23 fixes the
+typography and the exact token palette; the full reference table (OKLCh + hex
+per theme) and the contrast report live in `docs/frontend-plan.md` §6.
+
+**D23.1 — Typography.** Latin UI/brand face is **Plus Jakarta Sans** (Geist
+retired); **Noto Sans Devanagari** covers Nepali shop data and the rupee sign
+रू (U+0930 U+0942). Stacks (`app/globals.css` `@theme`): `--font-sans` /
+`--font-heading` = Plus Jakarta Sans → Noto Sans Devanagari → system;
+`--font-nepali` = Noto Sans Devanagari; `--font-mono` = system `ui-monospace`
+stack, reserved for technical IDs only. Glyphs fall through the stack, so
+Devanagari text renders wherever it appears inside Latin copy. Money stays
+numeric (`tabular-nums` where columns must align).
+
+**D23.2 — Color tokens.** Single-source token system in `app/globals.css`.
+One primary brand/action blue — `#2869d9` light (`oklch(0.5447 0.1844 260.6)`)
+with hover `#2569d1` (`oklch(0.538 0.1746 259.2)`), tint `#eaf3ff`
+(`oklch(0.9609 0.0188 255.5)`) and foreground `#ffffff`; `#5d87d7` dark
+(`oklch(0.63 0.13 262)`), hover `#729be6`. *AA adjustment: the PM's first
+choice `#3080f0` failed WCAG AA with white text (3.84:1) and on the tint
+(3.43:1); PM approved the one-step-darker `#2869d9`, which passes every pair.*
+Cool-neutral surfaces (`--background`, `--card`, `--sidebar` share hue 260).
+Semantic pairs: `--success` (green, positive/in-stock/prepaid), `--warning`
+(amber, pending/rate-limited only, dark-amber text on amber surface),
+`--destructive` (red). Navigation is neutral with a subtle primary-tinted
+active state (`--sidebar-accent` = `oklch(0.9609 0.0188 255.5)` light; active
+text = primary). Money-color semantics (green/red) are fixed and not
+dark-mode dependent (D21.3). No page-specific colors. Every key text pair
+passes WCAG AA (≥4.5:1) and control boundaries ≥3:1, verified by computation
+from the OKLCh values (report in `frontend-plan.md` §6; token changes must
+re-verify before landing).
+
+**D23.3 — Usage rules.** `--primary` is spent only on: the primary CTA, the
+active navigation state, focus rings, and inline links. Cards are neutral;
+semantic color is for status chips/badges/buttons, never card backgrounds.
+Hover states use the explicit `--primary-hover` token
+(e.g. `hover:bg-primary-hover`), never ad-hoc colors.
+
+**Reason**
+A polished commercial ERP needs a calm, trustworthy surface: color reserved for
+action and status keeps the dense retail workflow legible, avoids "generic
+colorful admin dashboard" noise, keeps every screen consistent, and makes the
+WCAG AA guarantee tractable — one token source, verified once, reused
+everywhere.
+
+**Database impact:** none.
+**API impact:** none.
+**Existing feature impact:** font load and token values in `app/layout.tsx` /
+`app/globals.css`; all shadcn/shell components render through the same token
+classes (`bg-primary`, `text-muted-foreground`, `bg-sidebar-accent`, …), so no
+component code changes for Phase B screens to inherit the palette. No INR/₹
+references remain (plan §6 money examples corrected to रू).
+**Testing impact:** none — tokens are CSS; frontend suites (45) do not assert
+colors. Verified `npx tsc --noEmit`, `npm run lint`, `npm run test:frontend`,
+`npm run build` after the change.
+
+## D24 — Dev-only LAN Better Auth trusted-origin exception (16 Aug 2026)
+
+**Status:** Accepted — 16 Aug 2026 (LAN mobile test prerequisite; implemented and live-verified)
+
+**Context**
+During the LAN mobile test (phone at `http://192.168.1.123:3000` against the dev
+server bound to `0.0.0.0`), Better Auth's **internal** origin check (CSRF;
+`origin-check` middleware) rejected every state-changing request that carries a
+session cookie — `POST /api/auth/sign-out` returned `403 Invalid origin`.
+Sign-in worked because the first sign-in POST has no session cookie yet, so the
+check is skipped; every subsequent state-changing call (sign-out) carries the
+cookie and was blocked.
+
+**Why the check fired.** `trustedOrigins` is derived by Better Auth from the
+base URL configuration (`lib/auth/base-url.ts` → `resolveAuthBaseURL`), which
+yields the fallback `http://localhost:3000` and host patterns from
+`allowedHosts`. Those derived entries carry **no port**, and Better Auth's
+`matchesOriginPattern` requires an exact origin (host **and** port) match — so
+`http://192.168.1.123:3000` never matched the derived entries (verified against
+the installed `better-auth` source: `auth/trusted-origins.mjs`,
+`api/middlewares/origin-check.mjs`, `context/helpers.mjs`).
+
+**D24.1 — Dev-only trusted origin.** `lib/auth/base-url.ts` exports
+`DEV_LAN_TRUSTED_ORIGINS = ["http://192.168.1.123:*"]` and a pure helper
+`devLanTrustedOrigins(env)` that returns the list **only when
+`env.NODE_ENV === "development"`**, otherwise `[]`. `lib/auth.ts` wires it as
+`trustedOrigins: devLanTrustedOrigins()` on the `betterAuth` config.
+
+**D24.2 — Constraints.**
+
+- **Host-pinned.** Only `192.168.1.123` is trusted; the port is wildcarded
+  (`:*`) so any dev port matches without re-deriving origins.
+- **Development-only.** In `production` (or any non-development `NODE_ENV`) the
+  helper returns `[]`, so Better Auth keeps the strict derived-origin check with
+  zero additional trusted origins — production behavior is unchanged.
+- **Cross-origin rejection remains enforced.** Any other Origin still fails
+  Better Auth's check → `403 Invalid origin` (live-verified with an arbitrary
+  attacker host).
+- **D9.9 untouched.** The application-level same-origin gate (`assertSameOrigin`
+  in `lib/auth/authorize.ts`, applied to every state-changing ERP route) is
+  unchanged; this exception only adds a LAN origin to Better Auth's **existing**
+  CSRF allowlist, it disables nothing.
+
+**Reason**
+The LAN mobile test is a legitimate same-origin flow — the phone's browser
+serves the app from the same `IP:port` it calls (`192.168.1.123:3000`) — but
+Better Auth cannot derive the LAN host from the configured allowlist because
+derived origins carry no port. A host-pinned, port-wildcarded, development-only
+trusted origin restores the state-changing flow (sign-out) without weakening
+production CSRF protection, the no-CORS policy (F-11/D21.1), or the D9.9 gate.
+
+**Database impact:** none.
+**API impact:** none — no route changes; Better Auth's origin check still runs.
+**Existing feature impact:** `lib/auth/base-url.ts` (new export + helper) and
+`lib/auth.ts` (`trustedOrigins: devLanTrustedOrigins()`). In production the
+option is the empty list, so behavior is unchanged.
+**Testing impact:** `tests/unit/auth-config.test.ts` — dev-only gate tests
+(`development` → the LAN entry, anything else → `[]`); live curl verification:
+LAN-origin sign-out `200`, untrusted-origin sign-out still `403`.
+
+---
+
+## D25 — Fractional quantities: unit-driven precision and integer-scaled quantity domain
+
+**Status:** Accepted (business rules frozen) — 16 Aug 2026.
+**Implementation approved 16 Aug 2026 — executed as milestone M22 (see
+`docs/implementation-log.md`).**
+
+**Current behavior (before)**
+Quantities are whole numbers everywhere. `Product.stockQty`, `PriceTier.minQty`,
+`SaleItem.qty`, `PurchaseItem.qty`, and `StockMovement.qtyChange` are `INTEGER`
+columns; validators reject fractional quantities (positive-integer checks on
+sales, purchases, stock adjustments, and tier `minQty`); the tier-pricing DP in
+`modules/products/product.service.ts` indexes a `0..qty` array and cannot price
+fractional quantities; `Product.unit` is unrestricted free text
+(e.g. `"pcs"`, `"kg"`, `"liter"`) with no quantity semantics attached.
+
+**Proposed behavior**
+
+**D25.1 — Quantity precision is product-specific by unit.**
+
+| unit | quantities |
+| ---- | ---------- |
+| `pcs` | integers only |
+| `kg`, `g`, `liter`, `ml` | fractional allowed |
+
+`Product.unit` drives the rule. Supported units are frozen to the set
+`{pcs, kg, g, liter, ml}` — controlled rather than arbitrary free-text.
+
+**D25.2 — Maximum quantity precision: 2 decimal places (hundredths).**
+
+`0.25`, `0.50`, `1.50`, `2.25` are valid; `1.257` is rejected.
+
+**D25.3 — Tier pricing preserves the existing largest-applicable-tier-first
++ remainder model.**
+
+Example: a 5 kg tier at रू 450 — 5.5 kg is priced as the 5 kg tier plus 0.5 kg at
+the applicable remainder/base price. Fractional remainders price against the next
+applicable tier or the base price; the implementation keeps the shop's tier-first
+remainder behavior and never rewrites it as a different pricing model.
+
+**D25.4 — `PriceTier.minQty` supports the same 2-decimal precision.**
+
+Fractional tier thresholds are possible (e.g. a 2.5 kg tier).
+
+**D25.5 — Stock adjustments support fractional quantities for measurable
+products.**
+
+Example: DAMAGE `0.25 kg` is valid. D6 semantics are unchanged: DAMAGE =
+amount ruined (`-quantity`), CORRECTION = desired final level
+(`target − current`).
+
+**D25.6 — Exact quantity representation: integer-scaled (hundredths), never raw
+JS floats in domain calculations.**
+
+1.25 kg is represented as 125 internal quantity units — the quantity analogue of
+the whole-paisa money model. A single conversion module (analogous to
+`lib/money.ts`) converts at boundaries: validators on input, repositories to
+`DECIMAL` for persistence, routes/mappers to decimal numbers on output.
+
+**D25.7 — Preserve D11 whole-paisa money exactness and the D6 stock invariants.**
+
+Scaled-integer quantity × integer paisa is exact, so `qty × price` stays
+drift-free. `Product.stockQty == Σ StockMovement.qtyChange` holds at the same
+precision.
+
+**D25.8 — Maximum quantity stays human-readable: 1000.00 per line.**
+
+The business-facing maximum for any quantity input (sale/purchase line, stock
+adjustment, tier `minQty`) is **1000.00 human quantity units** (up to 2 dp).
+`MAX_ITEM_QUANTITY` is redefined from 100,000 integer units to 1,000 human
+units; internally that is 100,000 hundredths-scaled units (`MAX_QUANTITY_UNITS`
+in `lib/quantity.ts`) — the same array/work bound the pricing DP had before
+this change, so no legitimate trade is rejected and memory behaviour is
+unchanged. The raw scaled-unit limit is never surfaced to callers.
+
+**Reason**
+The shop sells measurable goods (rice, oil, flour) in fractional amounts
+(0.25 kg, 1.5 liter); integer-only quantities reject real sales and force
+rounding. Raw float quantities would reintroduce the D11-class drift
+(`0.55 × 2000 = 1100.0000000000002`). Scaling quantities to hundredths reuses the
+proven D11 pattern: exact money, exact inventory, no float anywhere in the domain.
+
+**Database impact:** widen `Product.stockQty`, `PriceTier.minQty`,
+`SaleItem.qty`, `PurchaseItem.qty`, `StockMovement.qtyChange` from `INTEGER`
+to `DECIMAL(18,2)`; existing whole-number rows convert losslessly. Existing
+CHECK constraints remain valid except three, relaxed from the whole-number
+rule to positivity: `price_tiers_min_qty_positive` (`min_qty >= 1` → `> 0`,
+fractional sub-unit tiers such as a 0.5 kg tier are now possible, D25.4),
+`sale_items_qty_positive` (`qty >= 1` → `> 0`, 0.25 kg sales now possible) and
+`purchase_items_qty_positive` (`qty >= 1` → `> 0`). Added constraints:
+`products.unit` must be one of `{pcs, kg, g, liter, ml}`
+(`products_unit_supported`), and a products-level `pcs`-integer backstop
+(`stock_qty = floor(stock_qty)` when the product unit is `pcs`). The child
+tables (`price_tiers`/`sale_items`/`purchase_items`/`stock_movements`) cannot
+reference the product's unit inside a `CHECK` (Postgres forbids subqueries), so
+their unit-precision rule is enforced in the services/validators — their
+DB-level precision backstop is the `DECIMAL(18,2)` scale itself.
+
+**API impact:** sale/purchase/stock-adjustment quantities and tier `minQty`
+accept up to 2-dp fractional values for measurable units; the maximum is
+1000.00 (D25.8); wire shape and rupee denomination unchanged; `pcs` products
+keep integer enforcement (validators check precision, services check the
+unit rule where the product is known).
+
+**Existing feature impact:** all integer-only gates updated — backend validators,
+`reserveStock`, the tier DP, POS quantity entry (decimal input now allowed for
+measurable units, integer-only for `pcs`), frontend zod `.int()`, cart steppers,
+and report/export quantity surfacing.
+
+**Testing impact:** update fractional-rejection tests (they now accept valid
+2-dp fractions for measurable units while `pcs` still rejects fractions at the
+service layer); add fractional tier pricing, fractional DAMAGE/CORRECTION,
+per-product `stockQty == Σ qtyChange`, and D11-exactness (`qty × price` ==
+integer paisa) tests.
+
+**Reconciliation with D1 / D6 / D11**
+- **D1** — `pricePerUnit = Math.round(totalPaisa × 100 / qtyUnits)` (whole-paisa
+  per human unit, equivalent to the old `total / quantity` for whole units); the
+  ≤ 1 paisa drift bound is preserved because `total` is whole paisa and
+  `quantity` is integer-scaled.
+- **D6** — DAMAGE/CORRECTION semantics unchanged; both become fractional-capable
+  for measurable units; the baseline invariant (`stockQty == Σ qtyChange`) holds.
+- **D11** — intact: money stays integer paisa and exact; quantity is
+  integer-scaled, so `qty × paisa` is exact and no new rounding is introduced.

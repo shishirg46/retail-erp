@@ -47,7 +47,7 @@ describe("shared input upper bounds (F-04)", () => {
     const input = validateCreateSaleInput(
       saleBody([{ productId: "p1", quantity: MAX_ITEM_QUANTITY }])
     );
-    expect(input.items[0].quantity).toBe(MAX_ITEM_QUANTITY);
+    expect(input.items[0].quantity).toBe(MAX_ITEM_QUANTITY * 100);
   });
 
   it("sale: quantity MAX+1 rejected", () => {
@@ -56,7 +56,7 @@ describe("shared input upper bounds (F-04)", () => {
         validateCreateSaleInput(
           saleBody([{ productId: "p1", quantity: MAX_ITEM_QUANTITY + 1 }])
         ),
-      /quantity must be at most 100000/
+      /quantity must be at most 1000/
     );
   });
 
@@ -75,7 +75,7 @@ describe("shared input upper bounds (F-04)", () => {
   it("sale: quantity 0 still rejected (lower bound preserved)", () => {
     expectValidationError(
       () => validateCreateSaleInput(saleBody([{ productId: "p1", quantity: 0 }])),
-      /positive integer/
+      /positive number with at most 2 decimal places/
     );
   });
 
@@ -86,7 +86,7 @@ describe("shared input upper bounds (F-04)", () => {
         { productId: "p1", quantity: MAX_ITEM_QUANTITY, costPerUnit: MAX_AMOUNT },
       ])
     );
-    expect(input.items[0].quantity).toBe(MAX_ITEM_QUANTITY);
+    expect(input.items[0].quantity).toBe(MAX_ITEM_QUANTITY * 100);
     expect(input.items[0].costPerUnit).toBe(MAX_AMOUNT_PAISA);
   });
 
@@ -98,7 +98,7 @@ describe("shared input upper bounds (F-04)", () => {
             { productId: "p1", quantity: MAX_ITEM_QUANTITY + 1, costPerUnit: 10 },
           ])
         ),
-      /quantity must be at most 100000/
+      /quantity must be at most 1000/
     );
   });
 
@@ -146,7 +146,7 @@ describe("shared input upper bounds (F-04)", () => {
       reason: "DAMAGE",
       quantity: MAX_ITEM_QUANTITY,
     });
-    expect(input.quantity).toBe(MAX_ITEM_QUANTITY);
+    expect(input.quantity).toBe(MAX_ITEM_QUANTITY * 100);
   });
 
   it("stock: DAMAGE quantity MAX+1 rejected", () => {
@@ -157,7 +157,7 @@ describe("shared input upper bounds (F-04)", () => {
           reason: "DAMAGE",
           quantity: MAX_ITEM_QUANTITY + 1,
         }),
-      /quantity must be at most 100000/
+      /quantity must be at most 1000/
     );
   });
 
@@ -167,7 +167,7 @@ describe("shared input upper bounds (F-04)", () => {
       reason: "CORRECTION",
       quantity: MAX_ITEM_QUANTITY,
     });
-    expect(input.quantity).toBe(MAX_ITEM_QUANTITY);
+    expect(input.quantity).toBe(MAX_ITEM_QUANTITY * 100);
   });
 
   it("stock: CORRECTION quantity MAX+1 rejected", () => {
@@ -178,14 +178,14 @@ describe("shared input upper bounds (F-04)", () => {
           reason: "CORRECTION",
           quantity: MAX_ITEM_QUANTITY + 1,
         }),
-      /quantity must be at most 100000/
+      /quantity must be at most 1000/
     );
   });
 
   it("stock: CORRECTION negative target still rejected (lower bound preserved)", () => {
     expectValidationError(
       () => validateAdjustStockInput({ productId: "p1", reason: "CORRECTION", quantity: -1 }),
-      /non-negative integer/
+      /non-negative number with at most 2 decimal places/
     );
   });
 
@@ -272,7 +272,7 @@ describe("shared input upper bounds (F-04)", () => {
         priceTiers: [{ minQty: MAX_ITEM_QUANTITY, price: MAX_AMOUNT }],
       })
     );
-    expect(input.priceTiers?.[0].minQty).toBe(MAX_ITEM_QUANTITY);
+    expect(input.priceTiers?.[0].minQty).toBe(MAX_ITEM_QUANTITY * 100);
     expect(input.priceTiers?.[0].price).toBe(MAX_AMOUNT_PAISA);
   });
 
@@ -292,7 +292,7 @@ describe("shared input upper bounds (F-04)", () => {
         validateCreateProductInput(
           productBody({ priceTiers: [{ minQty: MAX_ITEM_QUANTITY + 1, price: 5 }] })
         ),
-      /minQty must be at most 100000/
+      /minQty must be at most 1000/
     );
   });
 

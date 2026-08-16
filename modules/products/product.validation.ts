@@ -1,6 +1,11 @@
 import { MAX_AMOUNT, MAX_ITEM_QUANTITY } from "../../lib/bounds";
 import { ValidationError } from "../../lib/errors";
 import { rupeesToPaisa } from "../../lib/money";
+import {
+  hasAtMostTwoDecimals,
+  isSupportedUnit,
+  quantityToUnits,
+} from "../../lib/quantity";
 
 import type { CreateProductInput, PriceTier } from "./product.types";
 
@@ -24,13 +29,16 @@ function validatePriceTier(value: unknown, index: number): PriceTier {
 
   const tier = value as Record<string, unknown>;
 
+  // D25.2/D25.4: minQty accepts up to 2 dp (fractional tier thresholds such as
+  // a 2.5 kg tier). The unit's precision rule (pcs integers) is applied where
+  // the unit is known — the product validator owns it for the whole product.
   if (
     typeof tier.minQty !== "number" ||
-    !Number.isInteger(tier.minQty) ||
-    tier.minQty < 1
+    !hasAtMostTwoDecimals(tier.minQty) ||
+    tier.minQty <= 0
   ) {
     throw new ValidationError(
-      `priceTiers[${index}].minQty must be a positive integer`
+      `priceTiers[${index}].minQty must be a positive number with at most 2 decimal places`
     );
   }
 
@@ -53,7 +61,8 @@ function validatePriceTier(value: unknown, index: number): PriceTier {
   }
 
   // Prices arrive in rupees and are converted exactly once to paisa here (D11).
-  return { minQty: tier.minQty, price: rupeesToPaisa(tier.price) };
+  // minQty arrives in human units and converts exactly once to scaled units.
+  return { minQty: quantityToUnits(tier.minQty), price: rupeesToPaisa(tier.price) };
 }
 
 // Request-level validation: checks the structure of the HTTP payload only.
@@ -75,11 +84,17 @@ export function validateCreateProductInput(body: unknown): CreateProductInput {
     );
   }
 
-  if (typeof input.unit !== "string" || input.unit.trim().length === 0) {
-    throw new ValidationError("unit must be a non-empty string");
+  if (
+    typeof input.unit !== "string" ||
+    input.unit.trim().length === 0 ||
+    !isSupportedUnit(input.unit.trim())
+  ) {
+    throw new ValidationError(
+      "unit must be one of: pcs, kg, g, liter, ml (D25.1)"
+    );
   }
 
-  if (input.unit.length > UNIT_MAX_LENGTH) {
+  if (input.unit.trim().length > UNIT_MAX_LENGTH) {
     throw new ValidationError(
       `unit must be at most ${UNIT_MAX_LENGTH} characters`
     );
@@ -124,6 +139,17 @@ export function validateCreateProductInput(body: unknown): CreateProductInput {
     }
 
     priceTiers = input.priceTiers.map(validatePriceTier);
+
+    // D25.1: pcs products can only have whole-number tier thresholds.
+    if (input.unit.trim() === "pcs") {
+      for (const tier of priceTiers) {
+        if (tier.minQty % 100 !== 0) {
+          throw new ValidationError(
+            `priceTiers minQty must be a whole number for pcs products`
+          );
+        }
+      }
+    }
 
     const seenMinQty = new Set<number>();
 

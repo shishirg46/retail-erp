@@ -1,4 +1,5 @@
 import { prisma } from "../../lib/prisma";
+import { quantityFromDecimal, unitsToQuantity } from "../../lib/quantity";
 import { attachVoidStatus } from "../voids/void.repository";
 
 import type {
@@ -17,7 +18,7 @@ function toStockMovement(
   raw: {
     id: string;
     productId: string;
-    qtyChange: number;
+    qtyChange: unknown;
     reason: string;
     date: Date;
     note: string | null;
@@ -28,7 +29,7 @@ function toStockMovement(
   return {
     id: raw.id,
     productId: raw.productId,
-    qtyChange: raw.qtyChange,
+    qtyChange: quantityFromDecimal(raw.qtyChange),
     reason: raw.reason as StockMovement["reason"],
     date: raw.date,
     note: raw.note,
@@ -38,8 +39,8 @@ function toStockMovement(
   };
 }
 
-// API output view for stock movements (D11 conversions not needed here — qty
-// is already an integer), plus the computed void status (D18.9).
+// API output view for stock movements (D25.6: scaled units -> human units),
+// plus the computed void status (D18.9).
 export type StockMovementApi = StockMovement & {
   status: "ACTIVE" | "VOIDED";
   voidedAt: Date | null;
@@ -49,9 +50,25 @@ export type StockMovementApi = StockMovement & {
 export function toStockMovementApi(movement: StockMovement): StockMovementApi {
   return {
     ...movement,
+    qtyChange: unitsToQuantity(movement.qtyChange),
     status: movement.voidInfo.voidedAt ? "VOIDED" : "ACTIVE",
     voidedAt: movement.voidInfo.voidedAt,
     voidReason: movement.voidInfo.reason,
+  };
+}
+
+// API output view for a stock adjustment result: domain (scaled units) ->
+// wire (human quantities, D25.6).
+export function toAdjustStockResultApi(result: {
+  product: { id: string; stockQty: number };
+  movement: StockMovement;
+}) {
+  return {
+    product: {
+      id: result.product.id,
+      stockQty: unitsToQuantity(result.product.stockQty),
+    },
+    movement: toStockMovementApi(result.movement),
   };
 }
 
@@ -62,7 +79,7 @@ export class PrismaStockRepository implements StockRepository {
     const raw = await this.db.stockMovement.create({
       data: {
         productId: input.productId,
-        qtyChange: input.qtyChange,
+        qtyChange: unitsToQuantity(input.qtyChange),
         reason: input.reason,
         note: input.note,
         saleId: input.saleId,

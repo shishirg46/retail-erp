@@ -6,10 +6,14 @@
 // above any realistic small-shop value so legitimate data is never rejected.
 // If a real trade ever needs more, raise the constant (documented change).
 
-// Max units on a single line: bounds the calculatePrice DP array to ~0.8 MB
-// and its O(qty x tiers) work; well under Postgres Int (2^31-1). A small-shop
-// line never approaches this (a commodity truckload is ~1-2k units).
-export const MAX_ITEM_QUANTITY = 100000;
+// Max quantity on a single line/tier/adjustment, in HUMAN-READABLE quantity
+// units with up to 2 decimal places (D25). 1000.00 covers any small-shop line
+// (a commodity truckload is ~1-2k units) while keeping the internal
+// hundredths-scaled representation (lib/quantity.ts) at 100000 scaled units —
+// the same bound the calculatePrice DP array had before D25, so its memory
+// footprint (~0.8 MB) and O(qty x tiers) work are unchanged. Raise the constant
+// (documented change) if a real trade ever needs more.
+export const MAX_ITEM_QUANTITY = 1000;
 
 // Max line entries on one document (sales / purchases `items`). Mirrors the
 // F-01 MAX_TIERS = 50 precedent; a counter receipt or supplier order with

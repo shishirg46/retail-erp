@@ -10,10 +10,11 @@ import {
   InsufficientStockError,
   NotFoundError,
 } from "../../lib/errors";
+import { quantityFromDecimal } from "../../lib/quantity";
 import { PrismaProductRepository } from "../../modules/products/product.repository";
 import { StockService } from "../../modules/stock/stock.service";
 import { createTestPrisma, truncateAll, reconcile } from "../helpers/db";
-import { createProduct, seedStock } from "../helpers/seed";
+import { createProduct, seedStock, units } from "../helpers/seed";
 
 const prisma = createTestPrisma();
 const stockService = new StockService(prisma);
@@ -65,12 +66,12 @@ describe("stock adjustments (D6)", () => {
     const result = await stockService.adjustStock({
       productId: product.id,
       reason: "DAMAGE",
-      quantity: 3,
+      quantity: units(3),
       note: "burst bag",
     });
 
-    expect(result.product.stockQty).toBe(7);
-    expect(result.movement.qtyChange).toBe(-3);
+    expect(result.product.stockQty).toBe(units(7));
+    expect(result.movement.qtyChange).toBe(units(-3));
 
     expect(
       { customers: await prisma.customer.count(), suppliers: await prisma.supplier.count(), wallet: await prisma.walletTransaction.count() }
@@ -84,10 +85,10 @@ describe("stock adjustments (D6)", () => {
     const result = await stockService.adjustStock({
       productId: product.id,
       reason: "CORRECTION",
-      quantity: 25,
+      quantity: units(25),
     });
-    expect(result.product.stockQty).toBe(25);
-    expect(result.movement.qtyChange).toBe(15);
+    expect(result.product.stockQty).toBe(units(25));
+    expect(result.movement.qtyChange).toBe(units(15));
   });
 
   it("A3 CORRECTION down: movement target - current (negative)", async () => {
@@ -97,10 +98,10 @@ describe("stock adjustments (D6)", () => {
     const result = await stockService.adjustStock({
       productId: product.id,
       reason: "CORRECTION",
-      quantity: 4,
+      quantity: units(4),
     });
-    expect(result.product.stockQty).toBe(4);
-    expect(result.movement.qtyChange).toBe(-26);
+    expect(result.product.stockQty).toBe(units(4));
+    expect(result.movement.qtyChange).toBe(units(-26));
   });
 
   it("A4 CORRECTION to the same level creates a zero movement", async () => {
@@ -110,11 +111,32 @@ describe("stock adjustments (D6)", () => {
     const result = await stockService.adjustStock({
       productId: product.id,
       reason: "CORRECTION",
-      quantity: 7,
+      quantity: units(7),
     });
-    expect(result.product.stockQty).toBe(7);
+    expect(result.product.stockQty).toBe(units(7));
     expect(result.movement.qtyChange).toBe(0);
     expect(result.movement.reason).toBe("CORRECTION");
+  });
+
+  it("A4b fractional DAMAGE and CORRECTION remain exact for measurable units", async () => {
+    const product = await createProduct(prisma, { name: "A4b Fractional", unit: "kg", costPrice: 90, currentPrice: 110 });
+    await seedStock(prisma, product.id, 4.5);
+
+    const damage = await stockService.adjustStock({
+      productId: product.id,
+      reason: "DAMAGE",
+      quantity: units(0.25),
+    });
+    expect(damage.product.stockQty).toBe(units(4.25));
+    expect(damage.movement.qtyChange).toBe(units(-0.25));
+
+    const correction = await stockService.adjustStock({
+      productId: product.id,
+      reason: "CORRECTION",
+      quantity: units(5.5),
+    });
+    expect(correction.product.stockQty).toBe(units(5.5));
+    expect(correction.movement.qtyChange).toBe(units(1.25));
   });
 
   it("A5 failure: DAMAGE above stock -> 409, nothing written", async () => {
@@ -127,14 +149,14 @@ describe("stock adjustments (D6)", () => {
         stockService.adjustStock({
           productId: product.id,
           reason: "DAMAGE",
-          quantity: 5,
+          quantity: units(5),
         }),
       InsufficientStockError,
       /stock cannot go negative/
     );
 
     const fresh = await productRepository.findById(product.id);
-    expect(fresh!.stockQty).toBe(2);
+    expect(fresh!.stockQty).toBe(units(2));
     expect(await prisma.stockMovement.count()).toBe(before);
   });
 
@@ -148,7 +170,7 @@ describe("stock adjustments (D6)", () => {
         stockService.adjustStock({
           productId: product.id,
           reason: "CORRECTION",
-          quantity: -10,
+          quantity: units(-10),
         }),
       InsufficientStockError,
       /stock cannot go negative/
@@ -162,7 +184,7 @@ describe("stock adjustments (D6)", () => {
         stockService.adjustStock({
           productId: "00000000-0000-0000-0000-000000000000",
           reason: "DAMAGE",
-          quantity: 1,
+          quantity: units(1),
         }),
       NotFoundError,
       /not found/
@@ -173,15 +195,15 @@ describe("stock adjustments (D6)", () => {
   it("A8 ledger identity holds after a mix of adjustments", async () => {
     const a = await createProduct(prisma, { name: "A8 Ledger A", unit: "pcs", costPrice: 1, currentPrice: 3 });
     await seedStock(prisma, a.id, 10);
-    await stockService.adjustStock({ productId: a.id, reason: "CORRECTION", quantity: 25 }); // +15
-    await stockService.adjustStock({ productId: a.id, reason: "DAMAGE", quantity: 5 }); // -5
+    await stockService.adjustStock({ productId: a.id, reason: "CORRECTION", quantity: units(25) }); // +15
+    await stockService.adjustStock({ productId: a.id, reason: "DAMAGE", quantity: units(5) }); // -5
 
     const fresh = await productRepository.findById(a.id);
-    expect(fresh!.stockQty).toBe(20);
+    expect(fresh!.stockQty).toBe(units(20));
 
     const movements = await prisma.stockMovement.findMany({ where: { productId: a.id } });
-    const sum = movements.reduce((s, m) => s + m.qtyChange, 0);
-    expect(sum).toBe(20);
+    const sum = movements.reduce((s, m) => s + quantityFromDecimal(m.qtyChange), 0);
+    expect(sum).toBe(units(20));
     expect((await lastMovement(a.id)).reason).toBe("DAMAGE");
   });
 });

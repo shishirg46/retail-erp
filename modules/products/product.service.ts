@@ -1,7 +1,13 @@
 import type { PriceTier } from "./product.types";
 
-// All money is whole paisa (D11), so the DP below accumulates exact integers
-// and can never pick up float drift.
+// All money is whole paisa (D11) and quantities are integer hundredths
+// (D25.6), so the pricing math below stays exact and never relies on JS float
+// arithmetic.
+//
+// The shop's frozen pricing model is the existing tier-first remainder behavior:
+// consume the largest applicable tier first, then apply any remainder at the
+// current base price. This preserves the business semantics while still using
+// integer-scaled quantities for exact arithmetic.
 export function calculatePrice(
   qty: number,
   basePrice: number,
@@ -9,32 +15,27 @@ export function calculatePrice(
 ): number {
   if (qty <= 0) return 0;
 
-  // No bundle pricing
   if (tiers.length === 0) {
-    return qty * basePrice;
+    return Math.round((qty * basePrice) / 100);
   }
 
-  // dp[i] = cheapest price to buy exactly i items
-  const dp = new Array(qty + 1).fill(Infinity);
+  const sortedTiers = [...tiers].sort((a, b) => b.minQty - a.minQty);
+  let remaining = qty;
+  let total = 0;
 
-  // Base case
-  dp[0] = 0;
+  for (const tier of sortedTiers) {
+    if (remaining <= 0) break;
 
-  // Calculate cheapest price for every quantity
-  for (let i = 1; i <= qty; i++) {
-    // Option 1: Buy one more item at normal price
-    dp[i] = dp[i - 1] + basePrice;
+    const wholeTiers = Math.floor(remaining / tier.minQty);
+    if (wholeTiers <= 0) continue;
 
-    // Option 2: Try every bundle
-    for (const tier of tiers) {
-      if (i >= tier.minQty) {
-        dp[i] = Math.min(
-          dp[i],
-          dp[i - tier.minQty] + tier.price
-        );
-      }
-    }
+    total += wholeTiers * tier.price;
+    remaining -= wholeTiers * tier.minQty;
   }
 
-  return dp[qty];
+  if (remaining > 0) {
+    total += Math.round((remaining * basePrice) / 100);
+  }
+
+  return total;
 }

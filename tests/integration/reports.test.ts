@@ -16,7 +16,7 @@ import { CustomerPaymentService } from "../../modules/customer-payments/customer
 import { SupplierPaymentService } from "../../modules/supplier-payments/supplier-payment.service";
 import { parseReportDateRange } from "../../modules/reports/report.validation";
 import { createTestPrisma, truncateAll, reconcile, tableCounts } from "../helpers/db";
-import { createProduct, createCustomer, createSupplier } from "../helpers/seed";
+import { createProduct, createCustomer, createSupplier, units } from "../helpers/seed";
 
 const prisma = createTestPrisma();
 const reportService = new ReportService(new PrismaReportRepository(prisma));
@@ -35,8 +35,9 @@ async function scalar(query: string): Promise<number> {
 }
 
 async function seedLedger(): Promise<{ supplierId: string; customerId: string }> {
-  // Domain inputs are paisa (D11); the DB stores rupees, so the report
-  // assertions below stay in rupees (20000 paisa = Rs. 200.00).
+  // Domain inputs are paisa (D11) and scaled units (D25.6); the DB stores
+  // rupees and human-unit quantities, so the report assertions below stay in
+  // rupees / human units (20000 paisa = Rs. 200.00, 1000 units = 10 kg).
   const rice = await createProduct(prisma, { name: "Rpt Rice", unit: "kg", costPrice: 2000, currentPrice: 2000 });
   const oil = await createProduct(prisma, { name: "Rpt Oil", unit: "liter", costPrice: 3000, currentPrice: 3000 });
   const supplierId = await createSupplier(prisma, "Rpt Wholesale");
@@ -45,19 +46,19 @@ async function seedLedger(): Promise<{ supplierId: string; customerId: string }>
   await purchaseService.createPurchase({ // wallet -200.00
     supplierId,
     paymentType: "CASH",
-    items: [{ productId: rice.id, quantity: 10, costPerUnit: 2000 }],
+    items: [{ productId: rice.id, quantity: units(10), costPerUnit: 2000 }],
   });
   await purchaseService.createPurchase({ // supplier owes 150.00
     supplierId,
     paymentType: "CREDIT",
-    items: [{ productId: oil.id, quantity: 5, costPerUnit: 3000 }],
+    items: [{ productId: oil.id, quantity: units(5), costPerUnit: 3000 }],
   });
-  await saleService.createSale({ paymentType: "CASH", items: [{ productId: rice.id, quantity: 3 }] }); // wallet +60.00
-  await saleService.createSale({ paymentType: "ECASH", items: [{ productId: oil.id, quantity: 2 }] }); // wallet +60.00
-  await saleService.createSale({ paymentType: "CREDIT", customerId, items: [{ productId: oil.id, quantity: 1 }] }); // owes 30.00
+  await saleService.createSale({ paymentType: "CASH", items: [{ productId: rice.id, quantity: units(3) }] }); // wallet +60.00
+  await saleService.createSale({ paymentType: "ECASH", items: [{ productId: oil.id, quantity: units(2) }] }); // wallet +60.00
+  await saleService.createSale({ paymentType: "CREDIT", customerId, items: [{ productId: oil.id, quantity: units(1) }] }); // owes 30.00
   await customerPaymentService.createCustomerPayment({ customerId, amount: 1000 }); // wallet +10.00, owes 20.00
   await supplierPaymentService.createSupplierPayment({ supplierId, amount: 5000 }); // wallet -50.00, owes 100.00
-  await stockService.adjustStock({ productId: rice.id, reason: "DAMAGE", quantity: 2 }); // stock 5
+  await stockService.adjustStock({ productId: rice.id, reason: "DAMAGE", quantity: units(2) }); // stock 5
 
   return { supplierId, customerId };
 }

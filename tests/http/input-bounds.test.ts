@@ -82,7 +82,7 @@ describe("HTTP input upper bounds (F-04)", () => {
     }, cookie);
     expect(res.status).toBe(400);
     const body = await errorBody(res);
-    expect(body.message).toMatch(/quantity must be at most 100000/);
+    expect(body.message).toMatch(/quantity must be at most 1000/);
     expect(Date.now() - started).toBeLessThan(15000);
   });
 
@@ -93,7 +93,7 @@ describe("HTTP input upper bounds (F-04)", () => {
     }, cookie);
     expect(res.status).toBe(400);
     const body = await errorBody(res);
-    expect(body.message).toMatch(/at most 100000/);
+    expect(body.message).toMatch(/at most 1000/);
   });
 
   it("sale: 101 items → 400", async () => {
@@ -145,7 +145,7 @@ describe("HTTP input upper bounds (F-04)", () => {
     }, cookie);
     expect(res.status).toBe(400);
     const body = await errorBody(res);
-    expect(body.message).toMatch(/quantity must be at most 100000/);
+    expect(body.message).toMatch(/quantity must be at most 1000/);
   });
 
   it("product: currentPrice MAX+1 → 400", async () => {

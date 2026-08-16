@@ -4,6 +4,7 @@ import { requireRole, CASHIER, OWNER } from "@/lib/auth/authorize";
 import { prisma } from "@/lib/prisma";
 import { toHttpResponse } from "@/lib/response";
 import { StockService } from "@/modules/stock/stock.service";
+import { toAdjustStockResultApi } from "@/modules/stock/stock.repository";
 import { validateAdjustStockInput } from "@/modules/stock/stock.validation";
 
 export async function POST(req: NextRequest) {
@@ -21,7 +22,7 @@ export async function POST(req: NextRequest) {
 
     const result = await new StockService(prisma).adjustStock(input);
 
-    return NextResponse.json(result, { status: 201 });
+    return NextResponse.json(toAdjustStockResultApi(result), { status: 201 });
   } catch (error) {
     return toHttpResponse(error);
   }

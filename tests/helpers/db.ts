@@ -142,10 +142,11 @@ export async function reconcile(prisma: PrismaClient): Promise<string[]> {
     include: { stockMovements: true },
   });
   for (const product of products) {
-    const summed = product.stockMovements.reduce((s, m) => s + m.qtyChange, 0);
-    if (!close(product.stockQty, summed)) {
+    const summed = product.stockMovements.reduce((s, m) => s + toNumber(m.qtyChange), 0);
+    const stockQty = toNumber(product.stockQty);
+    if (!close(stockQty, summed)) {
       failures.push(
-        `D6 product '${product.name}': stockQty=${product.stockQty} != Σmovements=${summed}`
+        `D6 product '${product.name}': stockQty=${stockQty} != Σmovements=${summed}`
       );
     }
   }

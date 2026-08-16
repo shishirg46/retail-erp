@@ -1,7 +1,7 @@
 import { prisma } from "../../lib/prisma";
-import { paisaFromDecimal, paisaToRupees } from "../../lib/money";
+import { paisaFromDecimal, paisaToRupees, roundHalfUp } from "../../lib/money";
+import { quantityFromDecimal, unitsToQuantity } from "../../lib/quantity";
 import { formatShopLocal } from "../../lib/timezone";
-import { toNumber } from "./report.mapper";
 import { listVoidedTargetIds } from "../voids/void.repository";
 
 import type {
@@ -85,13 +85,21 @@ export class PrismaReportRepository implements ReportRepository {
     const productName = new Map(products.map((p) => [p.id, p.name]));
 
     // All money is summed in whole paisa (exact), converted once at payload
-    // construction (D11).
+    // construction (D11). Quantities are summed in scaled units (exact
+    // integers, D25.6) and converted to human units once at payload
+    // construction. The per-product amount reconstructs what was charged from
+    // the frozen pricePerUnit (paisa per human unit): qtyUnits × pricePerUnit
+    // / 100, rounded half-up to whole paisa — a no-op for whole units, exactly
+    // as before D25.
     const perProduct = new Map<string, { quantity: number; amountPaisa: number }>();
     for (const item of items) {
+      const qtyUnits = quantityFromDecimal(item.qty);
       const entry =
         perProduct.get(item.productId) ?? { quantity: 0, amountPaisa: 0 };
-      entry.quantity += item.qty;
-      entry.amountPaisa += paisaFromDecimal(item.pricePerUnit) * item.qty;
+      entry.quantity += qtyUnits;
+      entry.amountPaisa += roundHalfUp(
+        (qtyUnits * paisaFromDecimal(item.pricePerUnit)) / 100
+      );
       perProduct.set(item.productId, entry);
     }
 
@@ -115,7 +123,7 @@ export class PrismaReportRepository implements ReportRepository {
           ([productId, entry]): ProductQuantityRow => ({
             productId,
             productName: productName.get(productId) ?? "unknown",
-            quantity: entry.quantity,
+            quantity: unitsToQuantity(entry.quantity),
             amount: paisaToRupees(entry.amountPaisa),
           })
         )
@@ -205,14 +213,14 @@ export class PrismaReportRepository implements ReportRepository {
       .map((row) => ({
         productId: row.id,
         productName: row.name,
-        stockQty: row.stockQty,
+        stockQty: unitsToQuantity(quantityFromDecimal(row.stockQty)),
       }))
       .sort((a, b) => a.productName.localeCompare(b.productName));
 
     const movementSummary: MovementSummaryRow[] = summary
       .map((row) => ({
         reason: row.reason as StockReason,
-        quantity: toNumber(row._sum.qtyChange),
+        quantity: unitsToQuantity(quantityFromDecimal(row._sum.qtyChange)),
         count: row._count,
       }))
       .sort((a, b) => b.quantity - a.quantity);

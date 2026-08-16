@@ -1,5 +1,9 @@
 import type { VoidInfo } from "../voids/void.types";
 
+// Quantities are integer hundredths (scaled units) in the domain (D25.6) —
+// the quantity analogue of whole paisa. Human quantities (≤ 2 dp) convert
+// to/from scaled units via lib/quantity.ts at the boundaries.
+
 export type StockReason = "PURCHASE" | "SALE" | "DAMAGE" | "CORRECTION" | "VOID";
 
 // Manual adjustments only ever use these two reasons (D6).
@@ -8,7 +12,7 @@ export type StockAdjustmentReason = "DAMAGE" | "CORRECTION";
 export interface StockMovement {
   id: string;
   productId: string;
-  qtyChange: number;
+  qtyChange: number; // scaled units (signed)
   reason: StockReason;
   date: Date;
   note: string | null;
@@ -19,7 +23,7 @@ export interface StockMovement {
 
 export interface CreateStockMovementInput {
   productId: string;
-  qtyChange: number;
+  qtyChange: number; // scaled units (signed)
   reason: StockReason;
   note?: string;
   saleId?: string;
@@ -28,15 +32,16 @@ export interface CreateStockMovementInput {
 
 // DAMAGE:  quantity = amount damaged (applied as -quantity)
 // CORRECTION: quantity = desired final stock level (change = target - current)
+// Both in scaled units.
 export interface AdjustStockInput {
   productId: string;
   reason: StockAdjustmentReason;
-  quantity: number;
+  quantity: number; // scaled units
   note?: string;
 }
 
 export interface AdjustStockResult {
-  product: { id: string; stockQty: number };
+  product: { id: string; stockQty: number }; // scaled units
   movement: StockMovement;
 }
 

@@ -1,5 +1,6 @@
 import { MAX_ITEM_QUANTITY, MAX_ITEMS_PER_DOCUMENT } from "../../lib/bounds";
 import { ValidationError } from "../../lib/errors";
+import { hasAtMostTwoDecimals, quantityToUnits } from "../../lib/quantity";
 
 import type { CreateSaleInput, PaymentType, SaleItemInput } from "./sale.types";
 
@@ -20,12 +21,17 @@ function validateSaleItem(value: unknown, index: number): SaleItemInput {
     throw new ValidationError(`items[${index}].productId must be a non-empty string`);
   }
 
+  // D25.2: quantity accepts up to 2 dp (0.25 / 1.5 valid, 1.257 rejected).
+  // The unit precision rule (pcs integers) needs the product, so it is
+  // enforced in SaleService where the product is known (D25.1).
   if (
     typeof item.quantity !== "number" ||
-    !Number.isInteger(item.quantity) ||
-    item.quantity < 1
+    !hasAtMostTwoDecimals(item.quantity) ||
+    item.quantity <= 0
   ) {
-    throw new ValidationError(`items[${index}].quantity must be a positive integer`);
+    throw new ValidationError(
+      `items[${index}].quantity must be a positive number with at most 2 decimal places`
+    );
   }
 
   if (item.quantity > MAX_ITEM_QUANTITY) {
@@ -34,7 +40,8 @@ function validateSaleItem(value: unknown, index: number): SaleItemInput {
     );
   }
 
-  return { productId: item.productId, quantity: item.quantity };
+  // Quantity converts exactly once here: human units -> scaled units (D25.6).
+  return { productId: item.productId, quantity: quantityToUnits(item.quantity) };
 }
 
 // Request-level validation: checks the structure of the HTTP payload only.
