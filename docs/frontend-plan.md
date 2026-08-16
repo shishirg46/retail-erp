@@ -1,6 +1,6 @@
 # M21 — Responsive Mobile-First Frontend: Kickoff Package
 
-**Milestone:** M21 (frontend) — **implementation in progress (Phase A foundation done 16 Aug 2026, Phase B pages pending)**
+**Milestone:** M21 (frontend) — **implementation in progress (Phase A foundation done 16 Aug 2026; Phase B.1 POS `/sales/new` shipped 16 Aug 2026, awaiting visual review; `/sales` and `/sales/[id]` pending)**
 **Date:** 15 Aug 2026 (updated 16 Aug 2026)
 **Companion decision record:** [`business-decisions.md`](business-decisions.md) → D21
 **Consumed backend:** all endpoints listed in [`README.md`](../README.md) (D1–D20)
@@ -168,8 +168,106 @@ Color semantics (fixed, not dark-mode dependent for money meanings):
 - **Grey strike** — VOIDED badge (D18.9).
 
 Money is always rendered in rupees with thousands separators (the API's wire
-format, D11): e.g. `₹ 12,340.50`. `-120.00` shows as `₹ -120.00` in red with
+format, D11): e.g. `रू 12,340.50`. `-120.00` shows as `रू -120.00` in red with
 the D4 "prepaid" label when it is a customer balance.
+
+### Typography (D23.1 — approved 16 Aug 2026)
+
+Latin UI/brand face is **Plus Jakarta Sans** (Geist retired); **Noto Sans
+Devanagari** covers Nepali shop data and the rupee sign रू (U+0930 U+0942).
+Stacks in `app/globals.css` `@theme`:
+
+| Stack | Faces |
+| --- | --- |
+| `--font-sans` (body) | Plus Jakarta Sans → Noto Sans Devanagari → `ui-sans-serif, system-ui, sans-serif` |
+| `--font-heading` | Plus Jakarta Sans → Noto Sans Devanagari |
+| `--font-nepali` | Noto Sans Devanagari |
+| `--font-mono` | system `ui-monospace, SFMono-Regular, Menlo, Consolas` (technical IDs only) |
+
+Glyphs fall through the stack, so Devanagari text and `रू` render via Noto Sans
+Devanagari wherever they appear inside Plus Jakarta Sans copy.
+
+### Color tokens (D23.2 — approved 16 Aug 2026; primary adjusted to `#2869d9`)
+
+Restrained ERP palette: **one** primary brand/action blue (`#2869d9`; hover
+`#2569d1`; tint `#eaf3ff`; foreground `#ffffff`), cool-neutral surfaces, and
+three semantic pairs (success / warning / destructive). Color is
+spent only on the primary CTA, the active navigation state, and semantic
+status — never on decorative cards. **No page-specific colors**: every screen
+uses only the tokens below (single source: `app/globals.css`). Money-color
+semantics from the list above stay fixed and are not dark-mode dependent.
+*The PM's originally requested brand blue `#3080f0` failed WCAG AA with white
+text (3.84:1 < 4.5:1) and on the tint (3.43:1); PM approved `#2869d9`, which
+passes every pair (see the contrast table).*
+
+| Token | Light (OKLCh) | Light (hex) | Dark (OKLCh) | Dark (hex) | Use |
+| --- | --- | --- | --- | --- | --- |
+| `--background` | `oklch(0.985 0.002 260)` | `#f9fafb` | `oklch(0.17 0.012 260)` | `#0c1015` | page surface |
+| `--foreground` | `oklch(0.2 0.02 260)` | `#11161f` | `oklch(0.95 0.005 260)` | `#eceff2` | primary text |
+| `--card` / `--popover` | `oklch(1 0 0)` | `#ffffff` | `oklch(0.21 0.012 260)` | `#15181e` | card / popover surface |
+| `--primary` | `oklch(0.5447 0.1844 260.6)` | `#2869d9` | `oklch(0.63 0.13 262)` | `#5d87d7` | brand/action: primary CTA, active nav text, focus ring, links |
+| `--primary-hover` | `oklch(0.538 0.1746 259.2)` | `#2569d1` | `oklch(0.69 0.12 262)` | `#729be6` | hover/active state of primary surfaces |
+| `--primary-foreground` | `oklch(1 0 0)` | `#ffffff` | `oklch(0.15 0.02 260)` | `#070b14` | text on primary |
+| `--secondary` | `oklch(0.95 0.005 260)` | `#eceff2` | `oklch(0.26 0.012 260)` | `#21242a` | secondary button surface |
+| `--secondary-foreground` | `oklch(0.28 0.02 260)` | `#232933` | `oklch(0.92 0.006 260)` | `#e2e5e9` | text on secondary |
+| `--muted` | `oklch(0.96 0.004 260)` | `#f0f2f4` | `oklch(0.26 0.012 260)` | `#21242a` | subtle surface (badges, hover) |
+| `--muted-foreground` | `oklch(0.47 0.018 260)` | `#555b65` | `oklch(0.72 0.015 260)` | `#9fa5ae` | secondary/helper text |
+| `--accent` | `oklch(0.9609 0.0188 255.5)` | `#eaf3ff` | `oklch(0.28 0.02 262)` | `#232933` | highlighted surface (primary tint) |
+| `--accent-foreground` | `oklch(0.5447 0.1844 260.6)` | `#2869d9` | `oklch(0.78 0.05 262)` | `#a6b8d8` | text on accent |
+| `--destructive` | `oklch(0.55 0.19 25)` | `#c92f33` | `oklch(0.56 0.18 25)` | `#c8393a` | destructive action / danger |
+| `--destructive-foreground` | `oklch(0.985 0 0)` | `#fafafa` | `oklch(0.97 0.005 0)` | `#f8f4f5` | text on destructive |
+| `--success` | `oklch(0.52 0.13 165)` | `#007f56` | `oklch(0.62 0.11 165)` | `#359b75` | positive / in-stock / prepaid |
+| `--success-foreground` | `oklch(0.985 0 0)` | `#fafafa` | `oklch(0.15 0.02 160)` | `#040e08` | text on success |
+| `--warning` | `oklch(0.82 0.14 80)` | `#f3b94c` | `oklch(0.72 0.13 80)` | `#cf9a35` | pending / rate-limited only |
+| `--warning-foreground` | `oklch(0.34 0.09 55)` | `#5a2800` | `oklch(0.25 0.08 55)` | `#3d1300` | text on warning (dark-on-amber) |
+| `--border` | `oklch(0.9 0.005 260)` | `#dcdee1` | `oklch(1 0 0 / 10%)` | — | hairlines, dividers |
+| `--input` | `oklch(0.645 0.016 260)` | `#888e98` | `oklch(1 0 0 / 15%)` | — | input/control boundary (≥3:1 vs surface) |
+| `--ring` | `oklch(0.5447 0.1844 260.6)` | `#2869d9` | `oklch(0.63 0.13 262)` | `#5d87d7` | focus ring (== primary) |
+| `--sidebar` | `oklch(0.97 0.004 260)` | `#f3f5f8` | `oklch(0.19 0.012 260)` | `#111419` | navigation surface |
+| `--sidebar-foreground` | `oklch(0.2 0.02 260)` | `#11161f` | `oklch(0.95 0.005 260)` | `#eceff2` | nav text |
+| `--sidebar-accent` | `oklch(0.9609 0.0188 255.5)` | `#eaf3ff` | `oklch(0.25 0.02 262)` | `#1c222b` | active nav item bg (subtle primary tint) |
+| `--sidebar-accent-foreground` | `oklch(0.5447 0.1844 260.6)` | `#2869d9` | `oklch(0.78 0.05 262)` | `#a6b8d8` | active nav item text |
+| `--sidebar-primary` | `oklch(0.5447 0.1844 260.6)` | `#2869d9` | `oklch(0.63 0.13 262)` | `#5d87d7` | nav primary element (== primary) |
+| `--sidebar-primary-foreground` | `oklch(1 0 0)` | `#ffffff` | `oklch(0.15 0.02 260)` | `#070b14` | text on nav primary |
+| `--sidebar-border` / `--sidebar-ring` | as `--border` / `--ring` | — | — | — | nav hairlines / focus |
+
+Alpha borders in dark mode (`--border`, `--input`) composite over their
+surface; they are shown in OKLCh form only.
+
+**Design rules (apply to every M21 screen):**
+
+1. `--primary` is reserved for: the primary CTA, the active navigation state
+   (text + a very light `--sidebar-accent`/`--accent` tint background), focus
+   rings, and inline links. Nothing else.
+2. Navigation is neutral (`--sidebar`/`--sidebar-foreground`); only the active
+   item carries the subtle primary tint.
+3. Cards are neutral (`--card` on `--background`); semantic color is for
+   status chips / badges / buttons, not card backgrounds.
+4. Semantic meanings are fixed (green = positive/in-stock/prepaid, red =
+   negative/owed danger, amber = pending/rate-limited only, grey strike =
+   VOIDED) and never change with theme.
+5. Text pairs must keep WCAG AA (≥4.5:1); control boundaries ≥3:1 — verified
+   in the table below and re-verified whenever tokens change.
+
+**WCAG AA contrast verification (computed from the OKLCh tokens above):**
+
+| Pair (light) | Ratio | Pair (dark) | Ratio |
+| --- | --- | --- | --- |
+| `foreground` / `background` | 17.34:1 | `foreground` / `background` | 16.53:1 |
+| `foreground` / `card` | 18.11:1 | `foreground` / `card` | 15.31:1 |
+| `primary-foreground` / `primary` | 5.11:1 | `primary-foreground` / `primary` | 5.56:1 |
+| `primary-foreground` / `primary-hover` | 5.22:1 | `primary-foreground` / `primary-hover` | 7.04:1 |
+| `secondary-foreground` / `secondary` | 12.61:1 | `secondary-foreground` / `secondary` | 12.26:1 |
+| `muted-foreground` / `background` | 6.54:1 | `muted-foreground` / `background` | 7.71:1 |
+| `muted-foreground` / `card` | 6.82:1 | `muted-foreground` / `card` | 7.14:1 |
+| `accent-foreground` / `accent` | 4.56:1 | `accent-foreground` / `accent` | 7.29:1 |
+| `destructive-foreground` / `destructive` | 5.12:1 | `destructive-foreground` / `destructive` | 4.66:1 |
+| `success-foreground` / `success` | 4.81:1 | `success-foreground` / `success` | 5.68:1 |
+| `warning-foreground` / `warning` | 6.83:1 | `warning-foreground` / `warning` | 6.47:1 |
+| `sidebar-foreground` / `sidebar` | 16.60:1 | `sidebar-foreground` / `sidebar` | 15.96:1 |
+| `sidebar-accent-foreground` / `sidebar-accent` | 4.56:1 | `sidebar-accent-foreground` / `sidebar-accent` | 7.99:1 |
+| `input` / `background` (UI ≥3:1) | 3.16:1 | `input` / `background` (UI ≥3:1) | 19.12:1 |
+| `ring` / `background` (UI ≥3:1) | 4.89:1 | `ring` / `background` (UI ≥3:1) | 5.40:1 |
 
 ## 7. Responsive transformation rules (the "never shrink" rules)
 

@@ -62,6 +62,26 @@ function withUiPageCsp(request: NextRequest): NextResponse {
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // Sign-in credential-leak guard (M21 LAN test, 16 Aug 2026). The sign-in
+  // form declares method="post" (app/sign-in/sign-in-form.tsx), so any page
+  // this app serves submits credentials in the POST body — never in a GET
+  // URL. But a stale pre-hydration client (a tab loaded before a dev-server
+  // restart, whose JS chunks no longer exist) or a re-fire of a leaked URL
+  // from browser history can still send `GET /sign-in?username=…&password=…`.
+  // Neutralize it here so credentials are never processed through a GET and
+  // the browser is redirected to the clean URL (also scrubs the address bar
+  // on the next navigation). Better Auth, D9.9, and CSP are untouched; this
+  // runs before any /api/* handling.
+  if (
+    pathname === "/sign-in" &&
+    request.method === "GET" &&
+    (request.nextUrl.searchParams.has("username") || request.nextUrl.searchParams.has("password"))
+  ) {
+    const clean = request.nextUrl.clone();
+    clean.search = "";
+    return NextResponse.redirect(clean, 307);
+  }
+
   if (pathname.startsWith("/api/")) {
     if (pathname.startsWith("/api/auth/")) return NextResponse.next();
 

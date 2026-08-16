@@ -7,7 +7,7 @@ import { betterAuth } from "better-auth";
 import { prismaAdapter } from "@better-auth/prisma-adapter";
 import { admin, createAccessControl, username } from "better-auth/plugins";
 import { prisma } from "./prisma";
-import { resolveAuthBaseURL } from "./auth/base-url";
+import { devLanTrustedOrigins, resolveAuthBaseURL } from "./auth/base-url";
 
 const secret = process.env.BETTER_AUTH_SECRET;
 if (!secret) {
@@ -40,6 +40,10 @@ export const auth = betterAuth({
     disableSignUp: true,
     minPasswordLength: 8,
   },
+  // Dev-only LAN origin (see base-url.ts): lets the phone's state-changing
+  // calls (sign-out) pass Better Auth's origin check during the LAN mobile
+  // test. Empty in production — the strict check is untouched.
+  trustedOrigins: devLanTrustedOrigins(),
   plugins: [
     username(),
     admin({

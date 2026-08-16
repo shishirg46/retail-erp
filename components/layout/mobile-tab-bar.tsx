@@ -8,7 +8,7 @@ import { isActivePath } from "@/components/layout/nav-link";
 import { MOBILE_TABS } from "@/components/layout/nav-items";
 import { MoreSheetContent } from "@/components/layout/more-sheet";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import type { Role } from "@/lib/auth/authorize";
 
@@ -57,11 +57,13 @@ export function MobileTabBar({ role }: { role: Role }) {
           if (isMore) {
             return (
               <Sheet key={tab.href}>
-                <TabButton
-                  label={tab.label}
-                  icon={<Icon aria-hidden />}
-                  data-testid="more-tab"
-                />
+                <SheetTrigger asChild>
+                  <TabButton
+                    label={tab.label}
+                    icon={<Icon aria-hidden />}
+                    data-testid="more-tab"
+                  />
+                </SheetTrigger>
                 <SheetContent side="bottom" showCloseButton={false} className="pb-safe">
                   <SheetTitle className="px-4 pt-2">More</SheetTitle>
                   <MoreSheetContent role={role} />

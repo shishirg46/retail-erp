@@ -70,4 +70,18 @@ describe("cart store", () => {
     reset();
     expect(useCart.getState().customerId).toBeNull();
   });
+
+  it("carries optional POS extras (stock cap + tier hint data) on a line", () => {
+    useCart.getState().addItem({
+      ...RICE,
+      stockQty: 13,
+      tiers: [{ minQty: 3, price: 20 }],
+    });
+    expect(useCart.getState().items[0]).toMatchObject({
+      ...RICE,
+      qty: 1,
+      stockQty: 13,
+      tiers: [{ minQty: 3, price: 20 }],
+    });
+  });
 });

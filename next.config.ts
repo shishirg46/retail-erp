@@ -15,6 +15,11 @@ import type { NextConfig } from "next";
 // configured behind a PM decision — never a wildcard.
 
 const nextConfig: NextConfig = {
+  // Dev-only (F-11): the LAN test phone reaches the dev server via
+  // http://192.168.1.123:3000. Without this, Next.js blocks dev-only assets
+  // (e.g. /_next/webpack-hmr) requested from that origin. Hostname matching
+  // only — never affects production builds.
+  allowedDevOrigins: ["192.168.1.123"],
   async headers() {
     return [
       {

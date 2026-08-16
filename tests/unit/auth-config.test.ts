@@ -14,6 +14,7 @@ import { hashPassword, verifyPassword } from "@better-auth/utils/password";
 
 import { auth } from "../../lib/auth";
 import { assertSameOrigin, CASHIER, OWNER, Role } from "../../lib/auth/authorize";
+import { devLanTrustedOrigins } from "../../lib/auth/base-url";
 import { ForbiddenError } from "../../lib/errors";
 
 describe("F-10 auth config", () => {
@@ -47,6 +48,19 @@ describe("F-10 password hashing", () => {
     expect(hashed).toMatch(/^[0-9a-f]{32}:[0-9a-f]{128}$/);
     await expect(verifyPassword(hashed, "correct horse 8+")).resolves.toBe(true);
     await expect(verifyPassword(hashed, "wrong!")).resolves.toBe(false);
+  });
+});
+
+describe("F-10 dev-only LAN trusted origin (Better Auth origin check)", () => {
+  it("trusts the LAN dev host (port-wildcarded) in development only", () => {
+    expect(devLanTrustedOrigins({ NODE_ENV: "development" })).toEqual(["http://192.168.1.123:*"]);
+    expect(devLanTrustedOrigins({ NODE_ENV: "production" })).toEqual([]);
+    expect(devLanTrustedOrigins({})).toEqual([]);
+  });
+
+  it("keeps the strict origin check in production", () => {
+    const trusted = devLanTrustedOrigins({ NODE_ENV: "production" });
+    expect(trusted).toHaveLength(0);
   });
 });
 

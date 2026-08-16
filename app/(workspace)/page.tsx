@@ -26,7 +26,7 @@ export default async function HomePage() {
       <div className="grid grid-cols-1 gap-3 tablet:grid-cols-3">
         <Link
           href="/sales/new"
-          className="min-touch flex items-center gap-3 rounded-xl bg-primary px-4 text-primary-foreground hover:bg-primary/90"
+          className="min-touch flex items-center gap-3 rounded-xl bg-primary px-4 text-primary-foreground hover:bg-primary-hover"
         >
           <Plus className="size-5 shrink-0" aria-hidden />
           <span className="text-base font-medium">New Sale</span>

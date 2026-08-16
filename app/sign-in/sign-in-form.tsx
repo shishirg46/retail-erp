@@ -56,7 +56,21 @@ export function SignInForm() {
   return (
     <div className="w-full">
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4" noValidate>
+        {/* method="post" (native fallback): react-hook-form's handleSubmit
+            preventDefaults and signs in via the Better Auth client, but if the
+            user submits before hydration attaches the handler, the browser
+            performs a native submission. Without method="post" the browser
+            default is GET and it serializes username/password into the URL
+            query string — a credential leak. POST keeps them in the request
+            body instead (and the page route rejects it), never in the URL,
+            history, or server request logs. */}
+        <form
+          method="post"
+          action="/sign-in"
+          onSubmit={form.handleSubmit(onSubmit)}
+          className="space-y-4"
+          noValidate
+        >
           <FormField
             control={form.control}
             name="username"

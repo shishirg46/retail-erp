@@ -12,12 +12,29 @@ import { create } from "zustand";
 
 import type { PaymentType } from "@/modules/reports/report.types";
 
+// The quantity step for the POS tap-to-add / steppers (D25): pcs products are
+// whole units; measurable units step in quarters (0.25 kg / 250 ml ...).
+export function quantityStep(unit: string): number {
+  return unit === "pcs" ? 1 : 0.25;
+}
+
+// All cart arithmetic stays within 2 dp; round to absorb float noise from
+// stepper increments (e.g. 1.05 + 0.25 -> 1.3).
+export function roundQuantity(qty: number): number {
+  return Math.round(qty * 100) / 100;
+}
+
 export interface CartLine {
   productId: string;
   name: string;
   unit: string;
   pricePerUnit: number; // rupees, from the products wire payload
   qty: number;
+  // Optional POS extras (plan §12.1): stock drives the client-side quantity
+  // cap; tiers drive the D1 hint. Both are preview/UX only — the server is
+  // authoritative for availability and price.
+  stockQty?: number;
+  tiers?: readonly { minQty: number; price: number }[];
 }
 
 interface CartState {
@@ -37,18 +54,21 @@ export const useCart = create<CartState>()((set) => ({
   paymentType: "CASH",
   customerId: null,
 
-  addItem: ({ productId, name, unit, pricePerUnit }) =>
+  addItem: (line) =>
     set((state) => {
-      const existing = state.items.find((line) => line.productId === productId);
+      const step = quantityStep(line.unit);
+      const existing = state.items.find((item) => item.productId === line.productId);
       if (existing) {
         return {
-          items: state.items.map((line) =>
-            line.productId === productId ? { ...line, qty: line.qty + 1 } : line
+          items: state.items.map((item) =>
+            item.productId === line.productId
+              ? { ...item, qty: roundQuantity(item.qty + step) }
+              : item
           ),
         };
       }
       return {
-        items: [...state.items, { productId, name, unit, pricePerUnit, qty: 1 }],
+        items: [...state.items, { ...line, qty: step }],
       };
     }),
 
@@ -58,7 +78,9 @@ export const useCart = create<CartState>()((set) => ({
         qty <= 0
           ? state.items.filter((line) => line.productId !== productId)
           : state.items.map((line) =>
-              line.productId === productId ? { ...line, qty } : line
+              line.productId === productId
+                ? { ...line, qty: roundQuantity(qty) }
+                : line
             ),
     })),
 

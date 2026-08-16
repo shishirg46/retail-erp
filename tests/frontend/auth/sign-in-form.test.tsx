@@ -32,6 +32,20 @@ describe("SignInForm", () => {
     expect(screen.getByRole("button", { name: "Sign in" })).toBeInTheDocument();
   });
 
+  it("never serializes credentials into the URL: the form can only submit via POST", () => {
+    const { container } = render(<SignInForm />);
+    const form = container.querySelector("form") as HTMLFormElement;
+    // The browser's native (pre-hydration) submission honors the form's
+    // method. A missing method defaults to GET and the browser appends the
+    // field values to the URL query string — the exact leak reproduced on the
+    // LAN test phone (`GET /sign-in?username=…&password=…`).
+    expect(form.method).toBe("post");
+    expect(form.getAttribute("action")).toBe("/sign-in");
+    // The resolved submission URL is clean: credentials can only travel in the
+    // POST body, never in the URL query, browser history, or request logs.
+    expect(new URL(form.action).search).toBe("");
+  });
+
   it("shows inline validation errors before calling the server", async () => {
     const user = userEvent.setup();
     render(<SignInForm />);
