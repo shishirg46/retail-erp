@@ -125,6 +125,26 @@ export function validateCreateProductInput(body: unknown): CreateProductInput {
     throw new ValidationError(`currentPrice must be at most ${MAX_AMOUNT}`);
   }
 
+  // D28: unitsPerPack is the number of sell units in one pack.
+  // Only valid for pcs products; must be an integer >= 2 when provided.
+  if (input.unitsPerPack !== undefined) {
+    if (
+      typeof input.unitsPerPack !== "number" ||
+      !Number.isInteger(input.unitsPerPack) ||
+      input.unitsPerPack < 2
+    ) {
+      throw new ValidationError(
+        "unitsPerPack, when provided, must be an integer >= 2"
+      );
+    }
+
+    if (input.unit.trim() !== "pcs") {
+      throw new ValidationError(
+        "unitsPerPack can only be set for pcs products"
+      );
+    }
+  }
+
   let priceTiers: PriceTier[] | undefined;
 
   if (input.priceTiers !== undefined) {
@@ -174,5 +194,6 @@ export function validateCreateProductInput(body: unknown): CreateProductInput {
     costPrice: rupeesToPaisa(input.costPrice),
     currentPrice: rupeesToPaisa(input.currentPrice),
     ...(priceTiers ? { priceTiers } : {}),
+    ...(input.unitsPerPack !== undefined ? { unitsPerPack: input.unitsPerPack } : {}),
   };
 }

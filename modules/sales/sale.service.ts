@@ -105,6 +105,7 @@ export class SaleService {
           productId: draft.productId,
           qty: draft.quantity,
           pricePerUnit: draft.unitPrice,
+          lineTotal: draft.total,
         })),
       });
 

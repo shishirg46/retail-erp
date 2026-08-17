@@ -33,7 +33,7 @@ export class PrismaPurchaseRepository implements PurchaseRepository {
           })),
         },
       },
-      include: { items: true },
+      include: { items: { include: { product: { select: { name: true } } } } },
     });
 
     return toPurchase(raw);
@@ -42,7 +42,7 @@ export class PrismaPurchaseRepository implements PurchaseRepository {
   async findById(id: string): Promise<Purchase | null> {
     const raw = await this.db.purchase.findUnique({
       where: { id },
-      include: { items: true },
+      include: { items: { include: { product: { select: { name: true } } } } },
     });
 
     if (!raw) return null;
@@ -56,7 +56,7 @@ export class PrismaPurchaseRepository implements PurchaseRepository {
 
   async list(): Promise<Purchase[]> {
     const raw = await this.db.purchase.findMany({
-      include: { items: true },
+      include: { items: { include: { product: { select: { name: true } } } } },
       orderBy: { date: "desc" },
     });
 
@@ -78,7 +78,7 @@ export class PrismaPurchaseRepository implements PurchaseRepository {
 
     const raw = await this.db.purchase.findMany({
       where,
-      include: { items: true },
+      include: { items: { include: { product: { select: { name: true } } } } },
       orderBy: [{ date: "desc" }, { id: "desc" }],
       ...(cursor
         ? {

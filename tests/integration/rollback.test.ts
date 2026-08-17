@@ -19,7 +19,7 @@ import { PurchaseService } from "../../modules/purchases/purchase.service";
 import { CustomerPaymentService } from "../../modules/customer-payments/customer-payment.service";
 import { SupplierPaymentService } from "../../modules/supplier-payments/supplier-payment.service";
 import { createTestPrisma, truncateAll, reconcile, tableCounts } from "../helpers/db";
-import { createProduct, createCustomer, createSupplier, seedStock } from "../helpers/seed";
+import { createProduct, createCustomer, createSupplier, seedStock, units } from "../helpers/seed";
 
 const prisma = createTestPrisma();
 const saleService = new SaleService(prisma);
@@ -44,7 +44,7 @@ describe("transaction rollback (ERP-005)", () => {
     await seedStock(prisma, product.id, 5);
     const before = await tableCounts(prisma);
 
-    await saleService.createSale({ paymentType: "CASH", items: [{ productId: product.id, quantity: 1 }] });
+    await saleService.createSale({ paymentType: "CASH", items: [{ productId: product.id, quantity: units(1) }] });
 
     const after = await tableCounts(prisma);
     expect(after.sales).toBe(before.sales + 1);
@@ -64,8 +64,8 @@ describe("transaction rollback (ERP-005)", () => {
       saleService.createSale({
         paymentType: "CASH",
         items: [
-          { productId: a.id, quantity: 3 }, // valid line
-          { productId: b.id, quantity: 1 }, // out-of-stock line
+          { productId: a.id, quantity: units(3) }, // valid line
+          { productId: b.id, quantity: units(1) }, // out-of-stock line
         ],
       })
     ).rejects.toThrow();
@@ -82,7 +82,7 @@ describe("transaction rollback (ERP-005)", () => {
       saleService.createSale({
         paymentType: "CREDIT",
         customerId: "00000000-0000-0000-0000-000000000000",
-        items: [{ productId: product.id, quantity: 1 }],
+        items: [{ productId: product.id, quantity: units(1) }],
       })
     ).rejects.toThrow();
 
@@ -97,7 +97,7 @@ describe("transaction rollback (ERP-005)", () => {
       purchaseService.createPurchase({
         supplierId,
         paymentType: "CASH",
-        items: [{ productId: "00000000-0000-0000-0000-000000000000", quantity: 1, costPerUnit: 5 }],
+        items: [{ productId: "00000000-0000-0000-0000-000000000000", quantity: units(1), costPerUnit: 5 }],
       })
     ).rejects.toThrow();
 
@@ -125,7 +125,7 @@ describe("transaction rollback (ERP-005)", () => {
     const sale = await saleService.createSale({
       paymentType: "CREDIT",
       customerId: owner,
-      items: [{ productId: product.id, quantity: 1 }],
+      items: [{ productId: product.id, quantity: units(1) }],
     });
     const before = await tableCounts(prisma);
 
@@ -163,12 +163,12 @@ describe("transaction rollback (ERP-005)", () => {
     await purchaseService.createPurchase({
       supplierId,
       paymentType: "CASH",
-      items: [{ productId: product.id, quantity: 10, costPerUnit: 3 }],
+      items: [{ productId: product.id, quantity: units(10), costPerUnit: 3 }],
     });
     await saleService.createSale({
       paymentType: "CREDIT",
       customerId,
-      items: [{ productId: product.id, quantity: 2 }],
+      items: [{ productId: product.id, quantity: units(2) }],
     });
     await customerPaymentService.createCustomerPayment({ customerId, amount: 20 });
 

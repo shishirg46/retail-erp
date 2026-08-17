@@ -23,6 +23,9 @@ model Product {
   // Human-readable stock level, DECIMAL(18,2) — fractional for measurable
   // units, whole for pcs (D25).
   stockQty     Decimal  @default(0) @db.Decimal(18, 2) @map("stock_qty")
+  // Pack support (D28): number of sell units in one pack. null = no pack
+  // concept (measurable units); integer >= 2 for pcs products.
+  unitsPerPack Int?     @map("units_per_pack")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
@@ -56,11 +59,12 @@ model PriceTier {
 // ────────────────────────────────
 
 model Supplier {
-  id          String   @id @default(uuid())
-  name        String
-  contact     String?
-  balanceOwed Decimal  @default(0) @map("balance_owed") // what the shop owes this supplier
-  createdAt   DateTime @default(now()) @map("created_at")
+  id             String   @id @default(uuid())
+  name           String
+  contact        String?
+  balanceOwed    Decimal  @default(0) @map("balance_owed") // what the shop owes this supplier
+  openingBalance Decimal  @default(0) @map("opening_balance") // historical balance at ERP go-live (D26)
+  createdAt      DateTime @default(now()) @map("created_at")
 
   purchases        Purchase[]
   supplierPayments SupplierPayment[]
@@ -123,11 +127,12 @@ model SupplierPayment {
 // ────────────────────────────────
 
 model Customer {
-  id          String   @id @default(uuid())
-  name        String
-  contact     String?
-  balanceOwed Decimal  @default(0) @map("balance_owed") // what this customer owes the shop
-  createdAt   DateTime @default(now()) @map("created_at")
+  id             String   @id @default(uuid())
+  name           String
+  contact        String?
+  balanceOwed    Decimal  @default(0) @map("balance_owed") // what this customer owes the shop
+  openingBalance Decimal  @default(0) @map("opening_balance") // historical balance at ERP go-live (D26)
+  createdAt      DateTime @default(now()) @map("created_at")
 
   sales          Sale[]
   creditPayments CreditPayment[]
@@ -173,7 +178,8 @@ model SaleItem {
   productId    String  @map("product_id")
   // Quantity sold, DECIMAL(18,2) (D25).
   qty          Decimal @db.Decimal(18, 2)
-  pricePerUnit Decimal @map("price_per_unit") // frozen price charged at time of sale
+  pricePerUnit Decimal @map("price_per_unit") // frozen effective unit price (informational, D1)
+  lineTotal    Decimal @default(0) @map("line_total") // authoritative line total from calculatePrice (D1+)
 
   sale    Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
   product Product @relation(fields: [productId], references: [id])
@@ -259,6 +265,7 @@ enum StockReason {
   DAMAGE
   CORRECTION
   VOID // offsetting reversal of a voided transaction's stock side effect
+  OPENING // initial stock count at ERP go-live (D27)
 }
 
 // Every stock change logged with a reason — audit trail instead of a silently
@@ -379,4 +386,18 @@ model Verification {
 
   @@index([identifier])
   @@map("verification")
+}
+
+// ────────────────────────────────
+// Shop settings (singleton, D26)
+// ────────────────────────────────
+
+model ShopSettings {
+  id                   String   @id @default("singleton")
+  goLiveAt             DateTime @map("go_live_at")
+  walletOpeningBalance Decimal  @default(0) @db.Decimal(12, 2) @map("wallet_opening_balance")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  @@map("shop_settings")
 }

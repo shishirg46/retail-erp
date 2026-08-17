@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api/client";
 import { queryKeys } from "@/lib/api/query-keys";
 import { formatRupees } from "@/lib/format/money";
+import { shortRef } from "@/lib/format";
 import { formatShopLocal } from "@/lib/timezone";
 import type { SaleApi } from "@/modules/sales/sale.mapper";
 
@@ -60,7 +61,7 @@ export function SaleDetail({ id, role }: { id: string; role: "OWNER" | "CASHIER"
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between gap-2">
-            <CardTitle>Sale #{sale.id}</CardTitle>
+            <CardTitle>Sale #{shortRef(sale.id)}</CardTitle>
             <Badge variant={sale.status === "VOIDED" ? "secondary" : "default"}>{sale.status}</Badge>
           </div>
         </CardHeader>
@@ -88,12 +89,12 @@ export function SaleDetail({ id, role }: { id: string; role: "OWNER" | "CASHIER"
           {sale.items.map((item) => (
             <div key={item.id} className="flex items-center justify-between gap-3 rounded-lg border p-3">
               <div>
-                <p className="font-medium">#{item.productId}</p>
+                <p className="font-medium">{item.productName}</p>
                 <p className="text-xs text-muted-foreground tabular-nums">
                   {item.qty} × {formatRupees(item.pricePerUnit)}
                 </p>
               </div>
-              <span className="font-medium tabular-nums">{formatRupees(item.pricePerUnit * item.qty)}</span>
+              <span className="font-medium tabular-nums">{formatRupees(item.lineTotal)}</span>
             </div>
           ))}
         </CardContent>

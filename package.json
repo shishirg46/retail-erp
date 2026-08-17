@@ -23,7 +23,9 @@
     "test:http:voids": "vitest run tests/http/voids-http.test.ts",
     "test:http:exports": "vitest run tests/http/exports-http.test.ts",
     "test:frontend": "vitest run --config vitest.frontend.config.ts",
-    "test:all": "npm run test:unit && npm run test:integration && npm run test:concurrency && npm run test:http && npm run test:http:bounds && npm run test:http:smoke && npm run test:auth && npm run test:http:pagination && npm run test:http:voids && npm run test:http:exports && npm run test:frontend"
+    "test:all": "npm run test:unit && npm run test:integration && npm run test:concurrency && npm run test:http && npm run test:http:bounds && npm run test:http:smoke && npm run test:auth && npm run test:http:pagination && npm run test:http:voids && npm run test:http:exports && npm run test:frontend",
+    "db:seed": "npx tsx scripts/seed-dev.ts",
+    "db:seed:dry": "npx tsx scripts/seed-dev.ts --dry"
   },
   "dependencies": {
     "@better-auth/prisma-adapter": "^1.6.28",

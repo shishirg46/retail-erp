@@ -30,10 +30,11 @@ export class PrismaSaleRepository implements SaleRepository {
             productId: item.productId,
             qty: unitsToQuantity(item.qty),
             pricePerUnit: paisaToRupees(item.pricePerUnit),
+            lineTotal: paisaToRupees(item.lineTotal),
           })),
         },
       },
-      include: { items: true },
+      include: { items: { include: { product: { select: { name: true } } } } },
     });
 
     return toSale(raw);
@@ -42,7 +43,7 @@ export class PrismaSaleRepository implements SaleRepository {
   async findById(id: string): Promise<Sale | null> {
     const raw = await this.db.sale.findUnique({
       where: { id },
-      include: { items: true },
+      include: { items: { include: { product: { select: { name: true } } } } },
     });
 
     if (!raw) return null;
@@ -54,7 +55,7 @@ export class PrismaSaleRepository implements SaleRepository {
 
   async list(): Promise<Sale[]> {
     const raw = await this.db.sale.findMany({
-      include: { items: true },
+      include: { items: { include: { product: { select: { name: true } } } } },
       orderBy: { date: "desc" },
     });
 
@@ -72,7 +73,7 @@ export class PrismaSaleRepository implements SaleRepository {
 
     const raw = await this.db.sale.findMany({
       where,
-      include: { items: true },
+      include: { items: { include: { product: { select: { name: true } } } } },
       orderBy: [{ date: "desc" }, { id: "desc" }],
       ...(cursor
         ? {

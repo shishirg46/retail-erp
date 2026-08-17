@@ -69,7 +69,7 @@ describe("D12 HTTP pagination", () => {
     // Product
     const prodRes = await httpPost(p, "/api/products", {
       name: "Page Milk",
-      unit: "pkt",
+      unit: "pcs",
       costPrice: 30,
       currentPrice: 50,
     }, cookie);

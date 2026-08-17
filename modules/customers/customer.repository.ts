@@ -12,10 +12,15 @@ export class PrismaCustomerRepository implements CustomerRepository {
   constructor(private readonly db: Db = prisma) {}
 
   async create(input: CreateCustomerInput): Promise<Customer> {
+    const openingBalancePaisa = input.openingBalance ?? 0;
     const raw = await this.db.customer.create({
       data: {
         name: input.name,
         contact: input.contact,
+        balanceOwed: paisaToRupees(openingBalancePaisa),
+        ...(input.openingBalance !== undefined
+          ? { openingBalance: paisaToRupees(input.openingBalance) }
+          : {}),
       },
     });
 

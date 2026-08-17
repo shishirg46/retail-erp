@@ -115,7 +115,11 @@ export function SalesList({ role }: { role: "OWNER" | "CASHIER" }) {
             <Card key={sale.id}>
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between gap-2">
-                  <CardTitle className="text-base">Sale #{sale.id}</CardTitle>
+                  <CardTitle className="text-base">
+                    {sale.items.length === 1
+                      ? sale.items[0].productName
+                      : `${sale.items[0].productName} + ${sale.items.length - 1} more`}
+                  </CardTitle>
                   <Badge variant={sale.status === "VOIDED" ? "secondary" : "default"}>
                     {sale.status}
                   </Badge>
@@ -135,7 +139,7 @@ export function SalesList({ role }: { role: "OWNER" | "CASHIER" }) {
                   <span className="text-sm font-medium tabular-nums">{sale.items.length}</span>
                 </div>
                 <div className="flex justify-end">
-                  <Link href={`/sales/${sale.id}`} className="inline-flex items-center" aria-label={`View sale ${sale.id}`}>
+                  <Link href={`/sales/${sale.id}`} className="inline-flex items-center" aria-label={`View sale`}>
                     <Button type="button" variant="outline" size="sm">
                       View sale
                     </Button>

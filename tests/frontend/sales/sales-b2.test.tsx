@@ -46,8 +46,8 @@ const sale = {
   voidedAt: null,
   voidReason: null,
   items: [
-    { id: "item-1", saleId: "sale-123", productId: "prod-1", qty: 2, pricePerUnit: 80 },
-    { id: "item-2", saleId: "sale-123", productId: "prod-2", qty: 1.5, pricePerUnit: 45 },
+    { id: "item-1", saleId: "sale-123", productId: "prod-1", productName: "Widget", qty: 2, pricePerUnit: 80, lineTotal: 160 },
+    { id: "item-2", saleId: "sale-123", productId: "prod-2", productName: "Gadget", qty: 1.5, pricePerUnit: 45, lineTotal: 67.5 },
   ],
   voidInfo: { voidedAt: null, reason: null },
 };
@@ -84,7 +84,7 @@ describe("SalesList", () => {
     mocks.apiGet.mockResolvedValue({ data: [sale], paging: { next: "next-cursor", hasMore: true } });
     renderWithClient(<SalesList role="OWNER" />);
 
-    expect(await screen.findByText("Sale #sale-123")).toBeInTheDocument();
+    expect(await screen.findByText("Widget + 1 more")).toBeInTheDocument();
     expect(screen.getByText("रू 245.50")).toBeInTheDocument();
     expect(screen.getAllByText("Cash").length).toBeGreaterThan(0);
 
@@ -114,7 +114,7 @@ describe("SaleDetail", () => {
   it("renders sale details and shows the void action only to OWNER", async () => {
     mocks.apiGet.mockResolvedValue(sale);
     const { rerender } = renderWithClient(<SaleDetail id="sale-123" role="CASHIER" />);
-    expect(await screen.findByText("Sale #sale-123")).toBeInTheDocument();
+    expect(await screen.findByText("Sale #SALE-123")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Void sale/i })).not.toBeInTheDocument();
 
     rerender(
@@ -145,5 +145,19 @@ describe("SaleDetail", () => {
     await user.type(await screen.findByLabelText(/Void reason/i), "Customer requested refund");
     await user.click(screen.getByRole("button", { name: /Confirm void/i }));
     await waitFor(() => expect(screen.getByText("Void failed")).toBeInTheDocument());
+  });
+
+  it("displays product names instead of UUIDs and uses authoritative line totals", async () => {
+    mocks.apiGet.mockResolvedValue(sale);
+    renderWithClient(<SaleDetail id="sale-123" role="OWNER" />);
+
+    await waitFor(() => expect(screen.getByText("Widget")).toBeInTheDocument());
+    expect(screen.getByText("Gadget")).toBeInTheDocument();
+
+    expect(screen.queryByText(/prod-1/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/prod-2/)).not.toBeInTheDocument();
+
+    expect(screen.getByText("रू 160.00")).toBeInTheDocument();
+    expect(screen.getByText("रू 67.50")).toBeInTheDocument();
   });
 });

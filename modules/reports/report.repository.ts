@@ -377,11 +377,24 @@ export class PrismaReportRepository implements ReportRepository {
       count: row.count,
     }));
 
+    // D26: walletOpeningBalance from ShopSettings is part of the starting balance.
+    let walletOpeningBalancePaisa = 0;
+    try {
+      const settingsRow = await this.db.shopSettings.findUnique({
+        where: { id: "singleton" },
+      });
+      if (settingsRow) {
+        walletOpeningBalancePaisa = paisaFromDecimal(settingsRow.walletOpeningBalance);
+      }
+    } catch {
+      // shop_settings table may not exist yet
+    }
+
     return {
       range: rangeEcho(range),
       deposits: paisaToRupees(depositsPaisa),
       withdrawals: paisaToRupees(withdrawalsPaisa),
-      balance: paisaToRupees(depositsPaisa - withdrawalsPaisa),
+      balance: paisaToRupees(walletOpeningBalancePaisa + depositsPaisa - withdrawalsPaisa),
       bySource: bySource.sort((a, b) => a.source.localeCompare(b.source)),
     };
   }

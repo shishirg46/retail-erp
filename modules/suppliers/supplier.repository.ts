@@ -12,6 +12,7 @@ function toSupplier(raw: {
   name: string;
   contact: string | null;
   balanceOwed: unknown;
+  openingBalance: unknown;
   createdAt: Date;
 }): Supplier {
   return {
@@ -19,6 +20,7 @@ function toSupplier(raw: {
     name: raw.name,
     contact: raw.contact,
     balanceOwed: paisaFromDecimal(raw.balanceOwed),
+    openingBalance: paisaFromDecimal(raw.openingBalance),
     createdAt: raw.createdAt,
   };
 }
@@ -28,6 +30,7 @@ export function toSupplierApi(supplier: Supplier): Supplier {
   return {
     ...supplier,
     balanceOwed: paisaToRupees(supplier.balanceOwed),
+    openingBalance: paisaToRupees(supplier.openingBalance),
   };
 }
 
@@ -35,10 +38,15 @@ export class PrismaSupplierRepository implements SupplierRepository {
   constructor(private readonly db: Db = prisma) {}
 
   async create(input: CreateSupplierInput): Promise<Supplier> {
+    const openingBalancePaisa = input.openingBalance ?? 0;
     const raw = await this.db.supplier.create({
       data: {
         name: input.name,
         contact: input.contact,
+        balanceOwed: paisaToRupees(openingBalancePaisa),
+        ...(input.openingBalance !== undefined
+          ? { openingBalance: paisaToRupees(input.openingBalance) }
+          : {}),
       },
     });
 

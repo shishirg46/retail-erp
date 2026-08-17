@@ -5,12 +5,14 @@ export interface Supplier {
   name: string;
   contact: string | null;
   balanceOwed: number; // paisa; negative = shop prepaid the supplier
+  openingBalance: number; // paisa; historical balance at ERP go-live (D26)
   createdAt: Date;
 }
 
 export interface CreateSupplierInput {
   name: string;
   contact?: string;
+  openingBalance?: number; // paisa; optional, default 0 (D26)
 }
 
 export interface ListSuppliersInput {

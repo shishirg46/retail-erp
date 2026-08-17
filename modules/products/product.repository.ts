@@ -70,6 +70,9 @@ export class PrismaProductRepository implements ProductRepository {
         unit: input.unit,
         costPrice: paisaToRupees(input.costPrice),
         currentPrice: paisaToRupees(input.currentPrice),
+        ...(input.unitsPerPack !== undefined
+          ? { unitsPerPack: input.unitsPerPack }
+          : {}),
         priceTiers: input.priceTiers?.length
           ? {
               create: input.priceTiers.map((tier) => ({

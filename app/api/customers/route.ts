@@ -16,7 +16,7 @@ import { validateCreateCustomerInput } from "@/modules/customers/customer.valida
 
 export async function POST(req: NextRequest) {
   try {
-    await requireRole(req, [OWNER, CASHIER]);
+    await requireRole(req, [OWNER]);
     let body: unknown;
 
     try {

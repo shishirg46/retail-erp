@@ -17,6 +17,7 @@ import { SaleService } from "../../modules/sales/sale.service";
 import { StockService } from "../../modules/stock/stock.service";
 import { PurchaseService } from "../../modules/purchases/purchase.service";
 import { createTestPrisma, truncateAll } from "../helpers/db";
+import { quantityToUnits } from "../../lib/quantity";
 
 const prisma = createTestPrisma();
 
@@ -42,7 +43,7 @@ async function seedStock(productId: string, target: number): Promise<void> {
   await stockService.adjustStock({
     productId,
     reason: "CORRECTION",
-    quantity: target,
+    quantity: quantityToUnits(target),
     note: "test seed",
   });
 }
@@ -73,11 +74,11 @@ describe("F-02 stock concurrency", () => {
     const results = await Promise.allSettled([
       saleService.createSale({
         paymentType: "CASH",
-        items: [{ productId: id, quantity: 1 }],
+        items: [{ productId: id, quantity: quantityToUnits(1) }],
       }),
       saleService.createSale({
         paymentType: "CASH",
-        items: [{ productId: id, quantity: 1 }],
+        items: [{ productId: id, quantity: quantityToUnits(1) }],
       }),
     ]);
 
@@ -105,7 +106,7 @@ describe("F-02 stock concurrency", () => {
       Array.from({ length: 10 }, () =>
         saleService.createSale({
           paymentType: "CASH",
-          items: [{ productId: id, quantity: 1 }],
+          items: [{ productId: id, quantity: quantityToUnits(1) }],
         })
       )
     );
@@ -136,8 +137,8 @@ describe("F-02 stock concurrency", () => {
     };
 
     const results = await Promise.allSettled([
-      stockService.adjustStock({ productId: id, reason: "DAMAGE", quantity: 2 }),
-      stockService.adjustStock({ productId: id, reason: "DAMAGE", quantity: 2 }),
+      stockService.adjustStock({ productId: id, reason: "DAMAGE", quantity: quantityToUnits(2) }),
+      stockService.adjustStock({ productId: id, reason: "DAMAGE", quantity: quantityToUnits(2) }),
     ]);
 
     const ok = results.filter((r) => r.status === "fulfilled");
@@ -163,9 +164,9 @@ describe("F-02 stock concurrency", () => {
     const results = await Promise.allSettled([
       saleService.createSale({
         paymentType: "CASH",
-        items: [{ productId: id, quantity: 1 }],
+        items: [{ productId: id, quantity: quantityToUnits(1) }],
       }),
-      stockService.adjustStock({ productId: id, reason: "DAMAGE", quantity: 1 }),
+      stockService.adjustStock({ productId: id, reason: "DAMAGE", quantity: quantityToUnits(1) }),
     ]);
 
     const ok = results.filter((r) => r.status === "fulfilled");
@@ -191,7 +192,7 @@ describe("F-02 stock concurrency", () => {
 
     await saleService.createSale({
       paymentType: "CASH",
-      items: [{ productId: id, quantity: 1 }],
+      items: [{ productId: id, quantity: quantityToUnits(1) }],
     });
 
     const supplier = await new PrismaSupplierRepository(prisma).create({
@@ -201,12 +202,12 @@ describe("F-02 stock concurrency", () => {
     await purchaseService.createPurchase({
       supplierId: supplier.id,
       paymentType: "CASH",
-      items: [{ productId: id, quantity: 5, costPerUnit: 12 }],
+      items: [{ productId: id, quantity: quantityToUnits(5), costPerUnit: 12 }],
     });
 
     const product = await productRepository.findById(id);
-    expect(product!.stockQty).toBe(5);
+    expect(product!.stockQty).toBe(quantityToUnits(5));
     expect(product!.costPrice).toBe(12);
-    expect(await movementSum(id)).toBe(5);
+    expect(await movementSum(id)).toBe(quantityToUnits(5));
   });
 });

@@ -5,19 +5,25 @@ import type { VoidStatusLabel, VoidStatusOutput } from "../voids/void.types";
 
 import type { Sale, SaleItem } from "./sale.types";
 
+type SaleItemWithProduct = Prisma.SaleItemGetPayload<{
+  include: { product: { select: { name: true } } };
+}>;
+
 type SaleWithItems = Prisma.SaleGetPayload<{
-  include: { items: true };
+  include: { items: { include: { product: { select: { name: true } } } } };
 }>;
 
 export function toSaleItem(
-  raw: SaleWithItems["items"][number]
+  raw: SaleItemWithProduct
 ): SaleItem {
   return {
     id: raw.id,
     saleId: raw.saleId,
     productId: raw.productId,
+    productName: raw.product.name,
     qty: quantityFromDecimal(raw.qty),
     pricePerUnit: paisaFromDecimal(raw.pricePerUnit),
+    lineTotal: paisaFromDecimal(raw.lineTotal),
   };
 }
 
@@ -33,18 +39,39 @@ export function toSale(raw: SaleWithItems): Sale {
   };
 }
 
-// API output view: whole-paisa domain -> rupee wire representation (D11),
-// plus the computed void status (D18.9).
-export type SaleApi = Sale & VoidStatusOutput;
+// Enriched item for the API response.
+export type SaleItemApi = {
+  id: string;
+  saleId: string;
+  productId: string;
+  productName: string;
+  qty: number;
+  pricePerUnit: number;
+  lineTotal: number;
+};
+
+export type SaleApi = {
+  id: string;
+  customerId: string | null;
+  paymentType: Sale["paymentType"];
+  total: number;
+  date: Date;
+  items: SaleItemApi[];
+  voidInfo: Sale["voidInfo"];
+} & VoidStatusOutput;
 
 export function toSaleApi(sale: Sale): SaleApi {
   return {
     ...sale,
     total: paisaToRupees(sale.total),
     items: sale.items.map((item) => ({
-      ...item,
+      id: item.id,
+      saleId: item.saleId,
+      productId: item.productId,
+      productName: item.productName,
       qty: unitsToQuantity(item.qty),
       pricePerUnit: paisaToRupees(item.pricePerUnit),
+      lineTotal: paisaToRupees(item.lineTotal),
     })),
     status: (sale.voidInfo.voidedAt ? "VOIDED" : "ACTIVE") as VoidStatusLabel,
     voidedAt: sale.voidInfo.voidedAt,

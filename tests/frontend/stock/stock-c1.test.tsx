@@ -38,6 +38,7 @@ vi.mock("sonner", () => ({
 const movement = {
   id: "mov-1",
   productId: "prod-1",
+  productName: "Rice",
   qtyChange: -2,
   reason: "SALE",
   date: "2026-08-15T10:00:00.000Z",
@@ -92,10 +93,17 @@ describe("StockMovementsList", () => {
     mocks.apiGet.mockResolvedValue({ data: [movement], paging: { next: null, hasMore: false } });
     renderWithClient(<StockMovementsList />);
 
-    await waitFor(() => expect(screen.getByText("Qty change")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Rice")).toBeInTheDocument());
 
     await userEvent.click(screen.getByRole("button", { name: /Damage/i }));
     await waitFor(() => expect(mocks.replace).toHaveBeenCalledWith(expect.stringContaining("reason=DAMAGE"), { scroll: false }));
+  });
+
+  it("displays product name for each movement", async () => {
+    mocks.apiGet.mockResolvedValue({ data: [movement], paging: { next: null, hasMore: false } });
+    renderWithClient(<StockMovementsList />);
+
+    await waitFor(() => expect(screen.getByText("Rice")).toBeInTheDocument());
   });
 });
 

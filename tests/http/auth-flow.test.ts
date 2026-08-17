@@ -179,8 +179,9 @@ describe("F-10 HTTP auth flow", () => {
     expect(customers.status).toBe(200);
     const suppliers = await httpGet(p, "/api/suppliers", cashierCookie);
     expect(suppliers.status).toBe(200);
+    // D29: customer creation is OWNER-only (opening balance protection).
     const createCustomer = await httpPost(p, "/api/customers", { name: "Walk-in" }, cashierCookie);
-    expect(createCustomer.status).toBe(201);
+    expect(createCustomer.status).toBe(403);
   });
 
   it("cashier gets 403 on every OWNER-only route", async () => {

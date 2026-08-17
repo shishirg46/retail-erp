@@ -14,7 +14,7 @@ import { StockService } from "../../modules/stock/stock.service";
 import { CustomerPaymentService } from "../../modules/customer-payments/customer-payment.service";
 import { SupplierPaymentService } from "../../modules/supplier-payments/supplier-payment.service";
 import { createTestPrisma, truncateAll, reconcile } from "../helpers/db";
-import { createProduct, createCustomer, createSupplier } from "../helpers/seed";
+import { createProduct, createCustomer, createSupplier, units } from "../helpers/seed";
 
 const prisma = createTestPrisma();
 const purchaseService = new PurchaseService(prisma);
@@ -53,20 +53,20 @@ describe("cross-module ledger", () => {
     await purchaseService.createPurchase({
       supplierId,
       paymentType: "CASH",
-      items: [{ productId: a.id, quantity: 10, costPerUnit: 2000 }],
+      items: [{ productId: a.id, quantity: units(10), costPerUnit: 2000 }],
     });
     // 2. CREDIT purchase B 5 @ 3000  -> supplier owes 150.00
     await purchaseService.createPurchase({
       supplierId,
       paymentType: "CREDIT",
-      items: [{ productId: b.id, quantity: 5, costPerUnit: 3000 }],
+      items: [{ productId: b.id, quantity: units(5), costPerUnit: 3000 }],
     });
     // 3. CASH sale A 3 (2000 each)   -> wallet +60.00, stock A = 7
-    await saleService.createSale({ paymentType: "CASH", items: [{ productId: a.id, quantity: 3 }] });
+    await saleService.createSale({ paymentType: "CASH", items: [{ productId: a.id, quantity: units(3) }] });
     // 4. ECASH sale B 2 (3000 each)  -> wallet +60.00, stock B = 3
-    await saleService.createSale({ paymentType: "ECASH", items: [{ productId: b.id, quantity: 2 }] });
+    await saleService.createSale({ paymentType: "ECASH", items: [{ productId: b.id, quantity: units(2) }] });
     // 5. CREDIT sale B 1 (3000)      -> customer owes 30.00, stock B = 2
-    await saleService.createSale({ paymentType: "CREDIT", customerId, items: [{ productId: b.id, quantity: 1 }] });
+    await saleService.createSale({ paymentType: "CREDIT", customerId, items: [{ productId: b.id, quantity: units(1) }] });
     // 6. supplier payment 5000       -> owes 100.00, wallet -50.00
     await supplierPaymentService.createSupplierPayment({ supplierId, amount: 5000 });
     // 7. customer payment 1000       -> owes 20.00, wallet +10.00
@@ -146,11 +146,11 @@ describe("cross-module ledger", () => {
     await purchaseService.createPurchase({
       supplierId,
       paymentType: "CASH",
-      items: [{ productId: product.id, quantity: 100, costPerUnit: 400 }], // wallet -400.00
+      items: [{ productId: product.id, quantity: units(100), costPerUnit: 400 }], // wallet -400.00
     });
     // CREDIT sales consume the prepaid credit (signed add).
-    await saleService.createSale({ paymentType: "CREDIT", customerId, items: [{ productId: product.id, quantity: 50 }] }); // +500.00
-    await saleService.createSale({ paymentType: "CREDIT", customerId, items: [{ productId: product.id, quantity: 25 }] }); // +250.00
+    await saleService.createSale({ paymentType: "CREDIT", customerId, items: [{ productId: product.id, quantity: units(50) }] }); // +500.00
+    await saleService.createSale({ paymentType: "CREDIT", customerId, items: [{ productId: product.id, quantity: units(25) }] }); // +250.00
 
     const balance = await sqlScalar(`SELECT balance_owed::text AS v FROM customers WHERE id='${customerId}'`);
     expect(balance).toBe(-250);

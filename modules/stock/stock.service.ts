@@ -64,6 +64,35 @@ export class StockService {
         };
       }
 
+      // OPENING (D27): initial stock count at ERP go-live. Requires stockQty == 0
+      // to prevent double-opening. Treated like CORRECTION otherwise (target - current).
+      if (input.reason === "OPENING") {
+        if (product.stockQty !== 0) {
+          throw new ValidationError(
+            `Opening stock for '${product.name}' can only be set when stock is zero — use CORRECTION to adjust existing stock`
+          );
+        }
+
+        const qtyChange = input.quantity - product.stockQty;
+
+        const updated = await productRepository.updateStock(
+          input.productId,
+          qtyChange
+        );
+
+        const movement = await stockRepository.createMovement({
+          productId: input.productId,
+          qtyChange,
+          reason: "OPENING",
+          note: input.note,
+        });
+
+        return {
+          product: { id: updated.id, stockQty: updated.stockQty },
+          movement,
+        };
+      }
+
       // CORRECTION: target - current (desired final level), D6. Kept as the
       // original read→check→write path — its concurrency model is
       // last-writer-wins on the target, documented out of scope for F-02.

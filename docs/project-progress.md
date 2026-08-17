@@ -368,6 +368,11 @@ Phase D covers: suppliers list/detail/pay (OWNER), purchases list/new/detail
 (OWNER), reports hub + 6 report pages, and user management (OWNER).
 Per `docs/frontend-plan.md` §13 — pending PM approval.
 
+**Pre-Phase-D data-model foundation COMPLETE** (M23, 17 Aug 2026):
+D26 opening balances (customer + supplier + wallet) + Shop Settings singleton,
+D27 OPENING stock reason, D28 `unitsPerPack`, D29 customer POST OWNER-only.
+All Phase D backend APIs already exist; no new endpoints needed.
+
 ## 10. Future Roadmap
 
 ### Near Term
@@ -394,6 +399,9 @@ Phase B.1 POS `/sales/new` shipped; Phase B.2 sales list/detail/OWNER void
 shipped (`a147d9a`); Phase C.1 products & stock shipped (`8a4cc99`);
 Phase C.2 customers & payments shipped (`3fd071e`) — **Phase C complete**.
 Phase D (suppliers, purchases, reports, users) next.
+**Pre-Phase-D data-model foundation COMPLETE** (M23): D26/D27/D28/D29
+implemented and verified — opening balances, shop settings, OPENING stock,
+unitsPerPack, owner-only customer creation.
 
 ### Backend backlog (recorded from the M21 scope resolutions — NOT M21)
 - Manual wallet entries (`POST /api/wallet`, OWNER-only, sources
@@ -576,12 +584,15 @@ SECURITY (M19):   COMPLETE — F-08 rate limiting (auth attempts per IP, 20/15mi
                   CORP same-origin on /api, no-CORS as policy; P3 route id
                   validation (assertUuid/assertUserId → 400); P4 last-OWNER
                   async mutex. D19.1–D19.4 recorded
-CURRENT TASK:     C.2 customers & payments frontend committed (`3fd071e`);
-                  Phase C complete (C.1 products/stock + C.2 customers/payments).
-                  Documentation reconciliation pending.
-NEXT TASK:        PM review of C.2 documentation changes; then Phase D
-                  (suppliers, purchases, reports, users) per
-                  docs/frontend-plan.md §13
+CURRENT TASK:     M24 DB init + seed COMPLETE (17 Aug 2026); idempotent seed
+                  script (18 products, 5 suppliers, 18 customers, 11 purchases,
+                  36 sales, 10 credit payments, 5 supplier payments, 3 stock
+                  adjustments, 2 owner withdrawals, 4 voids); D3/D4/D6/D18
+                  invariants verified; wallet opening deposit seeded; npm run
+                  db:seed ready.
+NEXT TASK:        Phase D (suppliers, purchases, reports, users) per
+                  docs/frontend-plan.md §13 — backend APIs ready, frontend work
+                  can proceed with opening balance support.
 PRODUCTION READY: NO — deployment, backups/observability, and load testing
                   remain; all audit findings (F-01…F-15) are implemented
 ```

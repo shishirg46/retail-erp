@@ -24,6 +24,7 @@ export interface PurchaseItem {
   id: string;
   purchaseId: string;
   productId: string;
+  productName: string;
   qty: number; // scaled units
   costPerUnit: number; // paisa per human unit
 }

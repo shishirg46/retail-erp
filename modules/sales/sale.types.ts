@@ -27,15 +27,17 @@ export interface SaleItemDraft {
   // paisa per human unit), frozen for history — never recalculated from
   // current product price.
   unitPrice: number; // paisa
-  total: number; // paisa
+  total: number; // paisa — authoritative line total from calculatePrice
 }
 
 export interface SaleItem {
   id: string;
   saleId: string;
   productId: string;
+  productName: string;
   qty: number; // scaled units
-  pricePerUnit: number; // paisa per human unit
+  pricePerUnit: number; // paisa per human unit (informational, D1)
+  lineTotal: number; // paisa — authoritative line total from calculatePrice (D1+)
 }
 
 export interface Sale {
@@ -56,6 +58,7 @@ export interface CreateSaleRepositoryInput {
     productId: string;
     qty: number; // scaled units
     pricePerUnit: number;
+    lineTotal: number; // paisa — authoritative line total
   }[];
 }
 

@@ -20,6 +20,7 @@ interface SaleSummary {
   total: number;
   date: string;
   paymentType: string;
+  items: { productName: string }[];
 }
 
 export function CustomerPayForm({ customerId }: { customerId: string }) {
@@ -134,7 +135,7 @@ export function CustomerPayForm({ customerId }: { customerId: string }) {
               <option value="">None</option>
               {salesQuery.data?.map((sale) => (
                 <option key={sale.id} value={sale.id}>
-                  {sale.id} — {formatSignedRupees(sale.total)} ({new Date(sale.date).toLocaleDateString()})
+                  {sale.items.length === 1 ? sale.items[0].productName : `${sale.items[0].productName} + ${sale.items.length - 1} more`} — {formatSignedRupees(sale.total)} ({new Date(sale.date).toLocaleDateString()})
                 </option>
               ))}
             </select>

@@ -24,12 +24,15 @@ const REASON_LABELS: Record<string, string> = {
 type MovementApi = {
   id: string;
   productId: string;
+  productName: string;
   qtyChange: number;
   reason: string;
   date: string;
   note: string | null;
   saleId: string | null;
   purchaseId: string | null;
+  saleCustomerName: string | null;
+  purchaseSupplierName: string | null;
   status: string;
   voidedAt: string | null;
   voidReason: string | null;
@@ -138,12 +141,18 @@ export function StockMovementsList() {
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Qty change</span>
+                  <span className="font-medium">{m.productName}</span>
                   <span className={`tabular-nums font-medium ${m.qtyChange > 0 ? "text-green-600" : "text-destructive"}`}>
                     {m.qtyChange > 0 ? "+" : ""}{m.qtyChange}
                   </span>
                 </div>
-                {m.note && (
+                {m.reason === "SALE" && m.saleCustomerName && (
+                  <div className="text-sm text-muted-foreground">Customer: {m.saleCustomerName}</div>
+                )}
+                {m.reason === "PURCHASE" && m.purchaseSupplierName && (
+                  <div className="text-sm text-muted-foreground">Supplier: {m.purchaseSupplierName}</div>
+                )}
+                {m.note && m.reason !== "SALE" && m.reason !== "PURCHASE" && (
                   <div className="text-sm text-muted-foreground">Note: {m.note}</div>
                 )}
                 {m.status === "VOIDED" && (

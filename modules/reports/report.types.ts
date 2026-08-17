@@ -4,7 +4,7 @@
 // the shop timezone with the shop's offset (D10).
 export type PaymentType = "CASH" | "ECASH" | "CREDIT";
 export type PurchasePaymentType = "CASH" | "CREDIT";
-export type StockReason = "PURCHASE" | "SALE" | "DAMAGE" | "CORRECTION";
+export type StockReason = "PURCHASE" | "SALE" | "DAMAGE" | "CORRECTION" | "OPENING";
 export type WalletTxnSource =
   | "SALE"
   | "CREDIT_PAYMENT"

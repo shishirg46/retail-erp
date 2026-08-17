@@ -7,7 +7,8 @@ import type {
   StockAdjustmentReason,
 } from "./stock.types";
 
-const ADJUSTMENT_REASONS: readonly StockAdjustmentReason[] = ["DAMAGE", "CORRECTION"];
+// Manual adjustments: DAMAGE, CORRECTION, or OPENING (D6, D27).
+const ADJUSTMENT_REASONS: readonly StockAdjustmentReason[] = ["DAMAGE", "CORRECTION", "OPENING"];
 
 function isStockAdjustmentReason(value: unknown): value is StockAdjustmentReason {
   return (
@@ -34,7 +35,7 @@ export function validateAdjustStockInput(body: unknown): AdjustStockInput {
   }
 
   // D25.2/D25.5: DAMAGE counts the amount ruined -> a positive quantity (up to
-  // 2 dp for measurable units); CORRECTION is a target level -> non-negative.
+  // 2 dp for measurable units); CORRECTION/OPENING is a target level -> non-negative.
   // The unit precision rule (pcs integers) needs the product, so it is
   // enforced in StockService where the product is known (D25.1).
   if (input.reason === "DAMAGE") {
@@ -48,13 +49,14 @@ export function validateAdjustStockInput(body: unknown): AdjustStockInput {
       );
     }
   } else {
+    // CORRECTION or OPENING: target level, must be non-negative
     if (
       typeof input.quantity !== "number" ||
       !hasAtMostTwoDecimals(input.quantity) ||
       input.quantity < 0
     ) {
       throw new ValidationError(
-        "quantity must be a non-negative number with at most 2 decimal places for CORRECTION"
+        `quantity must be a non-negative number with at most 2 decimal places for ${input.reason}`
       );
     }
   }

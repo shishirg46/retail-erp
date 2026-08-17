@@ -30,8 +30,9 @@ import { PrismaProductRepository } from "../../modules/products/product.reposito
 import { PrismaStockRepository } from "../../modules/stock/stock.repository";
 import { SaleService } from "../../modules/sales/sale.service";
 import { VoidService } from "../../modules/voids/void.service";
+import { quantityToUnits } from "../../lib/quantity";
 import { createTestPrisma, reconcile, truncateAll } from "../helpers/db";
-import { createCustomer, createProduct, seedStock } from "../helpers/seed";
+import { createCustomer, createProduct, seedStock, units } from "../helpers/seed";
 
 const prisma = createTestPrisma();
 
@@ -81,7 +82,7 @@ describe("F-08 void vs linked-payment concurrency (D18.11)", () => {
       const sale = await saleService.createSale({
         paymentType: "CREDIT",
         customerId,
-        items: [{ productId: product.id, quantity: 1 }],
+        items: [{ productId: product.id, quantity: units(1) }],
       });
 
       const results = await Promise.allSettled([
@@ -164,8 +165,8 @@ describe("F-08 void vs linked-payment concurrency (D18.11)", () => {
     // Stock: each winning payment sale consumed one unit (voided sales were
     // restored). D6 must reconcile.
     const stock = await productRepository.findById(product.id);
-    expect(stock!.stockQty).toBe(INITIAL_STOCK - paymentWins);
-    expect(await movementSum(product.id)).toBe(INITIAL_STOCK - paymentWins);
+    expect(stock!.stockQty).toBe(quantityToUnits(INITIAL_STOCK - paymentWins));
+    expect(await movementSum(product.id)).toBe(quantityToUnits(INITIAL_STOCK - paymentWins));
 
     expect(await reconcile(prisma)).toEqual([]);
   });

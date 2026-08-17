@@ -1,3 +1,4 @@
+import { rupeesToPaisa } from "../../lib/money";
 import { ValidationError } from "../../lib/errors";
 
 import type { CreateSupplierInput } from "./supplier.types";
@@ -17,10 +18,29 @@ export function validateCreateSupplierInput(body: unknown): CreateSupplierInput 
     throw new ValidationError("contact, when provided, must be a string");
   }
 
+  // D26: openingBalance is the historical supplier balance at ERP go-live.
+  // It is a signed rupee amount (positive = shop owes supplier, negative = shop prepaid).
+  // Set once at creation; immutable through normal business operations.
+  let openingBalance: number | undefined;
+
+  if (input.openingBalance !== undefined) {
+    if (
+      typeof input.openingBalance !== "number" ||
+      !Number.isFinite(input.openingBalance)
+    ) {
+      throw new ValidationError(
+        "openingBalance, when provided, must be a finite number"
+      );
+    }
+
+    openingBalance = rupeesToPaisa(input.openingBalance);
+  }
+
   return {
     name: input.name.trim(),
     ...(typeof input.contact === "string" && input.contact.length > 0
       ? { contact: input.contact }
       : {}),
+    ...(openingBalance !== undefined ? { openingBalance } : {}),
   };
 }

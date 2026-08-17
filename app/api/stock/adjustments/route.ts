@@ -9,7 +9,6 @@ import { validateAdjustStockInput } from "@/modules/stock/stock.validation";
 
 export async function POST(req: NextRequest) {
   try {
-    await requireRole(req, [OWNER, CASHIER]);
     let body: unknown;
 
     try {
@@ -19,6 +18,14 @@ export async function POST(req: NextRequest) {
     }
 
     const input = validateAdjustStockInput(body);
+
+    // D27: OPENING stock reason requires OWNER authorization.
+    // DAMAGE and CORRECTION allow OWNER or CASHIER (D6).
+    if (input.reason === "OPENING") {
+      await requireRole(req, [OWNER]);
+    } else {
+      await requireRole(req, [OWNER, CASHIER]);
+    }
 
     const result = await new StockService(prisma).adjustStock(input);
 

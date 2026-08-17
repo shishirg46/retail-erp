@@ -4,20 +4,23 @@ import type { VoidInfo } from "../voids/void.types";
 // the quantity analogue of whole paisa. Human quantities (≤ 2 dp) convert
 // to/from scaled units via lib/quantity.ts at the boundaries.
 
-export type StockReason = "PURCHASE" | "SALE" | "DAMAGE" | "CORRECTION" | "VOID";
+export type StockReason = "PURCHASE" | "SALE" | "DAMAGE" | "CORRECTION" | "VOID" | "OPENING";
 
-// Manual adjustments only ever use these two reasons (D6).
-export type StockAdjustmentReason = "DAMAGE" | "CORRECTION";
+// Manual adjustments: DAMAGE, CORRECTION, or OPENING (D6, D27).
+export type StockAdjustmentReason = "DAMAGE" | "CORRECTION" | "OPENING";
 
 export interface StockMovement {
   id: string;
   productId: string;
+  productName: string;
   qtyChange: number; // scaled units (signed)
   reason: StockReason;
   date: Date;
   note: string | null;
   saleId: string | null;
   purchaseId: string | null;
+  saleCustomerName: string | null;
+  purchaseSupplierName: string | null;
   voidInfo: VoidInfo;
 }
 
@@ -32,7 +35,9 @@ export interface CreateStockMovementInput {
 
 // DAMAGE:  quantity = amount damaged (applied as -quantity)
 // CORRECTION: quantity = desired final stock level (change = target - current)
-// Both in scaled units.
+// OPENING: quantity = desired initial stock level (change = target - current, but
+//   requires stockQty == 0 to prevent double-opening)
+// All in scaled units.
 export interface AdjustStockInput {
   productId: string;
   reason: StockAdjustmentReason;

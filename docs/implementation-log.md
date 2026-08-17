@@ -4,10 +4,101 @@ Work log for the retail ERP. Each milestone records what shipped and the
 verification evidence. Business **decisions** live in
 [`docs/business-decisions.md`](business-decisions.md) (D1–D7).
 
+## Milestone M24 — DB Initialization + Realistic Data Seed (17 Aug 2026)
+
+**Shipped**
+
+- `scripts/seed-dev-data.ts`: Pure data definitions for a realistic dev dataset.
+  - 18 products (5 units, 5 tiered, 5 packaged with unitsPerPack).
+  - 5 suppliers with varied opening balances (Rs 0–15,000).
+  - 18 customers with varied opening balances (Rs 0–3,000).
+  - 11 purchases (7 CASH, 4 CREDIT) across 5 suppliers.
+  - 36 sales (18 CASH, 12 CREDIT, 6 ECASH) across 16 customers.
+  - 10 credit payments (3 linked to specific sales, 7 general account).
+  - 5 supplier payments.
+  - 3 stock adjustments (DAMAGE, CORRECTION).
+  - 2 OWNER_WITHDRAWAL entries (direct wallet writes).
+  - 4 voids: void SALE, void CREDIT_PAYMENT, void STOCK_MOVEMENT, void PURCHASE.
+- `scripts/seed-dev.ts`: Main seed script (idempotent, dev-only).
+  - DB guard: refuses test/production databases.
+  - Truncates all application + auth tables before seeding.
+  - Seeds OWNER user via Better Auth scrypt hash.
+  - Seeds via production services/repositories (not raw SQL) — exercises the
+    same code paths production will use.
+  - Creates wallet opening deposit transaction (source=OTHER) for D18 consistency.
+  - Independent verification: re-derives D3/D4/D6/D18 invariants from persisted
+    DB records (not from seed data definitions).
+  - Dry-run mode (`--dry`): prints plan without touching DB.
+- `package.json`: Added `db:seed` and `db:seed:dry` scripts.
+- `tests/helpers/db.ts`: `reconcile()` updated to include OWNER_WITHDRAWAL in
+  expectedWithdrawals — the wallet invariant now accounts for manual owner
+  withdrawals as legitimate WITHDRAWAL entries.
+
+**Verified**
+
+- `npx tsc --noEmit` clean; `npm run lint` clean (0 errors, 0 warnings).
+- `npm run test:unit` — 223/223 passed.
+- `npm run test:frontend` — 108/108 passed.
+- `npm run db:seed` — seeded 18 products, 5 suppliers, 18 customers, 11 purchases,
+  36 sales, 10 credit payments, 5 supplier payments, 3 stock adjustments,
+  2 owner withdrawals, 4 voids against `erp_retail` dev DB.
+- All 4 reconciliation invariants hold after seeding:
+  - D6: stockQty == Σmovements per product (18 products).
+  - D4: balanceOwed == openingBalance + ΣCREDIT sales - Σcredit payments (18 customers).
+  - D3: balanceOwed == openingBalance + ΣCREDIT purchases - Σsupplier payments (5 suppliers).
+  - D18: wallet deposits == ΣnonCreditSales + ΣcreditPayments + voidedCashPurchases + voidedSupPayRows + walletOpening; wallet withdrawals == ΣcashPurchases + ΣsupplierPayments + voidedNonCreditSales + voidedCreditPayments + ownerWithdrawals.
+- Wallet balance: Rs 764.06 (opening Rs 500 + deposits Rs 773.81 - withdrawals Rs 509.75).
+
+---
+
 All work to date was built incrementally and verified live against a local
 PostgreSQL (`erp_retail`) using the Next.js dev server (`npx next dev -p 3001`)
 with `curl`/Postman, cross-checking every value with raw SQL. The baseline was
 seeded entirely through the HTTP API.
+
+---
+
+## Milestone M23 — Pre-Phase-D Data-Model Foundation (17 Aug 2026)
+
+**Shipped**
+
+- D26: Opening balances for customers and suppliers (schema + API).
+  - `customers.opening_balance` and `suppliers.opening_balance` columns (Decimal 12,2, default 0).
+  - `balanceOwed` initialized to `openingBalance` at creation time for correct invariant.
+  - Customer creation route changed to OWNER-only (opening balance protection).
+  - Supplier creation route was already OWNER-only.
+- D26: Shop Settings singleton module.
+  - New `shop_settings` table (singleton pattern, id = "singleton").
+  - `goLiveAt` (timestamp, nullable) and `walletOpeningBalance` (Decimal 12,2, default 0).
+  - `GET /api/settings` and `PATCH /api/settings` endpoints (OWNER-only).
+- D27: OPENING stock reason.
+  - Added `OPENING` to `stock_reason` enum.
+  - OWNER-only authorization (CASHIER gets 403).
+  - Guard: requires `product.stockQty === 0` (returns 400 otherwise).
+  - Creates stock movement with reason `OPENING`.
+- D28: `unitsPerPack` for packaged products.
+  - `products.units_per_pack` column (Integer, nullable, default null).
+  - Only valid for `pcs` unit products (≥ 2 when set).
+  - Persisted and returned in product create/get API responses.
+- D29: Customer POST route changed from `[OWNER, CASHIER]` to `[OWNER]`.
+- Reconciliation formulas updated:
+  - D4: `balanceOwed == openingBalance + Σ(CREDIT sales) − Σ(credit payments)`.
+  - D3: `balanceOwed == openingBalance + Σ(CREDIT purchases) − Σ(supplier payments)`.
+  - D18 wallet: `balance = walletOpeningBalance + Σ(DEPOSIT) − Σ(WITHDRAWAL)`.
+- Wallet report balance includes `walletOpeningBalance` from ShopSettings.
+- `truncateAll` test helper updated to include `shop_settings` table.
+- Settings GET route bug fixed: passes actual `req` instead of `{} as NextRequest`.
+
+**Verified**
+
+- `npx tsc --noEmit` clean; `npm run lint` clean.
+- `npm run test:unit` — 223/223 passed.
+- `npm run test:frontend` — 108/108 passed.
+- `npm run test:integration` — 111/111 passed (19 new pre-phase-d regression tests).
+- Pre-phase-d regression suite covers: opening customer/supplier balances,
+  settings GET/PATCH, OPENING stock (success + guard + auth), unitsPerPack
+  (create + read + validation), sale item productName + lineTotal, stock
+  movement productName, purchase item productName.
 
 ---
 

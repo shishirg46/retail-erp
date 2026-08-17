@@ -12,7 +12,7 @@ import { PrismaSupplierRepository } from "../../modules/suppliers/supplier.repos
 import { PurchaseService } from "../../modules/purchases/purchase.service";
 import { SupplierPaymentService } from "../../modules/supplier-payments/supplier-payment.service";
 import { createTestPrisma, truncateAll, reconcile } from "../helpers/db";
-import { createProduct, createSupplier } from "../helpers/seed";
+import { createProduct, createSupplier, units } from "../helpers/seed";
 
 const prisma = createTestPrisma();
 const supplierPaymentService = new SupplierPaymentService(prisma);
@@ -56,7 +56,7 @@ describe("supplier payments (D3)", () => {
     await purchaseService.createPurchase({
       supplierId,
       paymentType: "CREDIT",
-      items: [{ productId: product.id, quantity: 10, costPerUnit: 1000 }], // owes 10000
+      items: [{ productId: product.id, quantity: units(10), costPerUnit: 1000 }], // owes 10000
     });
     expect(await supplierBalance(supplierId)).toBe(10000);
     expect(await prisma.walletTransaction.count()).toBe(0);
@@ -75,7 +75,7 @@ describe("supplier payments (D3)", () => {
     await purchaseService.createPurchase({
       supplierId,
       paymentType: "CREDIT",
-      items: [{ productId: product.id, quantity: 5, costPerUnit: 200 }], // owes 1000
+      items: [{ productId: product.id, quantity: units(5), costPerUnit: 200 }], // owes 1000
     });
 
     await supplierPaymentService.createSupplierPayment({ supplierId, amount: 1500 });
@@ -91,7 +91,7 @@ describe("supplier payments (D3)", () => {
     await purchaseService.createPurchase({
       supplierId,
       paymentType: "CASH",
-      items: [{ productId: product.id, quantity: 4, costPerUnit: 300 }], // wallet -1200
+      items: [{ productId: product.id, quantity: units(4), costPerUnit: 300 }], // wallet -1200
     });
 
     expect(await supplierBalance(supplierId)).toBe(0);
@@ -127,12 +127,12 @@ describe("supplier payments (D3)", () => {
     await purchaseService.createPurchase({ // CASH — wallet -2000, balance 0
       supplierId,
       paymentType: "CASH",
-      items: [{ productId: product.id, quantity: 5, costPerUnit: 400 }],
+      items: [{ productId: product.id, quantity: units(5), costPerUnit: 400 }],
     });
     await purchaseService.createPurchase({ // CREDIT — balance 6000
       supplierId,
       paymentType: "CREDIT",
-      items: [{ productId: product.id, quantity: 10, costPerUnit: 600 }],
+      items: [{ productId: product.id, quantity: units(10), costPerUnit: 600 }],
     });
     await supplierPaymentService.createSupplierPayment({ supplierId, amount: 7000 }); // balance -1000
 

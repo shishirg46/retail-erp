@@ -17,7 +17,7 @@ import { PrismaCustomerRepository } from "../../modules/customers/customer.repos
 import { CustomerPaymentService } from "../../modules/customer-payments/customer-payment.service";
 import { SaleService } from "../../modules/sales/sale.service";
 import { createTestPrisma, truncateAll, reconcile } from "../helpers/db";
-import { createProduct, createCustomer, seedStock } from "../helpers/seed";
+import { createProduct, createCustomer, seedStock, units } from "../helpers/seed";
 
 const prisma = createTestPrisma();
 const customerPaymentService = new CustomerPaymentService(prisma);
@@ -62,7 +62,7 @@ describe("customer payments (D4/D5)", () => {
     await saleService.createSale({
       paymentType: "CREDIT",
       customerId,
-      items: [{ productId: product.id, quantity: 20 }], // balance += 20000
+      items: [{ productId: product.id, quantity: units(20) }], // balance += 20000
     });
     expect(await customerBalance(customerId)).toBe(20000);
 
@@ -72,7 +72,7 @@ describe("customer payments (D4/D5)", () => {
     await saleService.createSale({
       paymentType: "CREDIT",
       customerId,
-      items: [{ productId: product.id, quantity: 5 }], // balance += 5000 -> -15000
+      items: [{ productId: product.id, quantity: units(5) }], // balance += 5000 -> -15000
     });
     expect(await customerBalance(customerId)).toBe(-15000);
 
@@ -103,7 +103,7 @@ describe("customer payments (D4/D5)", () => {
     const sale = await saleService.createSale({
       paymentType: "CREDIT",
       customerId,
-      items: [{ productId: product.id, quantity: 5 }], // balance += 3000
+      items: [{ productId: product.id, quantity: units(5) }], // balance += 3000
     });
 
     const payment = await customerPaymentService.createCustomerPayment({
@@ -164,7 +164,7 @@ describe("customer payments (D4/D5)", () => {
     const sale = await saleService.createSale({
       paymentType: "CREDIT",
       customerId: owner,
-      items: [{ productId: product.id, quantity: 2 }],
+      items: [{ productId: product.id, quantity: units(2) }],
     });
 
     await expectError(
@@ -192,7 +192,7 @@ describe("customer payments (D4/D5)", () => {
     const sale = await saleService.createSale({
       paymentType: "CASH",
       customerId,
-      items: [{ productId: product.id, quantity: 1 }],
+      items: [{ productId: product.id, quantity: units(1) }],
     });
 
     await expectError(
@@ -214,9 +214,9 @@ describe("customer payments (D4/D5)", () => {
     await seedStock(prisma, product.id, 50);
 
     // CREDIT 10000 -> pay 25000 (D4 prepaid) -> CREDIT 6000 -> pay 4000.
-    await saleService.createSale({ paymentType: "CREDIT", customerId, items: [{ productId: product.id, quantity: 10 }] });
+    await saleService.createSale({ paymentType: "CREDIT", customerId, items: [{ productId: product.id, quantity: units(10) }] });
     await customerPaymentService.createCustomerPayment({ customerId, amount: 25000 });
-    await saleService.createSale({ paymentType: "CREDIT", customerId, items: [{ productId: product.id, quantity: 6 }] });
+    await saleService.createSale({ paymentType: "CREDIT", customerId, items: [{ productId: product.id, quantity: units(6) }] });
     await customerPaymentService.createCustomerPayment({ customerId, amount: 4000 });
 
     expect(await customerBalance(customerId)).toBe(-13000);

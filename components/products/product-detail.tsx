@@ -122,7 +122,15 @@ export function ProductDetail({ id }: { id: string; role: string }) {
                 <div key={m.id} className="flex items-center justify-between text-sm">
                   <div>
                     <span className="font-medium">{m.reason}</span>
-                    {m.note && <span className="ml-2 text-muted-foreground">— {m.note}</span>}
+                    {m.reason === "SALE" && m.saleCustomerName && (
+                      <span className="ml-2 text-muted-foreground">— {m.saleCustomerName}</span>
+                    )}
+                    {m.reason === "PURCHASE" && m.purchaseSupplierName && (
+                      <span className="ml-2 text-muted-foreground">— {m.purchaseSupplierName}</span>
+                    )}
+                    {m.note && m.reason !== "SALE" && m.reason !== "PURCHASE" && (
+                      <span className="ml-2 text-muted-foreground">— {m.note}</span>
+                    )}
                   </div>
                   <span className={`tabular-nums font-medium ${m.qtyChange > 0 ? "text-green-600" : "text-destructive"}`}>
                     {m.qtyChange > 0 ? "+" : ""}{m.qtyChange} {product.unit}

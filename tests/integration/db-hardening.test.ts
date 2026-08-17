@@ -18,13 +18,15 @@ import { SupplierPaymentService } from "../../modules/supplier-payments/supplier
 import { PurchaseService } from "../../modules/purchases/purchase.service";
 import { SaleService } from "../../modules/sales/sale.service";
 import { createTestPrisma, reconcile, truncateAll } from "../helpers/db";
-import { createCustomer, createProduct, createSupplier } from "../helpers/seed";
+import { createCustomer, createProduct, createSupplier, units } from "../helpers/seed";
 
 const prisma = createTestPrisma();
 const uuid = (): string => randomUUID();
 
 const F05_CHECK_CONSTRAINTS = [
   "products_stock_qty_nonnegative",
+  "products_stock_qty_pcs_integer",
+  "products_unit_supported",
   "products_cost_price_nonnegative",
   "products_current_price_positive",
   "price_tiers_min_qty_positive",
@@ -90,7 +92,7 @@ describe("F-05 migration objects", () => {
     expect(violations.join("; ") || "ok").toBe("ok");
   });
 
-  it("all 17 CHECK constraints exist in pg_constraint", async () => {
+  it("all 19 CHECK constraints exist in pg_constraint", async () => {
     const names = await checkConstraintNames();
     expect([...names].sort()).toEqual([...F05_CHECK_CONSTRAINTS].sort());
   });
@@ -409,7 +411,7 @@ describe("legitimate signed and special values stay valid", () => {
     `);
 
     const fresh = await prisma.product.findUnique({ where: { id: product.id } });
-    expect(fresh!.stockQty).toBe(0);
+    expect(Number(fresh!.stockQty)).toBe(0);
   });
 
   it("valid PURCHASE (+) and SALE (-) movement signs work end-to-end", async () => {
@@ -426,15 +428,15 @@ describe("legitimate signed and special values stay valid", () => {
     await purchaseService.createPurchase({
       supplierId,
       paymentType: "CASH",
-      items: [{ productId: product.id, quantity: 10, costPerUnit: 10 }],
+      items: [{ productId: product.id, quantity: units(10), costPerUnit: 10 }],
     });
     await saleService.createSale({
       paymentType: "CASH",
-      items: [{ productId: product.id, quantity: 4 }],
+      items: [{ productId: product.id, quantity: units(4) }],
     });
 
     const fresh = await prisma.product.findUnique({ where: { id: product.id } });
-    expect(fresh!.stockQty).toBe(6);
+    expect(Number(fresh!.stockQty)).toBe(6);
   });
 
   it("signed ledgers keep D3/D4/D6 + wallet reconcilable", async () => {
@@ -455,17 +457,17 @@ describe("legitimate signed and special values stay valid", () => {
     await purchaseService.createPurchase({
       supplierId,
       paymentType: "CREDIT",
-      items: [{ productId: product.id, quantity: 10, costPerUnit: 20 }],
+      items: [{ productId: product.id, quantity: units(10), costPerUnit: 20 }],
     });
     await saleService.createSale({
       paymentType: "CREDIT",
       customerId,
-      items: [{ productId: product.id, quantity: 4 }],
+      items: [{ productId: product.id, quantity: units(4) }],
     });
     await customerPaymentService.createCustomerPayment({ customerId, amount: 150 });
     await saleService.createSale({
       paymentType: "CASH",
-      items: [{ productId: product.id, quantity: 2 }],
+      items: [{ productId: product.id, quantity: units(2) }],
     });
 
     const violations = await reconcile(prisma);

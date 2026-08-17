@@ -22,6 +22,7 @@ export interface Product {
   costPrice: number; // paisa
   currentPrice: number; // paisa
   stockQty: number; // scaled units (100 = 1 human unit)
+  unitsPerPack: number | null; // D28: sell units per pack; null = no pack concept
   priceTiers: PriceTier[];
   createdAt: Date;
 }
@@ -34,6 +35,7 @@ export interface CreateProductInput {
   costPrice: number;
   currentPrice: number;
   priceTiers?: PriceTier[];
+  unitsPerPack?: number; // D28: optional, pcs-only, >= 2 when set
 }
 
 export interface ListProductsInput {

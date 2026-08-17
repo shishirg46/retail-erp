@@ -5,12 +5,14 @@ export interface Customer {
   name: string;
   contact: string | null;
   balanceOwed: number; // paisa; negative = prepaid credit (D4)
+  openingBalance: number; // paisa; historical balance at ERP go-live (D26)
   createdAt: Date;
 }
 
 export interface CreateCustomerInput {
   name: string;
   contact?: string;
+  openingBalance?: number; // paisa; optional, default 0 (D26)
 }
 
 export interface ListCustomersInput {

@@ -13,6 +13,7 @@ export function toCustomer(raw: RawCustomer): Customer {
     name: raw.name,
     contact: raw.contact,
     balanceOwed: paisaFromDecimal(raw.balanceOwed),
+    openingBalance: paisaFromDecimal(raw.openingBalance),
     createdAt: raw.createdAt,
   };
 }
@@ -22,5 +23,6 @@ export function toCustomerApi(customer: Customer): Customer {
   return {
     ...customer,
     balanceOwed: paisaToRupees(customer.balanceOwed),
+    openingBalance: paisaToRupees(customer.openingBalance),
   };
 }

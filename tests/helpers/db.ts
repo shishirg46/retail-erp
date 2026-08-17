@@ -58,6 +58,7 @@ export const ALL_TABLES = [
   "supplier_payments",
   "suppliers",
   "customers",
+  "shop_settings",
 ] as const;
 
 export async function truncateAll(prisma: PrismaClient): Promise<void> {
@@ -79,7 +80,8 @@ export async function truncateAll(prisma: PrismaClient): Promise<void> {
       products,
       supplier_payments,
       suppliers,
-      customers
+      customers,
+      shop_settings
     CASCADE
   `);
 }
@@ -152,6 +154,7 @@ export async function reconcile(prisma: PrismaClient): Promise<string[]> {
   }
 
   // D4 — signed customer balance vs active credit sales and payments.
+  // balanceOwed == openingBalance + Σ(CREDIT sales) - Σ(credit payments) (D26)
   const customers = await prisma.customer.findMany({
     include: { sales: true, creditPayments: true },
   });
@@ -162,15 +165,17 @@ export async function reconcile(prisma: PrismaClient): Promise<string[]> {
     const paid = customer.creditPayments
       .filter((x) => !voidedCreditPayments.has(x.id))
       .reduce((s, x) => s + toNumber(x.amount), 0);
-    const expected = creditSales - paid;
+    const openingBalance = toNumber(customer.openingBalance);
+    const expected = openingBalance + creditSales - paid;
     if (!close(toNumber(customer.balanceOwed), expected)) {
       failures.push(
-        `D4 customer '${customer.name}': balanceOwed=${toNumber(customer.balanceOwed)} != ${expected}`
+        `D4 customer '${customer.name}': balanceOwed=${toNumber(customer.balanceOwed)} != ${expected} (opening=${openingBalance} + creditSales=${creditSales} - paid=${paid})`
       );
     }
   }
 
   // D3 — supplier balance vs active credit purchases and supplier payments.
+  // balanceOwed == openingBalance + Σ(CREDIT purchases) - Σ(supplier payments) (D26)
   const suppliers = await prisma.supplier.findMany({
     include: { purchases: true, supplierPayments: true },
   });
@@ -181,10 +186,11 @@ export async function reconcile(prisma: PrismaClient): Promise<string[]> {
     const paid = supplier.supplierPayments
       .filter((x) => !voidedSupplierPayments.has(x.id))
       .reduce((s, x) => s + toNumber(x.amount), 0);
-    const expected = creditPurchases - paid;
+    const openingBalance = toNumber(supplier.openingBalance);
+    const expected = openingBalance + creditPurchases - paid;
     if (!close(toNumber(supplier.balanceOwed), expected)) {
       failures.push(
-        `D3 supplier '${supplier.name}': balanceOwed=${toNumber(supplier.balanceOwed)} != ${expected}`
+        `D3 supplier '${supplier.name}': balanceOwed=${toNumber(supplier.balanceOwed)} != ${expected} (opening=${openingBalance} + creditPurchases=${creditPurchases} - paid=${paid})`
       );
     }
   }
@@ -192,10 +198,13 @@ export async function reconcile(prisma: PrismaClient): Promise<string[]> {
   // Wallet — deposits/withdrawals must equal the generating ledger. Every
   // deposit row comes from a non-CREDIT sale, a credit payment, or a VOID
   // reversal of a CASH purchase / supplier payment; every withdrawal row comes
-  // from a CASH purchase, a supplier payment, or a VOID reversal of a non-credit
-  // sale / credit payment. Voided origins keep their original rows, so their
-  // original entries still count on one side while their VOID reversal counts
-  // on the other — the two cancel, and the invariant stays exact (D18.8).
+  // from a CASH purchase, a supplier payment, a VOID reversal of a non-credit
+  // sale / credit payment, or an OWNER_WITHDRAWAL. Voided origins keep their
+  // original rows, so their original entries still count on one side while
+  // their VOID reversal counts on the other — the two cancel, and the
+  // invariant stays exact (D18.8).
+  //
+  // D26: walletOpeningBalance from ShopSettings is added to expectedDeposits.
   const allSales = await prisma.sale.findMany();
   const allPurchases = await prisma.purchase.findMany();
   const allCustomerPayments = await prisma.creditPayment.findMany();
@@ -221,20 +230,42 @@ export async function reconcile(prisma: PrismaClient): Promise<string[]> {
   const deposits = walletDeposits.reduce((s, x) => s + toNumber(x.amount), 0);
   const withdrawals = walletWithdrawals.reduce((s, x) => s + toNumber(x.amount), 0);
 
+  // OWNER_WITHDRAWAL is a legitimate manual withdrawal — it is not generated
+  // by any of the auto-generated ledger sources above, so it must be counted
+  // separately in expectedWithdrawals.
+  const ownerWithdrawals = walletWithdrawals.filter(
+    (w) => w.source === "OWNER_WITHDRAWAL"
+  );
+
+  // D26: read walletOpeningBalance from ShopSettings (defaults to 0).
+  let walletOpeningBalancePaisa = 0;
+  try {
+    const settingsRow = await prisma.shopSettings.findUnique({
+      where: { id: "singleton" },
+    });
+    if (settingsRow) {
+      walletOpeningBalancePaisa = toNumber(settingsRow.walletOpeningBalance);
+    }
+  } catch {
+    // shop_settings table may not exist yet in some test contexts
+  }
+
   const expectedDeposits =
     nonCreditSales.reduce((s, x) => s + toNumber(x.total), 0) +
     allCustomerPayments.reduce((s, x) => s + toNumber(x.amount), 0) +
     voidedCashPurchases.reduce((s, x) => s + toNumber(x.total), 0) +
-    voidedSupplierPaymentsRows.reduce((s, x) => s + toNumber(x.amount), 0);
+    voidedSupplierPaymentsRows.reduce((s, x) => s + toNumber(x.amount), 0) +
+    walletOpeningBalancePaisa;
   const expectedWithdrawals =
     cashPurchases.reduce((s, x) => s + toNumber(x.total), 0) +
     allSupplierPayments.reduce((s, x) => s + toNumber(x.amount), 0) +
     voidedNonCreditSales.reduce((s, x) => s + toNumber(x.total), 0) +
-    voidedCreditPaymentRows.reduce((s, x) => s + toNumber(x.amount), 0);
+    voidedCreditPaymentRows.reduce((s, x) => s + toNumber(x.amount), 0) +
+    ownerWithdrawals.reduce((s, x) => s + toNumber(x.amount), 0);
 
   if (!close(deposits, expectedDeposits)) {
     failures.push(
-      `wallet deposits=${deposits} != active+reversal ledger=${expectedDeposits}`
+      `wallet deposits=${deposits} != active+reversal ledger=${expectedDeposits} (opening=${walletOpeningBalancePaisa})`
     );
   }
   if (!close(withdrawals, expectedWithdrawals)) {

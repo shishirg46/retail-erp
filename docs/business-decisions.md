@@ -1790,3 +1790,161 @@ integer paisa) tests.
   for measurable units; the baseline invariant (`stockQty == Σ qtyChange`) holds.
 - **D11** — intact: money stays integer paisa and exact; quantity is
   integer-scaled, so `qty × paisa` is exact and no new rounding is introduced.
+
+---
+
+## D26 — Opening Balances and Shop Settings
+
+**Status:** Accepted — 17 Aug 2026
+
+**Current behavior (before)**
+No opening balances for customers, suppliers, or wallet. New accounts start at
+zero. No shop-level settings (go-live date, wallet opening balance).
+
+**Proposed behavior**
+- Customers and suppliers accept an optional `openingBalance` (rupees on wire,
+  paisa internally) at creation. This represents the historical balance at
+  ERP go-live.
+- `Customer.balanceOwed` and `Supplier.balanceOwed` are initialized to
+  `openingBalance` at creation time.
+- A singleton `ShopSettings` row stores:
+  - `goLiveAt` — the ERP go-live timestamp.
+  - `walletOpeningBalance` — the cash-box balance at go-live (D11 paisa
+    internally, rupees on wire).
+- The wallet invariant becomes:
+  `balance = walletOpeningBalance + Σ(DEPOSIT) − Σ(WITHDRAWAL)`.
+- Customer balance invariant becomes:
+  `balanceOwed = openingBalance + Σ(CREDIT sales) − Σ(credit payments)`.
+- Supplier balance invariant becomes:
+  `balanceOwed = openingBalance + Σ(CREDIT purchases) − Σ(supplier payments)`.
+- Customer creation is OWNER-only (opening balance protection).
+- Supplier creation is already OWNER-only.
+
+**Reason**
+The ERP must preserve historical balances from the old system at go-live. Without
+opening balances, the reconciliation invariants (D3, D4, D18) cannot represent
+the real starting state of the shop.
+
+**Database impact**
+- `customers.opening_balance` (Decimal 12,2, default 0, NOT NULL).
+- `suppliers.opening_balance` (Decimal 12,2, default 0, NOT NULL).
+- New `shop_settings` table (singleton pattern, id = "singleton").
+
+**API impact**
+- `POST /api/customers` accepts optional `openingBalance` (rupees).
+- `POST /api/suppliers` accepts optional `openingBalance` (rupees).
+- `GET /api/settings` returns `goLiveAt` and `walletOpeningBalance`.
+- `PATCH /api/settings` updates `goLiveAt` and/or `walletOpeningBalance`.
+
+**Existing feature impact**
+Reconciliation helpers (D3, D4, D18 wallet) updated to include opening balance
+terms. Customer/supplier creation routes updated for OWNER-only authorization.
+
+**Testing impact**
+Pre-phase-d regression tests verify opening balance creation, settings
+read/write, and reconciliation correctness with non-zero opening balances.
+
+---
+
+## D27 — OPENING Stock Reason
+
+**Status:** Accepted — 17 Aug 2026
+
+**Current behavior (before)**
+No dedicated reason for initial stock counts at ERP go-live. CORRECTION could be
+misused for this purpose, mixing historical and operational adjustments.
+
+**Proposed behavior**
+A new `OPENING` stock adjustment reason:
+- OWNER-only authorization (not available to CASHIER).
+- Requires `product.stockQty === 0` to prevent double-opening.
+- Creates a stock movement with reason `OPENING`.
+- Behaves like CORRECTION otherwise (qtyChange = target − current).
+
+**Reason**
+The ERP needs a clear, auditable distinction between the initial stock count
+(historical) and operational adjustments (CORRECTION, DAMAGE). The `stockQty === 0`
+guard prevents accidental double-counting at go-live.
+
+**Database impact**
+`OPENING` added to the `stock_reason` enum.
+
+**API impact**
+`POST /api/stock/adjustments` accepts `reason: "OPENING"` (OWNER-only). Returns
+400 when `stockQty !== 0`.
+
+**Existing feature impact**
+`StockReason` type and `ADJUSTMENT_REASONS` validation updated. Stock service
+OPENING path added with `stockQty === 0` guard.
+
+**Testing impact**
+Tests verify OPENING on zero-stock product succeeds, OPENING on non-zero-stock
+product returns 400, and CASHIER cannot use OPENING (403).
+
+---
+
+## D28 — unitsPerPack for Packaged Products
+
+**Status:** Accepted — 17 Aug 2026
+
+**Current behavior (before)**
+No concept of packs. Products are always sold in individual sell units (pcs, kg,
+litre, etc.).
+
+**Proposed behavior**
+`Product.unitsPerPack` (optional integer, ≥ 2 when set):
+- Only valid for `pcs` unit products (400 for non-pcs).
+- `null` = no pack concept (default).
+- Pack is a purchase-entry convenience: when recording a purchase, the operator
+  can enter packs and the system computes `quantity = packs × unitsPerPack`.
+- Stock, sales, and reports always operate in sell units.
+
+**Reason**
+Many small retailers buy products in packs (e.g., 12 per pack) but sell
+individually. Entering "2 packs" instead of "24 units" reduces data-entry
+errors and matches the invoice format.
+
+**Database impact**
+`products.units_per_pack` (Integer, nullable, default null).
+
+**API impact**
+- `POST /api/products` accepts optional `unitsPerPack` (integer ≥ 2, pcs-only).
+- `GET /api/products` and `GET /api/products/:id` return `unitsPerPack`.
+
+**Existing feature impact**
+Product types, validation, repository, and mapper updated. Frontend purchase
+entry can leverage `unitsPerPack` for pack-to-unit conversion.
+
+**Testing impact**
+Tests verify unitsPerPack is persisted, returned, rejected for non-pcs, and
+rejected when < 2.
+
+---
+
+## D29 — Customer POST Route Changed to OWNER-only
+
+**Status:** Accepted — 17 Aug 2026
+
+**Current behavior (before)**
+`POST /api/customers` allowed both OWNER and CASHIER.
+
+**Proposed behavior**
+`POST /api/customers` is OWNER-only. Opening balance creation is sensitive and
+must not be available to CASHIER role.
+
+**Reason**
+Opening balances represent historical financial state. Allowing CASHIER to set
+them could introduce incorrect balances. OWNER-only ensures proper separation
+of duties.
+
+**Database impact**
+None.
+
+**API impact**
+`POST /api/customers` returns 403 for CASHIER role.
+
+**Existing feature impact**
+Route authorization updated from `[OWNER, CASHIER]` to `[OWNER]`.
+
+**Testing impact**
+Tests verify CASHIER gets 403 when creating a customer with openingBalance.
