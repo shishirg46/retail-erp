@@ -53,23 +53,25 @@ read-only reporting layer.
 | Security hardening (F-08/F-11/P3/P4) | COMPLETE (Milestone 19) — process-local rate limiting (auth attempts per IP, state-changing API requests per user; 429); baseline headers + strict CSP + CORP with no-CORS as policy; route id format validation (`assertUuid`/`assertUserId` → 400); last-active-OWNER race closed with an async mutex. D19.1–D19.4 recorded |
 | Data export (M20) | COMPLETE (Milestone 20) — six read-only export endpoints (`/api/exports/*`) serializing the D7 reports as Excel-ready CSV (UTF-8 BOM, RFC-4180, injection-guarded) or JSON; full range, streamed, never truncated at the 50-row pagination cap; D9.6 role matrix reused (CASHIER: sales + stock only). D20.1–D20.3 recorded |
 | Production readiness | MOSTLY COMPLETE — F-01…F-15 audit fixes all implemented (F-10 ERP-007, F-06/F-09 ERP-008, M18 ERP-009, M19, M20 all PM-reviewed COMPLETE); remaining: deployment, backups/observability, and load testing |
-| Frontend (M21) — Phase A foundation | COMPLETE (16 Aug 2026) — deps + shadcn/ui + CSP + shell + sign-in + utilities + cart store + frontend test gate built and verified (tsc/lint/test:frontend 45/45 green) + D23 design language (typography/color tokens). Phase B in progress: B.1 POS `/sales/new` shipped (64/64 frontend tests) — awaiting PM visual review |
+| Frontend (M21) — Phase A foundation | COMPLETE (16 Aug 2026) — deps + shadcn/ui + CSP + shell + sign-in + utilities + cart store + frontend test gate built and verified (tsc/lint/test:frontend 45/45 green) + D23 design language (typography/color tokens). **B.1 POS `/sales/new` is complete and accepted.** **B.2 sales list (`/sales`), sale detail (`/sales/[id]`), and OWNER void flow is complete and committed (`a147d9a`, 17 Aug 2026).** **C.1 products & stock frontend complete and committed (`8a4cc99`, 17 Aug 2026).** Next planned frontend slice: Phase C.2 — customers & payments. |
 
 Evidence:
 
 - **Branch:** `main`
-- **Base commit:** `11bd68e` (M20) — data export shipped and pushed; working
-  tree clean (`main == origin/main`).
-- **Milestone/feature commits:** verifiable via `git rev-list --count 9065199..HEAD` (35 commits).
-- **Working tree:** clean — all M20 files committed (`modules/exports/`,
-  `app/api/exports/`, 2 test files, docs, `package.json`).
+- **Latest commit:** `8a4cc99` (C.1 products & stock frontend) on top of
+  B.2 `a147d9a`, B.1 `3a05289`, and D25 `378dd6a`.
+- **Milestone/feature commits:** verifiable via `git log --oneline -4`.
+- **Working tree:** 3 documentation files modified but unstaged
+  (`docs/frontend-plan.md`, `docs/implementation-log.md`,
+  `docs/project-progress.md`) — pending a documentation milestone commit.
 - **Typecheck / lint:** currently pass — `npx tsc --noEmit` OK, `npm run lint`
   OK, `git diff --check` clean.
-- **Test gate:** 36 test files / 419 tests (`npm run test:all` green) — unit
-  203 (incl. exports unit 14), integration 91, concurrency 9, HTTP 17
+- **Test gate:** 36 backend test files / 419 tests (`npm run test:all` green)
+  — unit 203 (incl. exports unit 14), integration 91, concurrency 9, HTTP 17
   (error-handling + rate-limit + security-headers), HTTP bounds 13, HTTP smoke
   15, auth 17, pagination 32, voids 11, exports HTTP 11. No leftover `next dev`
-  processes, no stale `.next/dev/lock`.
+  processes, no stale `.next/dev/lock`. Frontend gate: 10 test files / 72 tests
+  (`npm run test:frontend` green).
 
 ## 3. Completed Milestones
 
@@ -97,7 +99,7 @@ verified live).
 | 18 | Audit Fix | Transaction void/correction (F-07 remaining, ERP-009) | COMPLETE | `modules/voids/`, 5 void endpoints, `lib/locks.ts`, VoidRecord model | D18.1–D18.11; immutable originals + reversal rows; FOR UPDATE race closure; 18 integration + 11 HTTP + concurrency race tests |
 | 19 | Audit Fix | Security hardening (F-08/F-11/P3/P4) | COMPLETE | `lib/rate-limit.ts`, `lib/validate.ts`, `lib/mutex.ts`, `next.config.ts`, `lib/auth/authorize.ts` | Rate limits (auth per IP / API writes per user), headers + strict CSP + no-CORS, id validation, last-OWNER mutex; D19.1–D19.4; 394-test gate green |
 | 20 | Export | Data export (D20.1–D20.3) | COMPLETE | `modules/exports/`, `app/api/exports/` | Six read-only `/api/exports/*` endpoints serializing the D7 reports as Excel-ready CSV (UTF-8 BOM, RFC-4180, injection-guarded) or JSON; streamed, full-range (never capped at 50); D9.6 roles reused; JSON ≡ report endpoint; 14 unit + 11 HTTP tests; 419-test gate green |
-| 21 | Frontend | Responsive mobile-first UI (M21) | IN PROGRESS — Phase A COMPLETE + D23 design language; Phase B.1 POS shipped, awaiting PM visual review | `app/(workspace)/`, `app/sign-in/`, `components/layout/`, `components/ui/` (shadcn), `components/sales/` (POS), `lib/format/`, `lib/auth/session.ts`, `lib/api/`, `lib/validate/`, `stores/cart.ts`, `proxy.ts` (UI nonce CSP), `tests/frontend/` | Phase A: deps + shadcn/ui (button/input/label/card/dropdown-menu/avatar/separator/badge/sonner/sheet/form) + mobile shell (tab bar/rail/sidebar) + sign-in + workspace auth gate + session/query/cart + money/dates/validation utils + UI nonce CSP; D23 typography/color tokens; B.1 `/sales/new` POS (search/category chips, product grid, cart sheet + sticky panel, CASH/ECASH/CREDIT gate, preview total only — server authoritative, double-submit guard); `npx tsc --noEmit`, `npm run lint`, `git diff --check`, `npm run test:frontend` (64/64) all green; `/sales` and `/sales/[id]` pending PM review |
+| 21 | Frontend | Responsive mobile-first UI (M21) | IN PROGRESS — Phase A COMPLETE + D23 design language; Phase B.1 POS `/sales/new` shipped (16 Aug); Phase B.2 sales list/detail/OWNER void shipped (`a147d9a`, 17 Aug); Phase C.1 products & stock shipped (`8a4cc99`, 17 Aug) | `app/(workspace)/`, `app/sign-in/`, `components/layout/`, `components/ui/` (shadcn), `components/sales/` (POS + list + detail), `components/products/` (list + detail + form), `components/stock/` (movements list + adjust form), `lib/format/`, `lib/auth/session.ts`, `lib/api/`, `lib/validate/`, `stores/cart.ts`, `proxy.ts` (UI nonce CSP), `tests/frontend/` | Phase A: deps + shadcn/ui (button/input/label/card/dropdown-menu/avatar/separator/badge/sonner/sheet/form) + mobile shell (tab bar/rail/sidebar) + sign-in + workspace auth gate + session/query/cart + money/dates/validation utils + UI nonce CSP; D23 typography/color tokens; B.1 `/sales/new` POS (search/category chips, product grid, cart sheet + sticky panel, CASH/ECASH/CREDIT gate, preview total only — server authoritative, double-submit guard); B.2 `/sales` list (cursor pagination, payment-type filter, status badges, loading/empty/error) + `/sales/[id]` detail (items, metadata, void info) + OWNER void flow (confirm, reason, API error, invalidation); C.1 `/products` list (search, category filter, pagination) + `/products/[id]` detail (info, price tiers, recent movements) + `/products/new` (OWNER-only, dynamic price tiers, pcs fractional guard) + `/stock/movements` (reason filter, pagination) + `/stock/adjust` (DAMAGE/CORRECTION, current stock display); `npx tsc --noEmit`, `npm run lint`, `git diff --check`, `npm run test:frontend` (85/85) all green; Phase C.2 (customers & payments) next |
 
 ## 4. Business Decisions Locked
 
@@ -120,7 +122,7 @@ recorded, not reinterpreted.
 | D18 | Transaction void/correction (F-07 remaining): immutable originals, offsetting reversal rows, unique `(targetType, targetId)`, `SELECT ... FOR UPDATE` race closure, report exclusion, status exposure. D18.1–D18.11 | Locked — implemented |
 | D19 | Security hardening: D19.1 process-local rate limiting (F-08 — auth per IP, API writes per user, 429, env-configurable), D19.2 security headers + strict CSP + no-CORS (F-11), D19.3 route id format validation (P3 — `assertUuid`/`assertUserId` → 400), D19.4 last-active-OWNER async mutex (P4). All document the single-process deployment model | Locked — implemented |
 | D20 | Data export (M20): six read-only `/api/exports/*` endpoints that serialize the exact D7 report payload (no own computation, no DB writes). D20.1 CSV = comma + RFC-4180 quoting + CRLF + UTF-8 BOM, deterministic metadata + table sections, bare numeric cells (negative balances preserved), text-only formula-injection guard; JSON = UTF-8, no BOM. D20.2 full-range exports, never truncated at the 50-row pagination cap, streamed chunk-per-row/element. D20.3 authorization reuses D9.6 (CASHIER: sales + stock only; no separate export role matrix); exports are GET reads and are never rate-limited (F-08) | Locked — implemented |
-| D21 | Responsive mobile-first frontend (M21): same-origin Next.js App Router app consuming only the existing `/api/*` endpoints (no new data plane, no CORS change, UI-page CSP). D21.2 mobile-first breakpoints + navigation (bottom tabs <768 / icon rail 768–1199 / sidebar ≥1200); D21.3 touch targets ≥44 px + double-submit prevention; D21.4 fast sales entry centerpiece; D21.5 tables→cards transform, never shrink; D21.6 simple stock/customer/payment workflows; D21.7 role-adaptive menu (D9.3); D21.8 explicit error/loading/empty states. M21 scope resolved by PM: wallet read-only, no customer-filter on sales, no low-stock alert, report presets Today/7d/30d/month/custom (shop-local), no day-close | Locked — in progress (Phase A 16 Aug 2026: shell tiers, sign-in, session gate, UI nonce CSP, 44 px targets, money/dates utils; Phase B.1 `/sales/new` POS shipped 16 Aug 2026 — awaiting PM visual review) |
+| D21 | Responsive mobile-first frontend (M21): same-origin Next.js App Router app consuming only the existing `/api/*` endpoints (no new data plane, no CORS change, UI-page CSP). D21.2 mobile-first breakpoints + navigation (bottom tabs <768 / icon rail 768–1199 / sidebar ≥1200); D21.3 touch targets ≥44 px + double-submit prevention; D21.4 fast sales entry centerpiece; D21.5 tables→cards transform, never shrink; D21.6 simple stock/customer/payment workflows; D21.7 role-adaptive menu (D9.3); D21.8 explicit error/loading/empty states. M21 scope resolved by PM: wallet read-only, no customer-filter on sales, no low-stock alert, report presets Today/7d/30d/month/custom (shop-local), no day-close | Locked — in progress (Phase A 16 Aug 2026; Phase B.1 `/sales/new` POS shipped 16 Aug 2026; Phase B.2 sales list/detail/OWNER void shipped 17 Aug 2026) |
 | D22 | M21 frontend architecture & stack: Next.js 16 App Router (RSC shell + minimal client islands) + Tailwind v4 + `better-auth/react`; new deps TanStack Query (server state), Zustand (cart only), React Hook Form + Zod, shadcn/ui (curated) + lucide-react + Sonner; NOT added Recharts (no charts, plan §2), `@tanstack/react-table` (semantic tables), Playwright (post-M21), Redux. State separation: TanStack / Zustand / useState / searchParams / RHF+Zod; backend authoritative for all business math. Mobile-first three-tier responsive; Vitest unit + jsdom component tests in the gate | Locked — implemented (Phase A 16 Aug 2026: deps + shadcn/ui + Zustand cart + RHF/Zod sign-in + `test:frontend` jsdom gate, 45 tests; Phase B.1 POS exercises TanStack Query + Zustand cart + Zod payload validation) |
 
 ## 5. Architecture Currently Implemented
@@ -562,12 +564,13 @@ SECURITY (M19):   COMPLETE — F-08 rate limiting (auth attempts per IP, 20/15mi
                   validation (assertUuid/assertUserId → 400); P4 last-OWNER
                   async mutex. D19.1–D19.4 recorded
 CURRENT TASK:     M20 data export complete, PM-approved, committed (`11bd68e`)
-                  and pushed; M21 planning package committed (`dbe35fe`) and
-                  pushed; gate 419/419 green. M21 architecture proposal (D22)
-                  approved by PM; PM scope decisions + stack decisions accepted
-NEXT TASK:        PM go-ahead to begin M21 implementation (Phase A: shell +
-                  sign-in, per docs/frontend-plan.md §13); then deployment,
-                  backups/observability, and load testing
+                  and pushed; M21 Phase A foundation committed; B.1 POS
+                  `/sales/new` shipped; B.2 sales list/detail/OWNER void
+                  shipped (`a147d9a`); C.1 products & stock frontend shipped
+                  (`8a4cc99`); gate 419/419 green. Documentation
+                  reconciliation pending for C.1 milestone.
+NEXT TASK:        PM review of C.1 documentation changes; then Phase C.2
+                  (customers & payments) per docs/frontend-plan.md §13
 PRODUCTION READY: NO — deployment, backups/observability, and load testing
                   remain; all audit findings (F-01…F-15) are implemented
 ```

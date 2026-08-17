@@ -1053,33 +1053,29 @@ tree has the D22 + §16 doc updates uncommitted.
 
 ---
 
-## Current state (15 Aug 2026)
+## Current state (17 Aug 2026)
 
-- **Done through M20:** Products/Pricing, Sales, Purchasing, Suppliers +
-  Supplier Payments, Customers + Credit Payments, Stock Adjustments, Reporting,
-  and audit fixes F-01 (product validation), F-02 (stock concurrency),
-  F-03 (error privacy), F-04 (input upper bounds), F-05 (DB hardening),
-  F-06/F-09 (integer-paisa money + shop-local timezone), F-07
-  (pagination/search/filtering), F-08 (rate limiting), F-10 (auth & roles),
-  F-11 (security headers + no-CORS), F-15 (automated regression gate), plus
-  M18 transaction void/correction (D18.1–D18.11), M19 security hardening
-  (D19.1–D19.4), and M20 data export (D20.1–D20.3).
-- **Test gate:** `npm run test:all` — unit 203 (incl. exports 14), integration
-  91, concurrency 9, HTTP 17, HTTP bounds 13, HTTP smoke 15, auth 17,
-  pagination 32, voids 11, exports HTTP 11 = **419 tests, all green**, against
-  `erp_retail_test`. No leftover dev servers or stale lock files after the run.
-- **PM review:** ERP-007 (F-10), ERP-008 (F-06/F-09), and ERP-009 (M18 voids)
-  closed COMPLETE by PM on 15 Aug 2026; M19 and M20 complete and committed
-  (`4fc1913`, `11bd68e`); `main == origin/main`, working tree clean.
-- **Next:** M21 responsive mobile-first frontend — kickoff package prepared
-  (information architecture, page-by-page wireframe spec, D21 decisions in
-  `docs/business-decisions.md`, plan in `docs/frontend-plan.md`); implementation
-  awaits PM approval. Then deployment + load-testing remain the last open
-  operational audit items (backups/observability documented as remaining).
+- **Done through M20 + M21 Phase A/B.1/B.2:** Products/Pricing, Sales,
+  Purchasing, Suppliers + Supplier Payments, Customers + Credit Payments,
+  Stock Adjustments, Reporting, and audit fixes F-01 through F-15, plus M18
+  transaction void/correction (D18.1–D18.11), M19 security hardening
+  (D19.1–D19.4), M20 data export (D20.1–D20.3). M21 frontend: Phase A
+  foundation (shell, sign-in, D23 design language), Phase B.1 POS `/sales/new`
+  (16 Aug), Phase B.2 sales list/detail/OWNER void (`a147d9a`, 17 Aug).
+- **Backend test gate:** `npm run test:all` — unit 203, integration 91,
+  concurrency 9, HTTP 17, HTTP bounds 13, HTTP smoke 15, auth 17,
+  pagination 32, voids 11, exports HTTP 11 = **419 tests, all green**.
+- **Frontend test gate:** `npm run test:frontend` — 10 files, **72 tests,
+  all green** (includes B.2 list/detail/void tests).
+- **PM review:** ERP-007, ERP-008, ERP-009 closed COMPLETE; M19, M20
+  committed; M21 Phase A/B.1/B.2 committed. Documentation reconciliation
+  pending.
+- **Next:** PM review of B.2 documentation changes; then Phase C (stock &
+  customers) per `docs/frontend-plan.md` §13.
 
 ## M21 — Phase A: frontend foundation (D22) — 16 Aug 2026
 
-**Status: PM-approved (16 Aug 2026) and committed as the clean M21 frontend foundation. Phase B in progress — B.1 POS (`/sales/new`) shipped 16 Aug 2026, awaiting visual review.**
+**Status: PM-approved (16 Aug 2026) and committed as the clean M21 frontend foundation. Phase B complete — B.1 POS (`/sales/new`) shipped 16 Aug 2026; B.2 sales list/detail/OWNER void shipped 17 Aug 2026 (`a147d9a`).**
 
 PM visual/UX review of the live Vercel Preview passed (owner / Preview!2026).
 Temporary preview access was revoked after the review; protection state
@@ -1324,7 +1320,7 @@ D23 in `docs/business-decisions.md`; full reference in `docs/frontend-plan.md` �
 
 ## M21 — Phase B.1: POS new-sale screen (`/sales/new`) — 16 Aug 2026
 
-**Status: implemented; awaiting PM visual review. `/sales` list and `/sales/[id]` detail not started.**
+**Status: complete and accepted.** `/sales` list and `/sales/[id]` detail are the next frontend slice (Phase B.2), not a backend rewrite.
 
 Frontend-only. Consumes only existing backend contracts: `GET /api/products`
 (`?search&category&limit`, paginated `{ data, paging }` — D12), `GET
@@ -1391,8 +1387,124 @@ CREDIT`, CREDIT requires `customerId`). No backend, Prisma, or schema changes.
   decisions D23, frontend-plan §6, implementation-log D23) sits on top of
   `257328f`; the Phase B.1 changes are layered on that uncommitted state and
   nothing was overwritten or committed.
-- Awaiting PM visual review of `/sales/new` before Phase B.2 (`/sales`) and
-  B.3 (`/sales/[id]`).
+- The accepted B.1 milestone is complete. Phase B.2 is now shipped and committed (`a147d9a`, 17 Aug 2026).
+
+## M21 — Phase B.2: sales list, sale detail, and OWNER void flow — COMPLETE (17 Aug 2026)
+
+**Status: shipped and committed (`a147d9a`).**
+
+Frontend-only. Consumes only the existing backend contracts; no backend, Prisma,
+or schema changes.
+
+**Shipped**
+
+- **`app/(workspace)/sales/page.tsx`** — sales list page. Cursor pagination
+  (page size 10), payment-type filter chips (All / CASH / ECASH / CREDIT),
+  loading skeleton, empty state, error state with retry. Each row shows date,
+  payment type, customer or walk-in label, total, item count, and ACTIVE/VOIDED
+  status badge. Tap navigates to detail. Mobile card layout; desktop table.
+- **`app/(workspace)/sales/[id]/page.tsx`** — sale detail page. Displays sale
+  metadata (date, payment type, total, status), customer or walk-in, line items
+  with quantity/price/line total, and void information (reason, who, when) when
+  present. Loading/error/retry states.
+- **`components/sales/sales-list.tsx`** — reusable list component. Consumes
+  `GET /api/sales` with `paymentType`, `limit`, and `cursor` params. Renders
+  paginated sale rows with status badges and filter chips. TanStack Query with
+  `saleKeys` for cache management.
+- **`components/sales/sale-detail.tsx`** — detail component. Fetches
+  `GET /api/sales/[id]` and renders the full sale record. OWNER-only void
+  button visible only when `status === "ACTIVE"`. Void flow: confirmation UI,
+  required reason, optional note, loading state, inline API error display,
+  successful mutation invalidates `saleKeys.all` and `saleKeys.detail(id)`,
+  detail refreshed after void.
+- **`tests/frontend/sales/sales-b2.test.tsx`** — 7 new tests: loading state,
+  populated list rendering, payment-type filtering, OWNER vs CASHIER void
+  visibility, void form confirmation and reason validation, void request with
+  success path, and API error propagation.
+
+**API contracts consumed (unchanged)**
+
+- `GET /api/sales` — list sales with cursor pagination and `paymentType` filter
+- `GET /api/sales/[id]` — fetch one sale with items and void info
+- `POST /api/sales/[id]/void` — OWNER-only void with `reason` and optional `note`
+
+**Required backend work for B.2**
+
+- None. The existing sales APIs and response shapes were sufficient.
+
+**Verified**
+
+- `npx tsc --noEmit` clean; `npm run lint` clean; `git diff --check` clean.
+- `npm run test:frontend` — 72/72 green (10 test files, 7 new in B.2).
+- Backend gate not rerun (frontend-only change).
+- Commit: `a147d9a` — `feat(erp): add sales list, detail, and OWNER void flow`
+
+## M21 — Phase C.1: products & stock frontend — COMPLETE (17 Aug 2026)
+
+**Status: shipped and committed (`8a4cc99`).**
+
+Frontend-only. Consumes only the existing backend contracts; no backend, Prisma,
+or schema changes.
+
+**Shipped**
+
+- **5 routes:** `app/(workspace)/products/page.tsx` (products list),
+  `app/(workspace)/products/[id]/page.tsx` (product detail),
+  `app/(workspace)/products/new/page.tsx` (new product, OWNER-only),
+  `app/(workspace)/stock/movements/page.tsx` (stock movements),
+  `app/(workspace)/stock/adjust/page.tsx` (stock adjustment).
+- **5 components:**
+  - `components/products/products-list.tsx` — search input, category chip
+    filter, cursor pagination (page size 10), loading/empty/error states,
+    product cards with name/unit/price/cost/stock/category, "New product"
+    button OWNER-only, link to detail.
+  - `components/products/product-detail.tsx` — product info card (name, unit,
+    current price, cost price, stock, category), price tiers table, recent
+    stock movements with `+qty`/`−qty` per reason, link to full movements
+    filtered by productId.
+  - `components/products/product-form.tsx` — create form: name, unit select
+    (SUPPORTED_UNITS), cost price, current price, category, dynamic price tiers
+    (add/remove rows, `minQty` + `price`), pcs fractional `minQty` guard,
+    inline server error display, OWNER-only role gate.
+  - `components/stock/stock-movements-list.tsx` — reason filter chips
+    (All/PURCHASE/SALE/DAMAGE/CORRECTION), cursor pagination (page size 20),
+    movement cards with reason badge, date, qty change (green/red), note,
+    void status badge, loading/empty/error states.
+  - `components/stock/stock-adjust-form.tsx` — product selector (loads all
+    products, shows current stock after selection), DAMAGE/CORRECTION reason
+    selector, quantity input with unit-aware step, optional note, validation
+    (positive qty, max 1000), inline server error display, success → redirect
+    to movements.
+- **`lib/api/query-keys.ts`** — added `stock.movements` key factory; extended
+  `products.list` to include `cursor` parameter.
+- **14 new frontend tests** across 2 files:
+  - `tests/frontend/products/products-c1.test.tsx` (10) — ProductsList
+    (loading/empty/error, search/filter/pagination, detail link, OWNER
+    new-product button), ProductDetail (info/tiers/movements, loading/error),
+    ProductForm (OWNER gate, submit + navigation, server error).
+  - `tests/frontend/stock/stock-c1.test.tsx` (4) — StockMovementsList
+    (loading/empty/error, reason filtering), StockAdjustForm (server error on
+    failed adjustment, successful adjustment with navigation).
+
+**API contracts consumed (all existing, unchanged)**
+
+- `GET /api/products?search=&category=&cursor=` — paginated product list
+- `GET /api/products/[id]` — product detail with price tiers
+- `POST /api/products` — create product (OWNER-only)
+- `GET /api/stock/movements?reason=&productId=&cursor=` — paginated stock
+  movements
+- `POST /api/stock/adjustments` — stock adjustment (DAMAGE/CORRECTION)
+
+**Required backend work**
+
+- None. The existing product and stock APIs were sufficient.
+
+**Verified**
+
+- `npx tsc --noEmit` clean; `npm run lint` clean; `git diff --check` clean.
+- `npm run test:frontend` — 85/85 green (12 test files, 14 new in C.1).
+- Backend gate not rerun (frontend-only change).
+- Commit: `8a4cc99` — `feat(erp): add products and stock frontend`
 
 ## 2026-08-16 — Dev-only LAN Better Auth trusted-origin exception (D24) + LAN mobile verification
 

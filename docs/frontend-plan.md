@@ -1,7 +1,7 @@
 # M21 — Responsive Mobile-First Frontend: Kickoff Package
 
-**Milestone:** M21 (frontend) — **implementation in progress (Phase A foundation done 16 Aug 2026; Phase B.1 POS `/sales/new` shipped 16 Aug 2026, awaiting visual review; `/sales` and `/sales/[id]` pending)**
-**Date:** 15 Aug 2026 (updated 16 Aug 2026)
+**Milestone:** M21 (frontend) — **Phase A foundation complete; Phase B.1 POS `/sales/new` complete and accepted; Phase B.2 sales list + detail + OWNER void flow complete and committed; Phase C.1 products & stock frontend complete and committed**
+**Date:** 15 Aug 2026 (updated 17 Aug 2026)
 **Companion decision record:** [`business-decisions.md`](business-decisions.md) → D21
 **Consumed backend:** all endpoints listed in [`README.md`](../README.md) (D1–D20)
 **Primary user:** a shop owner operating from a smartphone on the shop floor
@@ -770,15 +770,62 @@ Proposed phases (each ends green on `tsc`/`lint`/tests; backend gate untouched):
    CSP for UI pages (D21.1), `/sign-in`, `/`, `/settings`. Acceptance: both
    roles can sign in; menu matches §5.3; mobile/tablet/desktop layouts per
    §6/§11.
-2. **Phase B — Fast sales entry:** `/sales/new`, `/sales`, `/sales/[id]` +
-   void. Acceptance: sale in < 15 s, double-tap can't double-post, tier hint,
-   CASHIER can create, OWNER can void, 409/400 errors inline.
-3. **Phase C — Stock & customers:** products list/detail/new, stock movements,
-   stock adjust, customers list/new/detail, receive payment.
-4. **Phase D — Suppliers, purchases, reports, users:** the OWNER-heavy screens
-   + `ReportView` + exports + user management.
-5. **Phase E — Hardening pass:** mobile audit on a real phone (touch targets,
-   glare contrast), error/empty/loading sweeps, frontend tests in the gate.
+2. **Phase B.1 — POS new-sale screen:** `/sales/new` is complete and accepted.
+   Acceptance: product search/filter, add-to-cart, payment type selection,
+   customer selection/creation for CREDIT, save flow, inline validation/error
+   handling, and mobile cart UX all work without backend changes.
+3. **Phase B.2 — Sales list + detail + OWNER void flow:** COMPLETE
+   (committed `a147d9a`, 17 Aug 2026). `/sales` list with cursor pagination and
+   payment-type filtering; `/sales/[id]` detail with item-level data, status,
+   and void information; OWNER void flow with confirmation, reason validation,
+   and query invalidation. All consuming the existing sales APIs — no backend
+   changes required.
+4. **Phase C.1 — Products & stock frontend:** COMPLETE
+   (committed `8a4cc99`, 17 Aug 2026). Products list/search/filter/detail/create,
+   stock movements list with reason filter, stock adjustment form (DAMAGE/CORRECTION).
+   14 new tests (85 total frontend). All consuming existing APIs — no backend changes required.
+5. **Phase C.2 — Customers & payments:** customers list/new/detail, receive payment.
+
+### B.2 API contract and backend boundary
+
+B.2 uses the current backend contracts already in the repository; no new sales endpoints are required for the minimum UI slice.
+
+- `GET /api/sales` — list sales, with existing pagination and `paymentType` filter support (`limit`, `cursor`, `paymentType`)
+- `GET /api/sales/[id]` — fetch one sale and its item list
+- `POST /api/sales/[id]/void` — OWNER-only void, with `reason` and optional `note`
+- `GET /api/customers` — optional customer lookup for display details when a sale is attached to a customer
+
+**Required backend work for B.2:** none for the minimum flow. The UI can be built against the existing routes and response shapes.
+
+**Optional backend work (deferred, not required for B.2):**
+- a `customerId` filter on `GET /api/sales` for customer-scoped sales history
+- a text search filter on `GET /api/sales` for product/customer text lookup at the server layer
+- any richer sales reporting/filtering beyond the current list API contract
+
+### B.2 acceptance criteria
+
+- `/sales` renders a list of sales rows with date, payment type, total, customer or walk-in label, status, and void badge.
+- Rows are linkable to `/sales/[id]`.
+- The list supports existing `limit` / `cursor` pagination and `paymentType` filtering.
+- `/sales/[id]` renders the sale total, payment type, timestamp, customer, item rows, and the current void state.
+- OWNER users can trigger the void flow only from the sale detail page and confirm reason/note before submission.
+- Inline error handling is present for network, validation, and role failures.
+- Loading, empty, and retry states are present for both list and detail screens.
+- Mobile layout uses card-style rows and bottom-sheet or compact filter surfaces without horizontal overflow.
+- No frontend code invents business logic; totals, validation, stock changes, and void semantics remain server-authoritative.
+
+### B.2 frontend test coverage
+
+The B.2 frontend slice should be covered with the same gate expectations as B.1:
+
+- list rendering: loading, empty, retry, and populated states
+- list pagination and payment-type filtering behavior
+- navigation from sale row to detail page
+- detail rendering for sale total, customer, payment, item rows, status, and void state
+- OWNER-only void flow with confirm step and API error propagation
+- role-gating and auth-state checks for void and detail access
+- mobile-specific layout and interaction tests for list rows and filter surfaces
+- regression tests for sale detail behavior after a successful void
 
 ## 14. PM decisions on open questions (resolved 15 Aug 2026)
 
