@@ -1055,23 +1055,25 @@ tree has the D22 + §16 doc updates uncommitted.
 
 ## Current state (17 Aug 2026)
 
-- **Done through M20 + M21 Phase A/B.1/B.2:** Products/Pricing, Sales,
+- **Done through M20 + M21 Phase A/B.1/B.2/C.1/C.2:** Products/Pricing, Sales,
   Purchasing, Suppliers + Supplier Payments, Customers + Credit Payments,
   Stock Adjustments, Reporting, and audit fixes F-01 through F-15, plus M18
   transaction void/correction (D18.1–D18.11), M19 security hardening
   (D19.1–D19.4), M20 data export (D20.1–D20.3). M21 frontend: Phase A
   foundation (shell, sign-in, D23 design language), Phase B.1 POS `/sales/new`
-  (16 Aug), Phase B.2 sales list/detail/OWNER void (`a147d9a`, 17 Aug).
+  (16 Aug), Phase B.2 sales list/detail/OWNER void (`a147d9a`, 17 Aug),
+  Phase C.1 products & stock (`8a4cc99`, 17 Aug),
+  Phase C.2 customers & payments (`3fd071e`, 17 Aug). Phase C complete.
 - **Backend test gate:** `npm run test:all` — unit 203, integration 91,
   concurrency 9, HTTP 17, HTTP bounds 13, HTTP smoke 15, auth 17,
   pagination 32, voids 11, exports HTTP 11 = **419 tests, all green**.
-- **Frontend test gate:** `npm run test:frontend` — 10 files, **72 tests,
-  all green** (includes B.2 list/detail/void tests).
+- **Frontend test gate:** `npm run test:frontend` — 14 files, **106 tests,
+  all green** (includes C.2 customer/payment tests).
 - **PM review:** ERP-007, ERP-008, ERP-009 closed COMPLETE; M19, M20
-  committed; M21 Phase A/B.1/B.2 committed. Documentation reconciliation
+  committed; M21 Phase A through C.2 committed. Documentation reconciliation
   pending.
-- **Next:** PM review of B.2 documentation changes; then Phase C (stock &
-  customers) per `docs/frontend-plan.md` §13.
+- **Next:** PM review of C.2 documentation changes; then Phase D (suppliers,
+  purchases, reports, users) per `docs/frontend-plan.md` §13.
 
 ## M21 — Phase A: frontend foundation (D22) — 16 Aug 2026
 
@@ -1505,6 +1507,83 @@ or schema changes.
 - `npm run test:frontend` — 85/85 green (12 test files, 14 new in C.1).
 - Backend gate not rerun (frontend-only change).
 - Commit: `8a4cc99` — `feat(erp): add products and stock frontend`
+
+## M21 — Phase C.2: customers & payments frontend — COMPLETE (17 Aug 2026)
+
+**Status: shipped and committed (`3fd071e`).**
+
+Frontend-only. Consumes only the existing backend contracts; no backend, Prisma,
+or schema changes.
+
+**Shipped**
+
+- **4 routes:** `app/(workspace)/customers/page.tsx` (customers list),
+  `app/(workspace)/customers/new/page.tsx` (new customer),
+  `app/(workspace)/customers/[id]/page.tsx` (customer detail),
+  `app/(workspace)/customers/[id]/pay/page.tsx` (receive payment).
+- **5 components:**
+  - `components/customers/customers-list.tsx` — search input, cursor pagination
+    (page size 10), loading/empty/error states, customer cards with name/contact,
+    signed `balanceOwed` (red > 0 / green < 0), "Receive payment" and "View"
+    action buttons per card.
+  - `components/customers/customer-detail.tsx` — customer info card (name,
+    contact), signed balance card (D4 color semantics), "Receive payment" and
+    "Sale" action buttons, payment history section.
+  - `components/customers/customer-form.tsx` — create form: name (required),
+    contact (optional), inline server error display, success → invalidate
+    customers → navigate to list.
+  - `components/customers/customer-pay-form.tsx` — amount input (positive
+    number, MAX_AMOUNT cap), customer balance display, optional sale linkage
+    picker (fetches CREDIT sales, best-effort — no per-customer filter),
+    success → invalidate payments + customers → navigate to detail.
+  - `components/customers/payment-history.tsx` — paginated payment list with
+    status badges (ACTIVE/VOIDED), void reason display, OWNER-only void flow:
+    toggle confirmation form with required reason, inline error display,
+    success → invalidate payments + customers.
+- **`lib/api/query-keys.ts`** — added `cursor` to `customers.list`; added
+  `customerPayments.all` and `customerPayments.list(customerId?, cursor?)`.
+- **`lib/validate/customer.ts`** — client-side Zod schemas: `createCustomerSchema`
+  (name, contact), `createCustomerPaymentSchema` (amount, optional saleId),
+  `voidCustomerPaymentSchema` (reason, optional note).
+- **21 new frontend tests** across 2 files:
+  - `tests/frontend/customers/customers-c2.test.tsx` (10) — CustomersList
+    (loading/empty/error, balance display, detail navigation), CustomerDetail
+    (info/balance rendering, loading/error), CustomerForm (submit + navigation,
+    server error), CustomerPayForm (submit + navigation, amount validation error).
+  - `tests/frontend/validate/customer.test.ts` (11) — createCustomerSchema
+    (empty/whitespace name, valid with/without contact), createCustomerPaymentSchema
+    (zero/negative/positive amounts, optional saleId), voidCustomerPaymentSchema
+    (empty/valid reason, optional note).
+
+**API contracts consumed (all existing, unchanged)**
+
+- `GET /api/customers?search=&cursor=&limit=` — paginated customer list (D12)
+- `POST /api/customers` — create customer (name, optional contact)
+- `GET /api/customers/[id]` — customer detail with signed `balanceOwed` (D4)
+- `GET /api/customer-payments?customerId=&limit=` — paginated payment history
+- `POST /api/customer-payments` — receive payment (`customerId`, `amount`, optional `saleId`, D5)
+- `POST /api/customer-payments/[id]/void` — OWNER-only payment void with `reason` (D18)
+- `GET /api/sales?paymentType=CREDIT&limit=` — best-effort sale linkage picker (no `customerId` filter — Q2 deferred)
+
+**Required backend work**
+
+- None. The existing customer and customer-payment APIs were sufficient.
+
+**Scope deviations**
+
+- Components that do not use `role` (CustomersList, CustomerForm, CustomerPayForm)
+  have the `role` prop removed to avoid ESLint unused-prop warnings. Only
+  CustomerDetail and PaymentHistory receive `role` (for OWNER-only void visibility).
+  This follows the same pattern as StockAdjustPage.
+- `saleId` linkage is best-effort: `GET /api/sales` has no `customerId` filter
+  (Q2 deferred), so the form shows recent CREDIT sales for optional linking.
+
+**Verified**
+
+- `npx tsc --noEmit` clean; `npm run lint` clean; `git diff --check` clean.
+- `npm run test:frontend` — 106/106 green (14 test files, 21 new in C.2).
+- Backend gate not rerun (frontend-only change).
+- Commit: `3fd071e` — `feat(erp): add customer and payment frontend flows`
 
 ## 2026-08-16 — Dev-only LAN Better Auth trusted-origin exception (D24) + LAN mobile verification
 

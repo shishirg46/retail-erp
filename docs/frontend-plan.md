@@ -1,6 +1,6 @@
 # M21 — Responsive Mobile-First Frontend: Kickoff Package
 
-**Milestone:** M21 (frontend) — **Phase A foundation complete; Phase B.1 POS `/sales/new` complete and accepted; Phase B.2 sales list + detail + OWNER void flow complete and committed; Phase C.1 products & stock frontend complete and committed**
+**Milestone:** M21 (frontend) — **Phase A foundation complete; Phase B.1 POS `/sales/new` complete and accepted; Phase B.2 sales list + detail + OWNER void flow complete and committed; Phase C.1 products & stock frontend complete and committed; Phase C.2 customers & payments frontend complete and committed**
 **Date:** 15 Aug 2026 (updated 17 Aug 2026)
 **Companion decision record:** [`business-decisions.md`](business-decisions.md) → D21
 **Consumed backend:** all endpoints listed in [`README.md`](../README.md) (D1–D20)
@@ -784,7 +784,40 @@ Proposed phases (each ends green on `tsc`/`lint`/tests; backend gate untouched):
    (committed `8a4cc99`, 17 Aug 2026). Products list/search/filter/detail/create,
    stock movements list with reason filter, stock adjustment form (DAMAGE/CORRECTION).
    14 new tests (85 total frontend). All consuming existing APIs — no backend changes required.
-5. **Phase C.2 — Customers & payments:** customers list/new/detail, receive payment.
+5. **Phase C.2 — Customers & payments:** COMPLETE
+   (committed `3fd071e`, 17 Aug 2026). Customers list/new/detail, receive payment,
+   payment history with OWNER-only void flow, optional sale linkage (best-effort).
+   21 new tests (106 total frontend). All consuming existing APIs — no backend changes required.
+6. **Phase D — Suppliers, purchases, reports, users:** (next — pending PM approval).
+
+### C.2 API contract and backend boundary
+
+C.2 uses the current backend contracts; no new customer/payment endpoints are required.
+
+- `GET /api/customers?search=&cursor=&limit=` — paginated customer list (D12)
+- `POST /api/customers` — create customer (name, contact)
+- `GET /api/customers/[id]` — customer detail with signed `balanceOwed` (D4)
+- `GET /api/customer-payments?customerId=&limit=` — paginated payment history
+- `POST /api/customer-payments` — receive payment (`customerId`, `amount`, optional `saleId` for CREDIT linkage, D5)
+- `POST /api/customer-payments/[id]/void` — OWNER-only payment void with `reason` (D18)
+- `GET /api/sales?paymentType=CREDIT&limit=` — best-effort sale picker for optional linkage (no `customerId` filter — Q2 deferred)
+
+**Required backend work for C.2:** none. The existing customer and customer-payment APIs were sufficient.
+
+**Deferred to backend backlog (not C.2):**
+- `customerId` filter on `GET /api/sales` for per-customer CREDIT-sale history (Q2)
+
+### C.2 acceptance criteria
+
+- `/customers` renders a list of customers with name, contact, and signed balance (red owed / green prepaid).
+- Rows support cursor pagination and search.
+- `/customers/new` creates a customer (name, optional contact) and navigates back to the list.
+- `/customers/[id]` renders customer info, signed balance, action buttons (Receive payment, Sale), and payment history.
+- `/customers/[id]/pay` submits a payment (amount, optional sale linkage to a CREDIT sale), then navigates to the customer detail.
+- OWNER users can void a payment from the customer's payment history with required reason; CASHIER sees no void button.
+- Payment void invalidates payment and customer queries so balance and history update.
+- Loading, empty, and error states are present for all screens.
+- No frontend code invents business logic; balances, payment totals, and void semantics remain server-authoritative.
 
 ### B.2 API contract and backend boundary
 
