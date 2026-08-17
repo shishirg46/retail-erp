@@ -7,8 +7,8 @@ import type { ReportRange } from "@/modules/reports/report.types";
 export const queryKeys = {
   products: {
     all: ["products"] as const,
-    list: (search?: string, category?: string) =>
-      [...queryKeys.products.all, { search, category }] as const,
+    list: (search?: string, category?: string, cursor?: string) =>
+      [...queryKeys.products.all, { search, category, cursor }] as const,
     detail: (id: string) => [...queryKeys.products.all, id] as const,
   },
   sales: {
@@ -16,6 +16,11 @@ export const queryKeys = {
     list: (paymentType?: string, next?: string) =>
       [...queryKeys.sales.all, { paymentType, next }] as const,
     detail: (id: string) => [...queryKeys.sales.all, id] as const,
+  },
+  stock: {
+    all: ["stock"] as const,
+    movements: (reason?: string, productId?: string, cursor?: string) =>
+      [...queryKeys.stock.all, "movements", { reason, productId, cursor }] as const,
   },
   reports: {
     all: ["reports"] as const,
