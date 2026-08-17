@@ -29,7 +29,13 @@ export const queryKeys = {
   },
   customers: {
     all: ["customers"] as const,
-    list: (search?: string) => [...queryKeys.customers.all, { search }] as const,
+    list: (search?: string, cursor?: string) =>
+      [...queryKeys.customers.all, { search, cursor }] as const,
     detail: (id: string) => [...queryKeys.customers.all, id] as const,
+  },
+  customerPayments: {
+    all: ["customerPayments"] as const,
+    list: (customerId?: string, cursor?: string) =>
+      [...queryKeys.customerPayments.all, { customerId, cursor }] as const,
   },
 } as const;
