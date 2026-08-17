@@ -38,4 +38,15 @@ export const queryKeys = {
     list: (customerId?: string, cursor?: string) =>
       [...queryKeys.customerPayments.all, { customerId, cursor }] as const,
   },
+  suppliers: {
+    all: ["suppliers"] as const,
+    list: (search?: string, cursor?: string) =>
+      [...queryKeys.suppliers.all, { search, cursor }] as const,
+    detail: (id: string) => [...queryKeys.suppliers.all, id] as const,
+  },
+  supplierPayments: {
+    all: ["supplierPayments"] as const,
+    list: (supplierId?: string, cursor?: string) =>
+      [...queryKeys.supplierPayments.all, { supplierId, cursor }] as const,
+  },
 } as const;
