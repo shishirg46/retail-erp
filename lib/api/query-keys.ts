@@ -49,4 +49,10 @@ export const queryKeys = {
     list: (supplierId?: string, cursor?: string) =>
       [...queryKeys.supplierPayments.all, { supplierId, cursor }] as const,
   },
+  purchases: {
+    all: ["purchases"] as const,
+    list: (paymentType?: string, supplierId?: string, cursor?: string) =>
+      [...queryKeys.purchases.all, "list", { paymentType, supplierId, cursor }] as const,
+    detail: (id: string) => [...queryKeys.purchases.all, id] as const,
+  },
 } as const;
