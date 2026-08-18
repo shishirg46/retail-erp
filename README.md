@@ -7,11 +7,11 @@ Prisma** layering (simple CRUD features may skip the service layer).
 
 ## Stack
 
-- Next.js (App Router) API routes
+- Next.js (App Router) API routes + responsive mobile-first UI (M21/D21)
 - TypeScript (strict)
 - PostgreSQL + Prisma ORM (`PrismaPg` adapter, generated client in
   `generated/prisma`)
-- Tailwind CSS (scaffold only)
+- Tailwind CSS v4 + shadcn/ui + TanStack Query + Zustand + React Hook Form/Zod
 
 ## Architecture
 
@@ -138,6 +138,7 @@ cp .env.example .env
 npm install
 npx prisma migrate dev
 node scripts/seed-owner.mjs   # creates the initial OWNER (owner / ownerpass123)
+npm run db:seed              # optional: realistic dev data (18 products, 5 suppliers, 18 customers, sales, purchases, payments, voids — M24)
 npm run dev
 ```
 
@@ -150,8 +151,8 @@ npm run dev
 ## Verification workflow
 
 - `npx tsc --noEmit` and `npm run lint` must stay green.
-- `npm run test:all` runs the full D1–D20 regression gate — 36 test files / 419
-  tests (Vitest) — exclusively against the dedicated `erp_retail_test`
+- `npm run test:all` runs the full D1–D29 regression gate — 55 test files /
+  624 tests (Vitest) — exclusively against the dedicated `erp_retail_test`
   database (`TEST_DATABASE_URL` in `.env`); every suite refuses to run against
   any other database. It covers unit (product validation, error mapping,
   pricing, D1–D7 validators, input bounds, auth config, user management, money,
@@ -159,7 +160,10 @@ npm run dev
   customer-payments, supplier-payments, stock adjustments, rollback, ledger,
   reports, db-hardening, voids), HTTP (error contract, input bounds, full D1–D7
   API smoke, F-10 auth flow, rate limits, security headers, pagination, voids,
-  exports), and concurrency (stock never goes negative, last-OWNER race).
+  exports), concurrency (stock never goes negative, last-OWNER race), and the
+  jsdom frontend suites (16 files / 165 tests — POS, sales, products, stock,
+  customers, suppliers, purchases, auth, layout, cart, format/validate
+  utilities).
 - `node scripts/verify-dev-db.mjs` proves the gate could not have touched the
   development database: it snapshots every `erp_retail` table row count plus a
   product digest and fails non-zero on any difference from the baseline
@@ -197,10 +201,16 @@ npm run dev
     HTTP (BOM, content-type/filename, D9.6 role gating, 400 on bad format,
     range echo, void exclusion, JSON ≡ report, >50-row completeness, no
     rate-limit on GET).
+  - `npm run test:frontend` — jsdom frontend gate (Vitest) for the M21 UI: 16
+    files / 165 tests (POS, sales list/detail/void, products, stock, customers,
+    suppliers, purchases, sign-in, layout nav, cart store, format/validate
+    utils). See `docs/frontend-plan.md`.
   - All HTTP suites refuse to run if `TEST_DATABASE_URL` is not
     `erp_retail_test` or a dev server is already running for the project.
   - Seed a fresh database: `node scripts/seed-owner.mjs` (idempotent OWNER
-    account for sign-in; defaults `owner` / `ownerpass123`).
+    account for sign-in; defaults `owner` / `ownerpass123`) then
+    `npm run db:seed` for realistic M24 demo data (idempotent; `--dry` to
+    preview).
 - Import the Postman collection (`postman/Retail-ERP.postman_collection.json`)
   and run folders in order — ids chain via environment variables.
 - Reconciliation invariants, verified via SQL:
@@ -210,11 +220,11 @@ npm run dev
 
 ## Documentation
 
-- [`docs/business-decisions.md`](docs/business-decisions.md) — D1–D20 business
+- [`docs/business-decisions.md`](docs/business-decisions.md) — D1–D29 business
   and architecture decisions
 - [`docs/frontend-plan.md`](docs/frontend-plan.md) — M21 responsive mobile-first
   frontend kickoff package (information architecture + page-by-page wireframes,
-  D21) — planning only, no implementation yet
+  D21) — implemented through Phase D.2 (suppliers + purchases)
 - [`docs/implementation-log.md`](docs/implementation-log.md) — milestone log
 - [`docs/project-progress.md`](docs/project-progress.md) — current status,
   roadmap, and known risks

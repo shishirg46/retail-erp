@@ -2,7 +2,91 @@
 
 Work log for the retail ERP. Each milestone records what shipped and the
 verification evidence. Business **decisions** live in
-[`docs/business-decisions.md`](business-decisions.md) (D1–D7).
+[`docs/business-decisions.md`](business-decisions.md) (D1–D29).
+
+## Milestone M25 — Frontend Phase D.2: Purchases Flow (17 Aug 2026)
+
+**Shipped**
+
+- `components/purchases/purchases-list.tsx`: Purchases list view (OWNER-only).
+  - Cursor-based pagination with next/previous controls.
+  - Filter by payment type (CASH, CREDIT) and supplier.
+  - Supplier-name resolution via `/api/suppliers` (supplierMap memoized).
+  - Purchase card displays supplier, date, total, payment type, and VOIDED status.
+  - Loading/error/empty states.
+- `components/purchases/purchase-form.tsx`: Purchase creation form (OWNER-only).
+  - Dropdown supplier selection; async loading with `useQuery`.
+  - Product selection via ProductSelector component.
+  - Item list with editable cost/quantity and pack/piece toggle (D28 unitsPerPack handling).
+  - Dynamic grand-total calculation.
+  - Submit button disabled until a supplier is selected.
+  - Server-side purchase recording with `useMutation` and `useRouter` navigation on success.
+- `components/purchases/purchase-detail.tsx`: Purchase detail view (OWNER-only).
+  - Supplier name resolution (same API-backed supplierMap pattern).
+  - Purchase metadata (date, payment type, status with VOIDED badge).
+  - Itemized list (product name, quantity, cost per unit, line total).
+  - OWNER-only void button with form (reason required).
+  - **Bug fix:** API path corrected from `/purchases/[id]` to `/api/purchases/[id]`.
+- `components/purchases/purchase-item-row.tsx`: Editable purchase line item.
+  - Cost per unit and quantity inputs with validation.
+  - Pack/piece toggle for packaged products (pcs with unitsPerPack ≥ 2).
+  - Line total (cost × qty) displayed below inputs.
+  - onChange handlers feed back to parent form state.
+- `components/purchases/product-selector.tsx`: Searchable product selector (reusable).
+  - Dropdown menu showing all products (fetched via `/api/products`).
+  - Search input filters by product name (memoized useMemo).
+  - Product buttons display name and unit (kg, L, pcs, etc.).
+  - Click to select → calls parent's onProductSelect callback.
+- Role-based access: All purchase screens guarded by OWNER authorization check.
+- Tests updated: `tests/frontend/purchases/purchases-d2.test.tsx`
+  - 28 purchase tests covering list, form, detail, and void flows.
+  - Supplier async loading with explicit waitFor before interaction.
+  - Product selection via regex button selectors (tolerant of accessible-name rendering).
+  - Duplicate-text assertions fixed for filter buttons and payment-type badges.
+  - All 28 tests passing.
+
+**Verified**
+
+- `npx tsc --noEmit` clean; `npm run lint` clean (0 errors, 0 warnings).
+- `npm run test:frontend` — 165/165 tests passed (all 16 frontend files).
+- Purchase suite specifically: 28/28 tests green.
+- `git diff --check` clean (no trailing whitespace).
+- Commit: `53ede16` "feat(erp): add purchases frontend flow".
+
+---
+
+## Milestone M24.1 — Frontend Phase D.1: Suppliers & Supplier Payments (17 Aug 2026)
+
+**Shipped**
+
+- `components/suppliers/suppliers-list.tsx`: Suppliers list view (OWNER-only).
+  - Cursor-based pagination with next/previous controls.
+  - Search by name; supplier card shows name, contact, and balance.
+  - Loading/error/empty states.
+- `components/suppliers/supplier-form.tsx`: Supplier create form (OWNER-only).
+  - Name/contact inputs with validation; submit via `useMutation`.
+  - Navigation to the new supplier detail on success.
+- `components/suppliers/supplier-detail.tsx`: Supplier detail view (OWNER-only).
+  - Supplier metadata + balance; purchases and payment history lists.
+  - "Receive payment" action linking to the pay page.
+- `components/suppliers/supplier-pay-form.tsx`: Supplier payment form
+  (OWNER-only).
+  - Amount input, current-balance display (signed: shop owes / prepaid).
+  - Server-side recording via `useMutation`; invalidate + navigate on success.
+- `components/suppliers/supplier-payment-history.tsx`: Payment history list
+  (OWNER-only) with cursor pagination and signed balance semantics.
+- Role-based access: supplier screens guarded by OWNER authorization check.
+- Tests: `tests/frontend/suppliers/suppliers-d1.test.tsx` — 29 tests covering
+  list, form, detail, and payment flows.
+
+**Verified**
+
+- `npx tsc --noEmit` clean; `npm run lint` clean.
+- `npm run test:frontend` — all frontend suites green.
+- Commit: `d85b4fa` "feat(erp): add supplier and supplier payment frontend
+  flows".
+
+---
 
 ## Milestone M24 — DB Initialization + Realistic Data Seed (17 Aug 2026)
 
@@ -1146,25 +1230,28 @@ tree has the D22 + §16 doc updates uncommitted.
 
 ## Current state (17 Aug 2026)
 
-- **Done through M20 + M21 Phase A/B.1/B.2/C.1/C.2:** Products/Pricing, Sales,
-  Purchasing, Suppliers + Supplier Payments, Customers + Credit Payments,
-  Stock Adjustments, Reporting, and audit fixes F-01 through F-15, plus M18
-  transaction void/correction (D18.1–D18.11), M19 security hardening
-  (D19.1–D19.4), M20 data export (D20.1–D20.3). M21 frontend: Phase A
-  foundation (shell, sign-in, D23 design language), Phase B.1 POS `/sales/new`
-  (16 Aug), Phase B.2 sales list/detail/OWNER void (`a147d9a`, 17 Aug),
-  Phase C.1 products & stock (`8a4cc99`, 17 Aug),
-  Phase C.2 customers & payments (`3fd071e`, 17 Aug). Phase C complete.
-- **Backend test gate:** `npm run test:all` — unit 203, integration 91,
+- **Done through M25:** Products/Pricing, Sales, Purchasing, Suppliers +
+  Supplier Payments, Customers + Credit Payments, Stock Adjustments,
+  Reporting, and audit fixes F-01 through F-15, plus M18 transaction
+  void/correction (D18.1–D18.11), M19 security hardening (D19.1–D19.4), M20
+  data export (D20.1–D20.3), M22 fractional quantities (D25) + tier-first
+  pricing, M23 pre-Phase-D data-model foundation (D26–D29), M24 DB
+  initialization + realistic seed. M21 frontend: Phase A foundation (shell,
+  sign-in, D23 design language), Phase B.1 POS `/sales/new` (16 Aug), Phase
+  B.2 sales list/detail/OWNER void (`a147d9a`, 17 Aug), Phase C.1 products &
+  stock (`8a4cc99`, 17 Aug), Phase C.2 customers & payments (`3fd071e`, 17
+  Aug), Phase D.1 suppliers (`d85b4fa`, 17 Aug), Phase D.2 purchases
+  (`53ede16`, 17 Aug). Phases A–D.2 complete.
+- **Backend test gate:** `npm run test:all` — unit 223, integration 111,
   concurrency 9, HTTP 17, HTTP bounds 13, HTTP smoke 15, auth 17,
-  pagination 32, voids 11, exports HTTP 11 = **419 tests, all green**.
-- **Frontend test gate:** `npm run test:frontend` — 14 files, **106 tests,
-  all green** (includes C.2 customer/payment tests).
+  pagination 32, voids 11, exports HTTP 11 = **459 tests, all green** (39
+  backend test files).
+- **Frontend test gate:** `npm run test:frontend` — 16 files, **165 tests,
+  all green** (includes D.2 purchase tests, 28/28).
 - **PM review:** ERP-007, ERP-008, ERP-009 closed COMPLETE; M19, M20
-  committed; M21 Phase A through C.2 committed. Documentation reconciliation
-  pending.
-- **Next:** PM review of C.2 documentation changes; then Phase D (suppliers,
-  purchases, reports, users) per `docs/frontend-plan.md` §13.
+  committed; M21 Phase A through D.2 committed.
+- **Next:** Frontend Phase D.3 (reports, users management, wallet
+  optimization) per `docs/frontend-plan.md` §13.
 
 ## M21 — Phase A: frontend foundation (D22) — 16 Aug 2026
 

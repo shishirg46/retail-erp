@@ -1,6 +1,6 @@
 # M21 — Responsive Mobile-First Frontend: Kickoff Package
 
-**Milestone:** M21 (frontend) — **Phase A foundation complete; Phase B.1 POS `/sales/new` complete and accepted; Phase B.2 sales list + detail + OWNER void flow complete and committed; Phase C.1 products & stock frontend complete and committed; Phase C.2 customers & payments frontend complete and committed**
+**Milestone:** M21 (frontend) — **Phase A foundation complete; Phase B.1 POS `/sales/new` complete and accepted; Phase B.2 sales list + detail + OWNER void flow complete and committed; Phase C.1 products & stock frontend complete and committed; Phase C.2 customers & payments frontend complete and committed; Phase D.1 suppliers & supplier payments complete and committed (`d85b4fa`, 17 Aug 2026); Phase D.2 purchases flow complete and committed (`53ede16`, 17 Aug 2026)**
 **Date:** 15 Aug 2026 (updated 17 Aug 2026)
 **Companion decision record:** [`business-decisions.md`](business-decisions.md) → D21
 **Consumed backend:** all endpoints listed in [`README.md`](../README.md) (D1–D20)
@@ -788,7 +788,19 @@ Proposed phases (each ends green on `tsc`/`lint`/tests; backend gate untouched):
    (committed `3fd071e`, 17 Aug 2026). Customers list/new/detail, receive payment,
    payment history with OWNER-only void flow, optional sale linkage (best-effort).
    21 new tests (106 total frontend). All consuming existing APIs — no backend changes required.
-6. **Phase D — Suppliers, purchases, reports, users:** (next — pending PM approval).
+6. **Phase D.1 — Suppliers & supplier payments:** COMPLETE
+   (committed `d85b4fa`, 17 Aug 2026). Suppliers list/new/detail, OWNER-only
+   supplier payment flow with payment history. 29 new tests. All consuming
+   existing APIs — no backend changes required.
+7. **Phase D.2 — Purchases flow:** COMPLETE
+   (committed `53ede16`, 17 Aug 2026). Purchases list (pagination, payment-type
+   and supplier filters), purchase form (supplier dropdown, product selection
+   with pack/pcs toggle via D28 `unitsPerPack`), purchase detail with OWNER void
+   flow; supplier-name resolution via `/api/suppliers`. 28 new tests — total
+   frontend gate now 165 tests / 16 files. All consuming existing APIs — no
+   backend changes required.
+8. **Phase D.3 — Reports, users, wallet optimization:** (next — pending PM
+   approval).
 
 ### C.2 API contract and backend boundary
 

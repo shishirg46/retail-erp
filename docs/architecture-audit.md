@@ -1,8 +1,18 @@
 # Retail ERP Architecture Audit
 
-**Date:** 13 Aug 2026 (re-audited 15 Aug 2026)
+**Date:** 13 Aug 2026 (re-audited 15 Aug 2026; current-state note 17 Aug 2026)
 **Audited commit:** `cd3458e` (`docs: reconcile README and project-progress with repository state`)
 **Re-audit commit:** `11bd68e` (`feat: add read-only CSV/JSON exports for all reports (M20)`) — full gate green at HEAD, working tree clean
+**Current-state note (17 Aug 2026):** the findings and assessment below remain
+valid and are retained verbatim as the historical record. Since the re-audit,
+the repository added the M21 responsive mobile-first frontend through
+**Phase D.2** (commits `378dd6a`…`53ede16`, HEAD `53ede16`); see
+`docs/frontend-plan.md` for the frontend architecture and phase-by-phase
+status. The working tree is no longer clean — `docs/implementation-log.md` and
+`docs/project-progress.md` carry the M25 + reconciliation updates pending
+commit. The full gate now stands at **55 test files / 624 tests** (39 backend
+files / 459 tests + 16 frontend files / 165 tests), `tsc` and `lint` green.
+`origin/main` is at `257328f`; `main` is 10 commits ahead, not yet pushed.
 **Scope:** `main` branch, full transactional backend (products, sales, purchasing, suppliers,
 customer credit, stock, wallet, reporting, voids), Prisma schema + migrations, all API routes, lib/,
 error taxonomy, git state.
@@ -74,9 +84,9 @@ ERP-008, and ERP-009 evidence. No further functional audit findings remain open.
 | Inventory consistency | Identity `stockQty == Σ qtyChange` holds; negative stock impossible (F-02 + D18.6 reversal guards) |
 | Business rules D1–D19 | All implemented; D6 400-vs-409 nuance documented; void rules D18.1–D18.11, security D19.1–D19.4 recorded |
 | Reporting | Genuinely read-only; aggregates match SQL re-derivation; voided records excluded (D18.8) |
-| Testing | Full Vitest gate — 36 files / 419 tests (`npm run test:all`), incl. unit, integration, concurrency (stock, void+payment, last-OWNER), HTTP error/rate-limit/headers/bounds/smoke/auth/pagination/voids/exports |
-| Documentation | Accurate and current — reconciled at HEAD `11bd68e` (15 Aug 2026) |
-| Git hygiene | 35 commits on `main`; tree clean (`main == origin/main`); secrets untracked; generated client ignored |
+| Testing | Full Vitest gate — 55 files / 624 tests (`npm run test:all`): backend 39 files / 459 tests (unit, integration, concurrency (stock, void+payment, last-OWNER), HTTP error/rate-limit/headers/bounds/smoke/auth/pagination/voids/exports) + frontend 16 files / 165 tests (`test:frontend`) |
+| Documentation | Accurate and current — re-audited at HEAD `11bd68e` (15 Aug 2026); current-state note at HEAD `53ede16` (17 Aug 2026); M25 + reconciliation edits pending commit |
+| Git hygiene | 45 commits on `main`; tree dirty only by pending doc edits; `main` is 10 commits ahead of `origin/main` (`257328f`), not pushed; secrets untracked; generated client ignored |
 
 ---
 
